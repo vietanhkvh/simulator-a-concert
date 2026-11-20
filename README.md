@@ -102,5 +102,6 @@ Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi 
 
 ## Tài liệu
 
+- `docs/ARCHITECTURE.md` — cấu trúc mã nguồn theo ba khu (ngoài sân, khán đài, sân trung tâm), quy tắc phụ thuộc
 - `docs/PLAN.md` — plan demo 1, gói việc, quyết định đã chốt
 - `docs/discussion/` — đề xuất của Architect và Game dev
