@@ -47,6 +47,11 @@ chỉ khi màn chào sân kết thúc (hoặc bấm `Enter`/`Esc` để bỏ qua
 **Hát lại** ở màn kết quả và trong menu tạm dừng không chiếu lại màn chào sân; nút **Về sảnh** ở màn kết quả quay về sảnh.
 Khi có sự kiện bí mật, camera tự chuyển sang góc **Toàn cảnh** rồi trả lại góc cũ khi sự kiện kết thúc.
 
+**Chọn phong cách** (bốn thẻ phía trên thẻ chào sân; Tab tới nhóm rồi dùng mũi tên, hoặc bấm chuột): *Kẹo đêm · chibi*
+(mặc định), *Mực & Sơn mài · bản Việt*, *Thép & Lửa*, *Đêm Sao Điểm Ảnh*. Sảnh đổi giao diện ngay; cảnh 3D được dựng lại cho
+phong cách đã chọn khi bấm **Bắt đầu** (dưới màn đen, khoảng 1–2 giây). Lựa chọn được nhớ; **Về sảnh** ở màn kết quả để đổi
+phong cách khác mà không tải lại trang. Ba phong cách mới đang ở bản đầu (đổi màu + vài hiệu ứng riêng), xem `docs/THEMES.md`.
+
 ## Điều khiển khi đang diễn
 
 Bảng hướng dẫn phím hiện ở cạnh trái trong ~15 giây đầu của bài đầu tiên rồi thu về nút **?**; bấm `H` hoặc **?** để ẩn/hiện (được ghi nhớ). Danh sách dưới đây giống hệt bảng trong game (`src/ui/controlsGuide.ts`, có test kiểm tra đồng bộ).
@@ -96,6 +101,7 @@ Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi 
 | `?fakeMic=perfect` | Micro giả hát đúng giai điệu (xem thử không cần micro). Còn có `off`, `octave`. |
 | `?entrance=jump` | Ghi đè màn chào sân chọn ở sảnh: `jump` (nhảy khỏi trực thăng), `lift` (bục nâng), `cable` (thả cáp), `off` (tắt). Giá trị cũ `hero`→`jump`, `parachute`→`cable`. |
 | `?crowd=8000` | Số khán giả (100–10000). Game tự giảm số người được vẽ nếu máy chậm. |
+| `?theme=lacquer` | Phong cách khi mở trang: `chibi`, `lacquer`, `steel`, `pixel` (ưu tiên hơn lựa chọn đã nhớ). |
 | `?dev=1` | Bật chế độ developer (nhớ trong localStorage tới khi mở `?dev=0`). Xem mục dưới. |
 
 ## Chế độ developer
@@ -142,6 +148,7 @@ Không đổi gameplay trừ khi bấm một nút trong bảng.
 | `secret(kind)`, `secretKinds()`, `setSecretChance(kind, 0..1)`, `flyby()`, `meteors(n)`, `entrancePreview(kind)`, `banners(lines)` | sự kiện |
 | `views()`, `setView(id)`, `setMouseLook(on)`, `teleportTargets()`, `teleport(name ｜ {x, z, yaw})`, `setLookSens(v)`, `setFreeFly(on)`, `cameraPose()` | camera |
 | `setZoneVisible('outside'｜'stands'｜'arena'｜'glow', on)`, `layers(zone)`, `setLayerVisible(zone, name, on)`, `setCrowdQuality(q)`, `reloadWithCrowd(n)` | khu & lớp |
+| `themes()`, `getTheme()`, `setTheme('chibi'｜'lacquer'｜'steel'｜'pixel')`, `leakCheck(cycles=3)`, `buildTimes()` | phong cách: đổi + dựng lại cảnh 3D ngay · kiểm rò rỉ sau khi dựng lại · thời gian dựng (ms) |
 
 ## Lệnh khác
 
@@ -155,5 +162,7 @@ Không đổi gameplay trừ khi bấm một nút trong bảng.
 ## Tài liệu
 
 - `docs/ARCHITECTURE.md` — cấu trúc mã nguồn theo ba khu (ngoài sân, khán đài, sân trung tâm), quy tắc phụ thuộc
+- `docs/THEMES.md` — hệ phong cách: token, dựng lại world, khe builder theo phong cách, hậu kỳ, kế hoạch gói việc
+- `docs/design/STYLE_GUIDE.md`, `docs/design/alt/STYLE_*.md` — style sheet của bốn phong cách
 - `docs/PLAN.md` — plan demo 1, gói việc, quyết định đã chốt
 - `docs/discussion/` — đề xuất của Architect và Game dev

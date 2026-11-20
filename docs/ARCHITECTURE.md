@@ -15,13 +15,15 @@ src/
   main.ts            luồng game: sảnh → chào sân → đếm ngược → diễn → kết quả; nối UI, âm thanh, world
   core/              kiểu dữ liệu (FrameState…), vòng lặp, thời gian
   world/
-    world.ts         NƠI DUY NHẤT ghép ba khu: renderer, scene, camera, gọi update từng khu
+    world.ts         NƠI DUY NHẤT ghép ba khu: renderer, scene, camera, gọi update từng khu; hậu kỳ; rebuildWorld()
+    style/           token màu + hình khối của PHONG CÁCH ĐANG BẬT (palette, form), theme.ts + themes/*.ts (docs/THEMES.md)
     layout.ts        NGUỒN DUY NHẤT của kích thước dùng chung (cao độ, bán kính, vị trí)
     zone.ts          hợp đồng Zone / ZoneContext
     zones.test.ts    test giữ ranh giới giữa các khu
-    shared/          uniform dùng chung + điểm sáng dùng chung (1 draw call cho cả hai khu xa)
+    shared/          uniform + điểm sáng dùng chung (1 draw call cho cả hai khu xa), kích thước đích vẽ, gom builder phong cách
   zones/
-    outside/ stands/ arena/   mỗi khu: index.ts (điểm vào duy nhất) + README.md + các file riêng
+    outside/ stands/ arena/   mỗi khu: index.ts (điểm vào duy nhất) + builders.ts (khe builder) + README.md + các file riêng
+      themes/<id>/            builder riêng của phong cách lacquer / steel / pixel (tự đăng ký; thiếu thì dùng builder mặc định)
   audio/ mic/ scoring/ song/ ui/   không phụ thuộc vào zones
 ```
 
@@ -32,12 +34,22 @@ src/
 3. Kích thước dùng chung lấy từ `world/layout.ts`; không chép lại số vào từng file.
 4. Khu trao đổi với nhau chỉ qua `FrameState` (world truyền mỗi frame) và các sự kiện dưới đây.
 
-Quy tắc 1 và 2 được kiểm bằng `src/world/zones.test.ts` (chạy cùng `npm test`).
+5. File trong `zones/<khu>/themes/<id>/` không import thư mục của phong cách khác; mã mặc định của khu không import thẳng
+   thư mục phong cách (chỉ `builders.ts` qua `themes/index.ts`).
+6. Không chép token style vào hằng cấp module (world được dựng lại khi đổi phong cách) — xem `docs/THEMES.md` mục 1.
+
+Quy tắc 1, 2 và 5 được kiểm bằng `src/world/zones.test.ts` (chạy cùng `npm test`).
+
+## Phong cách (themes)
+
+`world/style/theme.ts`: `applyTheme(id)` ghi token tại chỗ → `rebuildWorld()` huỷ và dựng lại ba khu trên cùng renderer →
+`main.ts: bindWorld()` nối lại handle. `index.ts` mỗi khu chọn builder cho từng khe bằng `pickBuilder(khe, variant)`; khe chưa
+có builder riêng dùng builder mặc định (chibi) với token của phong cách. Chi tiết, bảng khe và kế hoạch gói việc: `docs/THEMES.md`.
 
 ## Mỗi frame
 
 `main.ts` dựng `FrameState` → `world.update(f)` → cập nhật uniform chung → `arena.update` → `outside.update`
-→ `stands.update` → `world.render()`. Thứ tự tạo khu là từ xa tới gần: outside → stands → arena.
+→ `stands.update` → `world.render()` (có thể qua hậu kỳ `pixelate` của phong cách). Thứ tự tạo khu là từ xa tới gần: outside → stands → arena.
 
 ## Sự kiện giữa các khu (CustomEvent trên `window`)
 
