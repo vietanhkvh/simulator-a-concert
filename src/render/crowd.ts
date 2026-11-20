@@ -8,6 +8,8 @@ import frag from './crowd.frag.glsl?raw';
 
 /** Bán kính hàng đầu (m) và khoảng cách giữa các hàng / người. */
 const R0 = 6.5;
+/** Khoảng cách (m, theo trục -Z) từ ca sĩ tới hàng rào khán giả; mép sân khấu ở z = -5. */
+const BARRIER_Z = 7;
 const SPACING = 0.55;
 const JITTER = 0.15;
 /** Sàn dốc lên phía sau (m cao / m xa). */
@@ -68,12 +70,14 @@ function layout(opts: CrowdOptions, rand: () => number): Person[] {
       const rr = r + (rand() * 2 - 1) * JITTER;
       const aa = a + ((rand() * 2 - 1) * JITTER) / r;
       const x = Math.sin(aa) * rr;
-      const z = -Math.cos(aa) * rr;
+      // Sân khấu là hình chữ nhật (mép trước z = -5): hàng rào khán giả cách mép STAGE_GAP.
+      // Hai cánh quạt được đẩy lùi ra sau hàng rào để không ai đứng tràn lên sàn diễn.
+      const z = -Math.max(Math.cos(aa) * rr, BARRIER_Z + (rr - R0) * 0.5);
       people.push({
         x,
         y: CROWD_FLOOR_Y + (rr - R0) * SLOPE,
         z,
-        dist: rr,
+        dist: Math.hypot(x, z),
         angleN: aa / (arc / 2),
         distN: (rr - R0) / Math.max(1e-3, rMax - R0),
       });

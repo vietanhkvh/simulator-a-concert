@@ -16,9 +16,11 @@ import type {
 import { createMic } from './mic/input';
 import { createConfetti } from './render/confetti';
 import { createCrowd } from './render/crowd';
+import { createEmotes } from './render/emotes';
 import { createLedScreens } from './render/ledScreens';
 import { createLights } from './render/lights';
 import { createStage } from './render/stage';
+import { createStageFx } from './render/stageFx';
 import { createScoring } from './scoring/scoring';
 import { createVoiceScoring } from './scoring/voice';
 import { lyricIndexAt } from './song/lrc';
@@ -49,6 +51,88 @@ const crowd = createCrowd(stage.scene, { count: crowdCount, rows: 40, arcDeg: 12
 const lights = createLights(stage.scene);
 const led = createLedScreens(stage.scene);
 const confetti = createConfetti(stage.scene);
+const emotes = createEmotes(stage.scene);
+const stageFx = createStageFx(stage.scene);
+
+// --- Tương tác với khán giả bằng phím (chỉ khi đang diễn) ---
+const INTERACT_COOLDOWN_SEC = 4;
+let hypeBoost = 0; // cộng tạm vào Hype hiển thị, tự tắt dần
+let waveUntil = 0; // performance.now() ms
+let flashOn = false;
+let lastInteract = -Infinity;
+const hint = document.createElement('div');
+hint.className = 'cs-keys-hint';
+hint.textContent = 'Space: Hò reo  ·  W: Sóng lightstick  ·  H: Thả tim  ·  F: Đèn flash  ·  P: Pháo hoa';
+hint.hidden = true;
+uiRoot.appendChild(hint);
+// --- Tạm dừng (nút góc trên phải, hoặc phím Esc) ---
+let paused = false;
+const pauseBtn = document.createElement('button');
+pauseBtn.id = 'cs-pause';
+pauseBtn.className = 'cs-pause-btn';
+pauseBtn.type = 'button';
+pauseBtn.hidden = true;
+const pauseVeil = document.createElement('div');
+pauseVeil.className = 'cs-pause-veil';
+pauseVeil.textContent = 'Tạm dừng';
+pauseVeil.hidden = true;
+uiRoot.append(pauseVeil, pauseBtn);
+function setPaused(on: boolean): void {
+  if (on === paused || (on && state !== 'playing')) return;
+  paused = on;
+  pauseBtn.textContent = paused ? '▶ Tiếp tục' : '❚❚ Tạm dừng';
+  pauseVeil.hidden = !paused;
+  // Treo AudioContext: nhạc, đồng hồ bài hát, micro và tiếng đám đông cùng dừng.
+  if (paused) {
+    currentVideo?.pause();
+    void audio?.ctx.suspend();
+  } else {
+    void audio?.ctx.resume().then(() => currentVideo?.play());
+  }
+}
+pauseBtn.textContent = '❚❚ Tạm dừng';
+pauseBtn.addEventListener('click', () => { setPaused(!paused); pauseBtn.blur(); });
+window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && !e.repeat) setPaused(!paused); });
+// Chuyển tab khác thì tự tạm dừng để không mất điểm.
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
+
+window.addEventListener('keydown', (e) => {
+  if (paused || state !== 'playing' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const now = performance.now() / 1000;
+  const ready = now - lastInteract >= INTERACT_COOLDOWN_SEC;
+  switch (e.code) {
+    case 'Space': // "Make some noise!"
+      e.preventDefault();
+      if (!ready) return;
+      crowdAudio?.cheer(1);
+      emotes.burst(50);
+      hypeBoost = 0.35;
+      break;
+    case 'KeyW':
+      waveUntil = performance.now() + 6000;
+      return;
+    case 'KeyH':
+      if (!ready) return;
+      emotes.burst(70, 'heart');
+      crowdAudio?.cheer(0.5);
+      hypeBoost = Math.max(hypeBoost, 0.15);
+      break;
+    case 'KeyF':
+      flashOn = !flashOn;
+      crowd.setFlash(flashOn ? 1 : 0);
+      return;
+    case 'KeyP':
+      if (!ready) return;
+      stageFx.pyro();
+      confetti.burst();
+      crowdAudio?.cheer(0.8);
+      hypeBoost = Math.max(hypeBoost, 0.25);
+      break;
+    default:
+      return;
+  }
+  lastInteract = now;
+});
 let crowdAudio: CrowdAudio | null = null;
 let ledVideo: HTMLVideoElement | null = null;
 const hud = createHud(uiRoot);
@@ -209,6 +293,16 @@ function finish(score: ScoreState): void {
 }
 
 function tick(dt: number): void {
+  pauseBtn.hidden = state !== 'playing';
+  if (paused) {
+    if (state === 'playing' && lastFrame) {
+      // Đứng hình: vẫn vẽ lại (đổi kích thước cửa sổ, camera theo chuột) nhưng không chạy game.
+      stage.update({ ...lastFrame, dt: 0 });
+      stage.render();
+      return;
+    }
+    setPaused(false); // trạng thái đổi (hết bài, chơi lại) thì bỏ tạm dừng
+  }
   let f: FrameState;
   if ((state === 'countdown' || state === 'playing') && song && audio && mic) {
     const songTime = audio.now();
@@ -243,8 +337,20 @@ function tick(dt: number): void {
     ledVideo = currentVideo;
     led.setVideo(ledVideo);
   }
+  // Tương tác: Hype hiển thị được cộng tạm (không đổi điểm), sóng lightstick theo phím W.
+  hypeBoost = Math.max(0, hypeBoost - dt * 0.12);
+  hint.hidden = state !== 'playing';
+  if (state === 'playing') {
+    const waving = performance.now() < waveUntil;
+    if (hypeBoost > 0 || waving) {
+      const hype = Math.min(1, f.hype + hypeBoost);
+      f = { ...f, hype, waveMode: waving || hype > 0.7 ? 1 : 0 };
+    }
+  }
   crowd.update(f);
   lights.update(f);
+  emotes.update(f);
+  stageFx.update(f);
   led.update(f, state === 'countdown' || state === 'playing' ? song : null);
   confetti.update(f);
   crowdAudio?.update(f);

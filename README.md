@@ -37,6 +37,19 @@ Micro chỉ hoạt động trên `localhost` hoặc HTTPS, không chạy khi m�
 
 Ba chế độ sau không có nốt nên không chấm điểm cao độ: Hype tăng khi micro bắt được giọng hát (chế độ `.lrc` chỉ tính trong lúc có câu lời) và giảm khi im lặng. Nhịp cho khán giả/đèn mặc định 120 BPM.
 
+## Điều khiển khi đang diễn
+
+| Phím / nút | Tác dụng |
+|---|---|
+| Nút **Tạm dừng** (góc trên phải) hoặc `Esc` | Tạm dừng / tiếp tục. Chuyển sang tab khác cũng tự tạm dừng |
+| `Space` | Kêu gọi khán giả hò reo |
+| `W` | Sóng lightstick quét ngang khán đài |
+| `H` | Khán giả thả tim |
+| `F` | Bật / tắt biển đèn flash điện thoại |
+| `P` | Bắn pháo hoa và pháo giấy |
+
+Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi động hơn trên hình, không cộng điểm.
+
 ## Tham số URL
 
 | Tham số | Ý nghĩa |
