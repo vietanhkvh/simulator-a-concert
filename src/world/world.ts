@@ -92,7 +92,7 @@ export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions, reuse
       rt, u, qScene, qCam,
       resize() {
         renderer.getDrawingBufferSize(buf);
-        const scale = Math.max(1, Math.round(buf.y / fx.height));
+        const scale = Math.max(1, Math.ceil(buf.y / fx.height)); // đích không bao giờ cao hơn fx.height
         const w = Math.max(1, Math.ceil(buf.x / scale)), h = Math.max(1, Math.ceil(buf.y / scale));
         rt.setSize(w, h);
         u.uSize.value.set(w, h);

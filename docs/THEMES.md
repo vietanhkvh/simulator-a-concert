@@ -103,7 +103,7 @@ export const builders: Partial<OutsideBuilders> = { secretUfo: createMirrorBall 
 
 ## 7. Hậu kỳ (post-fx)
 `theme.features.postFx = { kind: 'pixelate', width, height }` (chỉ `pixel`: 480×270): `world.render()` vẽ cảnh vào
-`WebGLRenderTarget` (nearest, không MSAA), hệ số `k = round(cao bộ đệm / height)`, đích = `ceil(bộ đệm / k)` (1280×720 → 427×240 ×3;
+`WebGLRenderTarget` (nearest, không MSAA), hệ số `k = ceil(cao bộ đệm / height)`, đích = `ceil(bộ đệm / k)` (1280×720 → 427×240 ×3; 640×360 → 320×180 ×2;
 1920×1080 → 480×270 ×4), rồi một tam giác phủ màn hình phóng **nguyên lần** bằng `floor(gl_FragCoord / k)`. Đích được đánh dấu
 như đích XR để vật liệu có sẵn của three mã hoá sRGB như khi vẽ thẳng. UI/lời là DOM nên giữ độ phân giải gốc; chuột/kéo không
 đổi. Số liệu (`renderer.info`) gồm cả lượt phóng (+1 draw call). Module tính cỡ điểm / bề dày viền theo pixel phải dùng
