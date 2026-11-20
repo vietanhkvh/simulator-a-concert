@@ -5,6 +5,7 @@
 // phát window 'cs-secret' {kind:'plane', phase:'start'|'end'},
 // 4 khinh khí cầu bay lên từ sau khán đài mang băng rôn cổ vũ rồi trôi đi/mờ dần, + bụi sao lấp lánh.
 // 3 draw call, visible=false khi rảnh; mỗi frame chỉ đổi uniform/transform.
+import { FLYBY } from '../../world/layout';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
@@ -15,7 +16,7 @@ export { triggerFlyby, setCheerBanners } from './balloons';
 
 const DUR = 18;
 const COOLDOWN = 25;
-const PLANE_Y = 36, PLANE_Z = -30, PLANE_X = 110, PLANE_SCALE = 1.3;
+const PLANE_Y = FLYBY.y, PLANE_Z = FLYBY.z, PLANE_X = 110, PLANE_SCALE = 1.3;
 const AW = 2048, AH = 1024;
 const TOW = { x: 0, y: 0, w: 2048, h: 352 };
 const BAL_SLOTS = [

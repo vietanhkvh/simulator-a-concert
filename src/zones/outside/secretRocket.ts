@@ -2,6 +2,7 @@
 // cao qua khán đài về tâm sân, nổ thành màn pháo hoa nhiều tầng phía trên giữa sân (~(0, 40–60, -44…-12)).
 // giàn phóng (1 mesh) + tên lửa (1 mesh), khói (1 Points thường),
 // lửa/vệt + pháo hoa nhiều tầng + kim tuyến (1 Points cộng sáng). = 4 draw call. Quỹ đạo Bézier tính cả ở CPU lẫn shader.
+import { SKY_SHOW_CENTRE } from '../../world/layout';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
@@ -12,7 +13,7 @@ const T_IGN = 2.5, T_BURST = 10.0;
 const PAD = new THREE.Vector3(-110, 0, 230);
 const CTRL = new THREE.Vector3(-60, 135, 80);
 /** Điểm nổ chính = tâm màn pháo hoa. */
-export const ROCKET_BURST = new THREE.Vector3(0, 50, -30);
+export const ROCKET_BURST = new THREE.Vector3(SKY_SHOW_CENTRE.x, SKY_SHOW_CENTRE.y, SKY_SHOW_CENTRE.z);
 const TOP = ROCKET_BURST;
 const SHELLS: [number, number, number, number][] = [
   [TOP.x, TOP.y, TOP.z, T_BURST],

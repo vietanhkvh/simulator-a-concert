@@ -4,6 +4,20 @@
 // Hệ tọa độ: đơn vị mét. Ca sĩ đứng ở gốc (0, STAGE_Y, 0) và nhìn về -Z; khán giả ở phía -Z;
 // +X là bên phải ca sĩ; +Y hướng lên. Từ gần ra xa: sân trung tâm → khán đài → ngoài sân.
 
+// Chưa chuyển (còn số cứng trong file, cần rà khi đổi cao độ hoặc dời vật thể):
+//   • Mặt sân khấu y = 0 được NGẦM ĐỊNH ở rất nhiều chỗ trong khu arena (stageDeco, band, singer, lights,
+//     stageFx, entrance, walkLayout…). Muốn sân khấu cao hơn khán giả thì HẠ FIELD_Y, giữ STAGE_Y = 0.
+//   • arena/lights.ts: độ cao vệt màu trên khán giả (y = 0,6), vị trí các cụm đèn, chấm đèn runway.
+//   • arena/stageFx.ts: dàn blinder (y 6,4, z -10), khói thấp, tia laser.   • arena/confetti.ts: vùng rơi (y 9–14).
+//   • arena/cameraCrew.ts: tháp quay giữa sân (7, -40) cao 4 m, độ cao drone 4–11 m, cần cẩu.
+//   • arena/entrance*.ts: điểm đáp (0, 0, -6,6), độ cao trực thăng, hố bục nâng sâu 3,4 m.
+//   • arena/ledScreens.ts: chân màn hình dài y + 2 (giả định mặt đất không thấp hơn -2).
+//   • arena/emotes.ts: vùng sinh biểu tượng (tới 62 m, tránh dải runway).   • arena/stageBase.ts: hộp sàn diễn 26×8.
+//   • stands/stadium.ts: cột đèn pha, hàng đèn trên cùng (r 125,5; y 35,6); đáy tầng 1 (yf0 = -1) là số tuyệt đối.
+//   • outside/balloons.ts: tọa độ 6 khinh khí cầu (BALLOONS).   • outside/sky.ts: đường bay máy bay chở khách.
+//   • outside/secretUfo.ts (0, 18, -40), secretDragon.ts (-4, 20, -62), secretJet.ts (0, 48, -34): tâm từng sự kiện.
+//   • main.ts: camera sự kiện bí mật (0, 62, -112).
+
 // ───────────── Camera / không khí ─────────────
 /** Chiều cao mắt ca sĩ so với mặt sàn đang đứng (m). */
 export const EYE_HEIGHT = 1.65;
