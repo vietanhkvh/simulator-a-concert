@@ -4,6 +4,7 @@
  */
 import type { FrameState, Line, LyricLine, Note, PanelControls, Song, Teleprompter } from '../core/types';
 import { createFloatWindow, type FloatLayout, type FloatWindow } from './floatWindow';
+import './tokens.css';
 import './style.css';
 
 const REST_COUNTDOWN_SEC = 3; // nghỉ dài hơn mức này thì hiện thanh đếm ngược

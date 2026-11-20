@@ -17,8 +17,7 @@ import type {
 } from './core/types';
 import { createMic } from './mic/input';
 import { createWorld } from './world/world';
-import * as arenaZone from './zones/arena';
-import { ENTRANCE_SEC, PLATFORMS, VIEW_ORDER, type EntranceKind, type StageControls, type ViewMode } from './zones/arena';
+import { ENTRANCE_SEC, PLATFORMS, VIEW_MODES, type EntranceKind, type StageControls, type ViewMode } from './zones/arena';
 import { createScoring } from './scoring/scoring';
 import { createVoiceScoring } from './scoring/voice';
 import { findChorusLines } from './song/chorus';
@@ -344,7 +343,7 @@ const pill = (id: string, text: string, title: string) => {
   b.title = title;
   return b;
 };
-const viewBtn = pill('cs-view-btn', 'Góc máy (V)', 'Đổi góc máy: ca sĩ → flycam → hố → cần cẩu → toàn cảnh');
+const viewBtn = pill('cs-view-btn', 'Góc máy (V)', `Đổi góc máy: ${VIEW_MODES.map((v) => v.label.toLowerCase()).join(' → ')}`);
 const lookBtn = pill('cs-look-btn', 'Chuột tự do (M)', 'Di chuột để xoay, bấm M hoặc Esc để thoát');
 const endBtn = pill('cs-end-btn', 'Kết thúc', 'Kết thúc buổi diễn và xem kết quả');
 const pauseBtn = pill('cs-pause', '❚❚ Tạm dừng', 'Tạm dừng / xưởng chỉnh (Esc)');
@@ -356,7 +355,7 @@ lookHint.className = 'cs-look-hint';
 lookHint.textContent = 'Chuột tự do — bấm M hoặc Esc để thoát';
 lookHint.hidden = true;
 uiRoot.append(topBar, lookHint);
-const VIEW_LABEL: Record<string, string> = { singer: 'Ca sĩ', flycam: 'Flycam', pit: 'Hố', crane: 'Cần cẩu', wide: 'Toàn cảnh' };
+const VIEW_LABEL: Record<string, string> = Object.fromEntries(VIEW_MODES.map((v) => [v.id, v.label]));
 function showView(mode: string): void {
   viewBtn.textContent = `Góc máy: ${VIEW_LABEL[mode] ?? mode} (V)`;
   pauseMenu.setViewState(mode);
@@ -429,6 +428,7 @@ const pauseMenu = createPauseMenu(uiRoot, {
   songTime: () => audio?.now() ?? 0,
   duration: () => songDuration(),
   onDevPanel: () => dev.show(),
+  views: VIEW_MODES,
 });
 showView(controls?.getViewMode() ?? 'singer');
 showLook(controls?.isMouseLook() ?? false);
@@ -927,11 +927,6 @@ window.__game = {
 let devHype: number | null = null;
 let devMicSilent = false;
 let devCrowdSing = false;
-/** Danh sách góc máy: lấy VIEW_MODES của khu sân trung tâm nếu có (vd. thêm 'aerial'), không thì VIEW_ORDER. */
-const devViews = (): string[] => {
-  const m = (arenaZone as unknown as Record<string, unknown>).VIEW_MODES;
-  return Array.isArray(m) && m.length ? m.map(String) : [...VIEW_ORDER];
-};
 const TELEPORTS: Record<string, { x: number; z: number; yaw: number }> = {
   stage: { x: 0, z: 0, yaw: 0 },
   runwayEnd: { x: PLATFORMS.centre.x, z: PLATFORMS.centre.z, yaw: 0 },
@@ -1029,7 +1024,7 @@ const devHost: DevHost = {
     saveSettings(settings);
     optional.setCheerBanners?.(lines);
   },
-  views: devViews,
+  views: () => VIEW_MODES.map((v) => ({ id: v.id, label: v.label })),
   setView: (v) => controls?.setView(v as ViewMode),
   setMouseLook: (on) => controls?.setMouseLook(on),
   isMouseLook: () => controls?.isMouseLook() ?? false,

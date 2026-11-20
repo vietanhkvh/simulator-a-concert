@@ -1,8 +1,12 @@
-// Hiệu ứng sân khấu giả (additive, không Light thật, không bóng): laser quạt, pháo sáng, blinder/strobe, khói thấp.
-// 4 draw call; mỗi frame chỉ đổi uniform.
+// Hiệu ứng sân khấu giả (additive, không Light thật, không bóng): laser quạt, đài phun sao/tim, blinder bóng kem, khói thấp.
+// 4 draw call; mỗi frame chỉ đổi uniform. Màu theo "Kẹo đêm": laser mint/soda/berry, pháo honey/cream/berry,
+// khói nhuộm theo 3 trạng thái Hype, chớp pháo màu kem (không bao giờ trắng xoá, ≤ 3 lần chớp/giây).
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import { FIELD_Y } from '../../world/layout';
+import { PAL, toColor } from '../../world/style';
+import { hypeTriad } from './stageDecoPal';
+import { GLARE_FRAG_PARS, GLARE_VERT_MAIN, GLARE_VERT_PARS } from './lightsGlare';
 
 export interface StageFx {
   update(f: FrameState): void;
@@ -20,6 +24,7 @@ uniform float uPitch;
 attribute vec4 aL; // x: emitter (-1/1), y: line index 0..1, z: along 0..1, w: side -1/1
 varying float vAlong;
 varying float vSide;
+${GLARE_VERT_PARS}
 void main() {
   float sx = aL.x;
   vec3 origin = vec3(sx * 10.0, 7.6, -6.0);
@@ -30,22 +35,48 @@ void main() {
   vec3 toCam = cameraPosition - p;
   float dist = length(toCam);
   vec3 side = normalize(cross(d, toCam));
-  p += side * aL.w * (0.015 + dist * 0.0022);
+  p += side * aL.w * (0.03 + dist * 0.0042); // dải rộng hơn → quầng mềm
   vAlong = aL.z;
   vSide = aL.w;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  ${GLARE_VERT_MAIN}
 }`;
 const LASER_FRAG = /* glsl */ `
 uniform vec3 uColor;
 uniform float uIntensity;
 varying float vAlong;
 varying float vSide;
+${GLARE_FRAG_PARS}
 void main() {
-  float core = 1.0 - abs(vSide);
-  core = core * core;
-  float a = core * uIntensity * (1.0 - smoothstep(0.35, 1.0, vAlong)) * smoothstep(0.0, 0.02, vAlong);
-  gl_FragColor = vec4(uColor * a + vec3(a * a * 0.25), a);
+  float x = abs(vSide);
+  float core = exp(-x * x * 18.0);        // lõi mảnh tròn
+  float glow = exp(-x * x * 3.5) * 0.35;  // quầng kẹo mềm
+  float a = (core * 0.75 + glow) * uIntensity * (1.0 - smoothstep(0.35, 1.0, vAlong)) * smoothstep(0.0, 0.02, vAlong);
+  a *= lyricDim();
+  vec3 c = mix(uColor, vec3(1.0, 0.98, 0.95), core * 0.25);
+  gl_FragColor = vec4(c * a, a);
 }`;
+
+// ───────────── Hình kẹo dùng chung (sao 5 cánh đầu tròn, tim mập) ─────────────
+export const SHAPES_GLSL = /* glsl */ `
+float sdStar(vec2 p, float r) {
+  float a = atan(p.x, p.y);
+  float k = 6.2831853 / 5.0;
+  float m = abs(mod(a + k * 0.5, k) - k * 0.5);
+  float rr = r * mix(0.48, 1.0, pow(max(cos(m * 2.5), 0.0), 3.0));
+  return smoothstep(rr + 0.08, rr - 0.04, length(p));
+}
+float dot2h(vec2 v) { return dot(v, v); }
+// tim mập (SDF của Inigo Quilez), p trong [-1, 1], mũi tim ở dưới
+float sdHeart(vec2 p) {
+  vec2 q = p * 0.7 + vec2(0.0, 0.45);
+  q.x = abs(q.x);
+  float d = (q.y + q.x > 1.0)
+    ? sqrt(dot2h(q - vec2(0.25, 0.75))) - sqrt(2.0) / 4.0
+    : sqrt(min(dot2h(q - vec2(0.0, 1.0)), dot2h(q - 0.5 * max(q.x + q.y, 0.0)))) * sign(q.x - q.y);
+  return smoothstep(0.04, -0.03, d);
+}
+`;
 
 // ───────────── Pháo sáng ─────────────
 const SPARK_PER = 260;
@@ -58,6 +89,8 @@ uniform float uPx;
 attribute vec4 aSeed;
 attribute float aJet;
 varying float vLife;
+varying float vSeed;
+varying float vSpin;
 void main() {
   float birth = aSeed.w * ${(PYRO_DUR - 0.7).toFixed(2)};
   float life = 0.75 + aSeed.y * 0.5;
@@ -66,18 +99,33 @@ void main() {
   vec3 v = vec3((aSeed.x - 0.5) * 1.6, 8.6 + aSeed.y * 1.6, (aSeed.z - 0.5) * 1.6);
   vec3 p = vec3(aJet, 0.05, -5.0) + v * age + vec3(0.0, -4.9 * age * age, 0.0);
   vLife = (age < 0.0 || k > 1.0) ? -1.0 : k;
+  vSeed = aSeed.z;
+  vSpin = (aSeed.x - 0.5) * 6.0 * age;
   vec4 mv = viewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = vLife < 0.0 ? 0.0 : max(1.5, uPx * (0.1 * (1.0 - 0.5 * k)) / -mv.z);
+  // "pop": 0 → 1,15 → 1 trong 0,25 s đầu, rồi co dần
+  float pop = age < 0.15 ? 1.15 * (1.0 - pow(1.0 - age / 0.15, 3.0)) : mix(1.15, 1.0, smoothstep(0.15, 0.25, age));
+  gl_PointSize = vLife < 0.0 ? 0.0 : max(2.0, uPx * (0.22 * pop * (1.0 - 0.45 * k)) / -mv.z);
 }`;
 const SPARK_FRAG = /* glsl */ `
+uniform vec3 uHoney; uniform vec3 uCream; uniform vec3 uBerry;
 varying float vLife;
+varying float vSeed;
+varying float vSpin;
+${SHAPES_GLSL}
 void main() {
   if (vLife < 0.0) discard;
-  vec2 c = gl_PointCoord - 0.5;
-  float r = 1.0 - smoothstep(0.1, 0.5, length(c));
-  vec3 col = mix(vec3(1.0, 0.95, 0.8), vec3(1.0, 0.45, 0.08), smoothstep(0.1, 0.7, vLife));
-  float a = r * (1.0 - smoothstep(0.6, 1.0, vLife));
+  vec2 c = (gl_PointCoord - 0.5) * 2.0;
+  c.y = -c.y;
+  float cs = cos(vSpin), sn = sin(vSpin);
+  c = mat2(cs, -sn, sn, cs) * c;
+  // ~45 % sao (honey), ~25 % tim (berry), còn lại tia lửa tròn (cream)
+  float m; vec3 col;
+  if (vSeed < 0.45) { m = sdStar(c, 0.85); col = uHoney; }
+  else if (vSeed < 0.7) { m = sdHeart(c * 1.1); col = uBerry; }
+  else { m = smoothstep(0.42, 0.3, length(c)); col = uCream; }
+  col = mix(col, uCream, (1.0 - vLife) * 0.35);
+  float a = m * (1.0 - smoothstep(0.6, 1.0, vLife)) * 0.9;
   gl_FragColor = vec4(col * a, a);
 }`;
 
@@ -87,21 +135,32 @@ const BLIND_VERT = /* glsl */ `
 uniform float uPx;
 uniform float uIntensity;
 varying float vI;
+${GLARE_VERT_PARS}
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
+  ${GLARE_VERT_MAIN}
   vI = uIntensity;
   gl_PointSize = uPx * (1.1 + 0.6 * uIntensity) / -mv.z;
 }`;
 const BLIND_FRAG = /* glsl */ `
+uniform vec3 uCream;
+uniform vec3 uHoney;
 varying float vI;
+${GLARE_FRAG_PARS}
 void main() {
-  float d = length(gl_PointCoord - 0.5) * 2.0;
-  float disc = 1.0 - smoothstep(0.22, 0.28, d);
-  float halo = pow(max(0.0, 1.0 - d), 2.5);
-  vec3 warm = vec3(1.0, 0.82, 0.55);
-  float a = disc * (0.18 + 0.82 * vI) + halo * 0.55 * vI;
-  gl_FragColor = vec4(warm * a, a);
+  vec2 q = (gl_PointCoord - 0.5) * 2.0;
+  float d = length(q);
+  // bóng đèn tròn kem: thân đĩa, đốm highlight trên-trái, quầng mềm
+  float disc = 1.0 - smoothstep(0.24, 0.3, d);
+  float hi = 1.0 - smoothstep(0.03, 0.09, length(q - vec2(-0.08, -0.09)));
+  float halo = pow(max(0.0, 1.0 - d), 3.0);
+  vec3 c = mix(uHoney, uCream, 0.55 + 0.45 * vI);
+  float a = disc * (0.2 + 0.6 * vI) + halo * 0.4 * vI;
+  c = mix(c, vec3(1.0), hi * disc * 0.6);
+  a = max(a, hi * disc * 0.5);
+  a *= lyricDim();
+  gl_FragColor = vec4(c * a, a);
 }`;
 
 // ───────────── Khói thấp ─────────────
@@ -109,17 +168,21 @@ const HAZE_VERT = /* glsl */ `
 attribute float aLayer;
 varying vec2 vUv;
 varying float vLayer;
+${GLARE_VERT_PARS}
 void main() {
   vUv = uv;
   vLayer = aLayer;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  ${GLARE_VERT_MAIN}
 }`;
 const HAZE_FRAG = /* glsl */ `
 uniform float uTime;
 uniform vec3 uColor;
 uniform float uIntensity;
+uniform vec3 uColor2;
 varying vec2 vUv;
 varying float vLayer;
+${GLARE_FRAG_PARS}
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p) {
   vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -130,8 +193,11 @@ void main() {
   float v = n(p) * 0.6 + n(p * 2.1 + vec2(-uTime * 0.07, 0.0)) * 0.4;
   float edge = smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.75, vUv.x);
   float vert = smoothstep(0.0, 0.3, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
-  float a = v * edge * vert * uIntensity;
-  gl_FragColor = vec4(uColor * a, a);
+  // bông mềm: ngưỡng hoá nhẹ để khói thành cụm tròn
+  v = smoothstep(0.25, 0.85, v);
+  float a = v * edge * vert * uIntensity * lyricDim();
+  vec3 c = mix(uColor, uColor2, n(p * 0.7 + 3.1));
+  gl_FragColor = vec4(c * a, a);
 }`;
 
 export function createStageFx(scene: THREE.Scene): StageFx {
@@ -186,7 +252,12 @@ export function createStageFx(scene: THREE.Scene): StageFx {
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nSpark * 3), 3));
   sparkGeo.setAttribute('aSeed', new THREE.BufferAttribute(sSeed, 4));
   sparkGeo.setAttribute('aJet', new THREE.BufferAttribute(sJet, 1));
-  const sparkU = { uTime: { value: 0 }, uStart: { value: -1000 }, uPx: { value: 600 } };
+  const sparkU = {
+    uTime: { value: 0 }, uStart: { value: -1000 }, uPx: { value: 600 },
+    uHoney: { value: new THREE.Color(PAL.honey[500]).convertLinearToSRGB() },
+    uCream: { value: new THREE.Color(PAL.cream[500]).convertLinearToSRGB() },
+    uBerry: { value: new THREE.Color(PAL.berry[300]).convertLinearToSRGB() },
+  };
   const sparkMat = new THREE.ShaderMaterial({
     vertexShader: SPARK_VERT, fragmentShader: SPARK_FRAG, uniforms: sparkU,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
@@ -206,7 +277,11 @@ export function createStageFx(scene: THREE.Scene): StageFx {
   }
   const blindGeo = new THREE.BufferGeometry();
   blindGeo.setAttribute('position', new THREE.BufferAttribute(bPos, 3));
-  const blindU = { uPx: { value: 600 }, uIntensity: { value: 0 } };
+  const blindU = {
+    uPx: { value: 600 }, uIntensity: { value: 0 },
+    uCream: { value: new THREE.Color(PAL.cream[300]).convertLinearToSRGB() },
+    uHoney: { value: new THREE.Color(PAL.honey[300]).convertLinearToSRGB() },
+  };
   const blindMat = new THREE.ShaderMaterial({
     vertexShader: BLIND_VERT, fragmentShader: BLIND_FRAG, uniforms: blindU,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
@@ -248,7 +323,7 @@ export function createStageFx(scene: THREE.Scene): StageFx {
     hazeGeo.setAttribute('aLayer', new THREE.Float32BufferAttribute(lay, 1));
     hazeGeo.setIndex(idx);
   }
-  const hazeU = { uTime: { value: 0 }, uColor: { value: new THREE.Color() }, uIntensity: { value: 0.1 } };
+  const hazeU = { uTime: { value: 0 }, uColor: { value: new THREE.Color() }, uColor2: { value: new THREE.Color() }, uIntensity: { value: 0.1 } };
   const hazeMat = new THREE.ShaderMaterial({
     vertexShader: HAZE_VERT, fragmentShader: HAZE_FRAG, uniforms: hazeU,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
@@ -261,9 +336,10 @@ export function createStageFx(scene: THREE.Scene): StageFx {
 
   scene.add(group);
 
-  const laserCols = [new THREE.Color(0x30ff60), new THREE.Color(0x20e8ff), new THREE.Color(0xff30e0)];
-  const hazeCool = new THREE.Color(0x3a5cff);
-  const hazeWarm = new THREE.Color(0xff6a3a);
+  // shader thô (không colorspace_fragment) → giữ giá trị sRGB để ra đúng hex của bảng
+  const srgb = (hex: number) => new THREE.Color(hex).convertLinearToSRGB();
+  const laserCols = [srgb(PAL.mint[500]), srgb(PAL.soda[500]), srgb(PAL.berry[500])];
+  const laserTmp = new THREE.Color();
   let time = 0;
   let laserFade = 0;
   let prevHype = 0;
@@ -297,19 +373,27 @@ export function createStageFx(scene: THREE.Scene): StageFx {
       laserU.uSpread.value = 0.35 + 0.45 * (0.5 + 0.5 * Math.sin(beat * Math.PI * 0.25));
       laserU.uTilt.value = 0.18 * Math.sin(beat * Math.PI * 0.125);
       laserU.uPitch.value = 0.045 + 0.03 * Math.sin(beat * Math.PI * 0.5) + 0.01 * f.beatPulse;
-      laserU.uColor.value.copy(laserCols[Math.floor(beat / 8) % 3]!);
-      laserU.uIntensity.value = laserFade * (0.75 + 0.35 * f.beatPulse);
+      {
+        // mint → soda → berry, trộn mượt trong phách đầu mỗi đoạn 8 phách
+        const seg = Math.floor(beat / 8), u = Math.min(1, (beat - seg * 8));
+        laserTmp.copy(laserCols[(seg + 2) % 3]!).lerp(laserCols[seg % 3]!, u * u * (3 - 2 * u));
+        laserU.uColor.value.copy(laserTmp);
+      }
+      laserU.uIntensity.value = laserFade * (0.6 + 0.25 * f.beatPulse);
 
       // Blinder / strobe
-      let bi = 0.05;
-      if (f.hype > 0.7) bi += 0.45 * Math.min(1, (f.hype - 0.7) / 0.15) * f.beatPulse;
+      let bi = 0.06;
+      if (f.hype > 0.7) bi += 0.35 * Math.min(1, (f.hype - 0.7) / 0.15) * f.beatPulse;
+      // chớp pháo: một nhịp "pop" kem duy nhất, tắt mềm (không nhấp nháy 24 Hz, không trắng xoá)
       const sa = time - lastPyro;
-      if (sa >= 0 && sa < 0.5) bi = Math.floor(sa * 24) % 2 === 0 ? 1 : 0.05;
+      if (sa >= 0 && sa < 0.9) bi = Math.max(bi, 0.85 * (sa < 0.08 ? sa / 0.08 : Math.exp(-(sa - 0.08) * 4)));
       blindU.uIntensity.value = bi;
 
       // Khói
-      hazeU.uColor.value.copy(hazeCool).lerp(hazeWarm, Math.min(1, Math.max(0, f.hype)));
-      hazeU.uIntensity.value = 0.12 + 0.07 * f.hype;
+      const tri = hypeTriad(f.hype);
+      hazeU.uColor.value.copy(tri[0]!).convertLinearToSRGB();
+      hazeU.uColor2.value.copy(tri[1]!).convertLinearToSRGB();
+      hazeU.uIntensity.value = 0.1 + 0.06 * f.hype;
     },
     pyro,
     dispose() {

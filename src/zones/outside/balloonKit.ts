@@ -32,7 +32,7 @@ function lineWidthAt(ctx: CanvasRenderingContext2D, s: string, fs: number) {
 
 /** Chọn bố cục 1 hoặc 2 dòng cho chữ to nhất vừa hộp maxW × maxH. */
 export function layoutCheer(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxH: number): { lines: string[]; fs: number } {
-  const REF = 100, LH = 1.12;
+  const REF = 100, LH = 1.06;
   const one = Math.min(maxH * 0.62, REF * maxW / Math.max(1, lineWidthAt(ctx, text, REF)));
   let best = { lines: [text], fs: one };
   const words = text.split(' ');
@@ -140,10 +140,10 @@ export function drawRibbonBanner(ctx: CanvasRenderingContext2D, x0: number, y0: 
   ctx.beginPath(); ctx.moveTo(bl + 18 * u, bb - 20 * u); ctx.quadraticCurveTo((bl + br) / 2, bb - 20 * u + sag * 2, br - 18 * u, bb - 20 * u); ctx.stroke();
   ctx.setLineDash([]);
   // khẩu hiệu
-  const innerW = br - bl - 50 * u, innerH = bb - bt - 44 * u;
+  const innerW = br - bl - 50 * u, innerH = bb - bt - 22 * u;
   const { lines, fs } = layoutCheer(ctx, text, innerW, innerH);
   const cy = (bt + bb) / 2 + sag;
-  const lh = fs * 1.12;
+  const lh = fs * 1.06;
   const heart = band === PAL.berry[700] ? PAL_HEX.honey[500] : PAL_HEX.berry[500];
   lines.forEach((ln, i) => drawCheerLine(ctx, ln, (bl + br) / 2, cy + (i - (lines.length - 1) / 2) * lh, fs, heart));
   // nơ ở điểm treo
@@ -279,16 +279,16 @@ export function buildBalloon(out: THREE.BufferGeometry[], m: THREE.Matrix4, id: 
   for (const sx of [-1, 1]) {
     const skin = rgb(SKIN[Math.floor(rnd() * 3)]), hair = rgb(HAIR[Math.floor(rnd() * HAIR.length)]);
     const cloth = rgb(PAL[(['berry', 'soda', 'mint', 'grape', 'honey'] as const)[Math.floor(rnd() * 5)]][500]);
-    const hx = sx * 0.62, hy = BAL_DIM.basketY + 1.1, hz = 0.25;
-    const body = new THREE.CapsuleGeometry(0.34, 0.4, 3, 8); body.translate(hx, BAL_DIM.basketY + 0.45, hz);
+    const hx = sx * 0.6, hy = BAL_DIM.basketY + 1.45, hz = 0.5;
+    const body = new THREE.CapsuleGeometry(0.36, 0.5, 3, 8); body.translate(hx, BAL_DIM.basketY + 0.6, hz);
     pushPart(out, body, m, id, 1, cloth);
-    const head = new THREE.SphereGeometry(0.52, 16, 12); head.translate(hx, hy, hz);
+    const head = new THREE.SphereGeometry(0.6, 16, 12); head.translate(hx, hy, hz);
     pushPart(out, head, m, id, 3, skin);
-    const hairG = new THREE.SphereGeometry(0.56, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    const hairG = new THREE.SphereGeometry(0.645, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42);
     hairG.rotateX(-0.35); hairG.translate(hx, hy + 0.02, hz - 0.03);
     pushPart(out, hairG, m, id, 1, hair);
     // tay vẫy: dựng giơ lên-ra ngoài, shader hạ xuống khi Hype thấp
-    const sh = new THREE.Vector3(hx + sx * 0.32, BAL_DIM.basketY + 0.6, hz + 0.05);
+    const sh = new THREE.Vector3(hx + sx * 0.34, BAL_DIM.basketY + 0.85, hz + 0.05);
     const arm = new THREE.CapsuleGeometry(0.12, 0.62, 3, 6);
     arm.translate(0, 0.43, 0); arm.rotateZ(-sx * 0.55); arm.translate(sh.x, sh.y, sh.z);
     pushPart(out, arm, m, id, 4, skin, [0, 0, 1], [0, 0, 0, -1], [sh.x, sh.y, sh.z, sx]);
@@ -400,17 +400,17 @@ void main(){
     c = toon(base, vN);
     float du0 = fract(u + 0.5) - 0.5, du1 = fract(u) - 0.5;
     float du = abs(du0) < abs(du1) ? du0 : du1;
-    vec2 q = vec2(du * 6.2832 * 5.3, (v - 0.64) * ${PROFILE_LEN.toFixed(2)}) / 2.2;
+    vec2 q = vec2(du * 6.2832 * 5.6, (v - 0.47) * ${PROFILE_LEN.toFixed(2)}) / 2.2;
     float d = 1e3;
     if (vMot.w < 0.5) d = sdHeart(q + vec2(0.0, 0.5)) * 1.0;
     else if (vMot.w < 1.5) d = sdStar5(q, 0.85, 0.48) - 0.08;
     else d = sdBow(q * 1.05);
     c = mix(c, vec3(0.29, 0.247, 0.51), smoothstep(0.1, 0.07, d));
     c = mix(c, toon(vMot.rgb, vN), smoothstep(0.02, -0.01, d));
-    float hi = smoothstep(0.9, 0.93, dot(normalize(vN), normalize(vec3(-0.55, 0.62, 0.56))));
-    c = mix(c, vec3(1.0, 0.98, 0.95), hi * 0.85);
-    float glow = exp(-pow(v * 2.6, 2.0)) * (0.35 + 0.65 * uPulse) * (0.7 + 0.5 * uHype);
-    c += vec3(1.0, 0.6, 0.3) * glow * 0.55;
+    float hi = smoothstep(0.955, 0.965, dot(normalize(vN), normalize(vec3(-0.55, 0.62, 0.56))));
+    c = mix(c, vec3(1.0, 0.98, 0.95), hi * 0.9);
+    float glow = exp(-pow(v * 4.5, 2.0)) * (0.3 + 0.7 * uPulse) * (0.7 + 0.4 * uHype);
+    c = mix(c, c * vec3(1.25, 1.0, 0.7) + vec3(0.25, 0.12, 0.0), glow * 0.8);
   }
   gl_FragColor = vec4(c, 1.0);
 }`;

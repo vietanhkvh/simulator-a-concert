@@ -1,5 +1,5 @@
-// Khinh khí cầu mang băng rôn cổ vũ (khẩu hiệu fan), đặt SAU KHÁN ĐÀI XA NHẤT (vòng cung r ≈ 138–158 m quanh tâm
-// sân, ±44° quanh hướng nhìn của ca sĩ), đủ cao để cả vỏ lẫn băng rôn ló trên mép khán đài (≈ 36 m) từ mắt ca sĩ.
+// Khinh khí cầu mang băng rôn cổ vũ (khẩu hiệu fan), đặt SAU KHÁN ĐÀI XA NHẤT (vòng cung r ≈ 140–172 m quanh tâm
+// sân, ±40° quanh hướng nhìn của ca sĩ), đủ cao để cả vỏ lẫn băng rôn ló trên mép khán đài (≈ 36 m) từ mắt ca sĩ.
 // Phong cách "Kẹo đêm · chibi": vỏ mập 8 múi sọc 2 token + motif, viền INK_SKY (inverted hull gộp chung mesh),
 // tô 2 bậc + highlight, lửa ấm đập theo phách, giỏ tròn có 2 hành khách chibi (vẫy tay khi Hype cao).
 // 2 draw call: thân (vỏ+giỏ+người+dây+viền) và băng rôn (CanvasTexture atlas). Bập bềnh + đung đưa trong shader.
@@ -45,7 +45,7 @@ if (typeof window !== 'undefined' && (import.meta.env.DEV || location.search.inc
 }
 
 /** Phóng to so với kích thước gốc (để băng rôn đọc được từ xa ~150 m). */
-export const BALLOON_SCALE = 2.0;
+export const BALLOON_SCALE = 1.8;
 /** Băng rôn (m) và ô atlas tương ứng (px), tỉ lệ 16:9. */
 export const BANNER_W = 36, BANNER_H = 20.25, BANNER_PX_W = 1024, BANNER_PX_H = 576;
 /** Mép trên băng rôn so với tâm vỏ (m, đã scale): ngay dưới đáy giỏ. */
@@ -63,13 +63,15 @@ export const BALLOON_STYLES: BalloonStyle[] = [
 ];
 
 /** Góc (độ, 0 = phía xa đối diện sân khấu, + = bên phải ca sĩ) và bán kính quanh STADIUM_CENTRE. */
+// Hai quả rìa đặt xa hơn để cả cụm (vỏ + băng rôn) vừa khung hình ở rìa (phép chiếu phối cảnh kéo giãn rìa);
+// cách nhau ≥ 15° theo góc nhìn ca sĩ để băng rôn không che nhau.
 const ARC = [
-  { deg: -44, r: 146 }, { deg: -26, r: 156 }, { deg: -9, r: 140 }, { deg: 9, r: 152 }, { deg: 26, r: 140 }, { deg: 44, r: 154 },
+  { deg: -40, r: 172 }, { deg: -24.5, r: 150 }, { deg: -8.6, r: 140 }, { deg: 8.6, r: 140 }, { deg: 24.5, r: 150 }, { deg: 40, r: 172 },
 ];
 
 /**
  * Vị trí tâm vỏ của khinh khí cầu i: đủ cao để mép dưới dải chữ băng rôn nằm trên đường ngắm
- * từ mắt ca sĩ qua mép trên khán đài (+1 m), kẹp trong BALLOON_Y.
+ * từ mắt ca sĩ qua mép trên khán đài (+3 m), kẹp trong BALLOON_Y.
  */
 export function balloonPosition(deg: number, r: number, out = new THREE.Vector3()): THREE.Vector3 {
   const a = THREE.MathUtils.degToRad(deg);
@@ -77,7 +79,7 @@ export function balloonPosition(deg: number, r: number, out = new THREE.Vector3(
   const d = Math.hypot(x, z);
   const slope = (STANDS_TOP_Y - EYE_HEIGHT) / (STANDS_R_OUTER - STADIUM_CENTRE.z);
   const bandBottom = -BANNER_TOP + BANNER_H * BAND_BOTTOM_FRAC;
-  const y = THREE.MathUtils.clamp(EYE_HEIGHT + d * slope + bandBottom + 1, BALLOON_Y.min, BALLOON_Y.max);
+  const y = THREE.MathUtils.clamp(EYE_HEIGHT + d * slope + bandBottom + 3, BALLOON_Y.min, BALLOON_Y.max);
   return out.set(x, y, z);
 }
 

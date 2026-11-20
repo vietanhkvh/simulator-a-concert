@@ -46,7 +46,8 @@ export interface DevHost {
   meteors(count: number): void;
   entrancePreview(kind: DevEntrance): void;
   banners(lines: string[]): void;
-  views(): string[];
+  /** Góc máy (VIEW_MODES của khu sân trung tâm). */
+  views(): { id: string; label: string }[];
   setView(v: string): void;
   setMouseLook(on: boolean): void;
   isMouseLook(): boolean;
@@ -143,9 +144,6 @@ const isTyping = (t: EventTarget | null) => {
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const midiName = (m: number) => `${NOTE_NAMES[((Math.round(m) % 12) + 12) % 12]}${Math.floor(Math.round(m) / 12) - 1}`;
-const VIEW_LABEL: Record<string, string> = {
-  singer: 'Ca sĩ', flycam: 'Flycam', pit: 'Hố', crane: 'Cần cẩu', wide: 'Toàn cảnh', aerial: 'Trên cao',
-};
 const SECRET_LABEL: Record<string, string> = { ufo: 'UFO', rocket: 'Tên lửa', dragon: 'Rồng', jet: 'Máy bay phản lực' };
 const ENTRANCE_LABEL: Record<DevEntrance, string> = { jump: 'Nhảy trực thăng', lift: 'Bục nâng', cable: 'Thả cáp' };
 const ZONE_LABEL: Record<DevZone, string> = { outside: 'Ngoài sân', stands: 'Khán đài', arena: 'Sân trung tâm', glow: 'Điểm sáng chung' };
@@ -220,7 +218,7 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
       <div class="cs-dev-btns">${btn('data-act="meteors"', 'Mưa sao băng')}${entrances.map((k) => btn(`data-prev="${k}"`, `Xem ${ENTRANCE_LABEL[k]}`)).join('')}</div>
       <label class="cs-dev-row">Băng rôn <input type="text" class="cs-dev-banner" placeholder="khẩu hiệu; cách nhau bằng |">${btn('data-act="banner"', 'Đặt')}</label>`)}
     ${sec('cam', 'Camera', `
-      <div class="cs-dev-btns">${host.views().map((v) => btn(`data-view="${v}"`, VIEW_LABEL[v] ?? v)).join('')}
+      <div class="cs-dev-btns">${host.views().map((v) => btn(`data-view="${v.id}"`, v.label)).join('')}
         ${btn('data-act="look"', 'Chuột tự do')}</div>
       <div class="cs-dev-btns">${host.teleportTargets().map((t) => btn(`data-tp="${t}"`, `⇢ ${t}`)).join('')}</div>
       <label class="cs-dev-row">Độ nhạy nhìn <input type="range" class="cs-dev-look" min="3" max="200" step="1"><span class="cs-dev-lookv"></span></label>

@@ -1,5 +1,6 @@
 /** Màn bắt đầu / tải / kết quả / lỗi (P5). Luôn hiện dòng ghi công. */
 import type { Screens, ScreensOptions } from '../core/types';
+import './tokens.css';
 import './style.css';
 
 function esc(s: string): string {

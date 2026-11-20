@@ -10,7 +10,8 @@ export type SecretKind = 'ufo' | 'rocket' | 'dragon' | 'jet';
 export type EntrancePreview = 'jump' | 'lift' | 'cable';
 export type TestKind = 'cheer' | 'wave' | 'heart' | 'flash' | 'fireworks' | 'sing';
 export type VolumeKind = 'music' | 'crowd' | 'sing';
-export type ViewName = 'singer' | 'flycam' | 'pit' | 'crane' | 'wide';
+/** Id góc máy (danh sách thật lấy từ VIEW_MODES của khu sân trung tâm, truyền qua PauseMenuOptions.views). */
+export type ViewName = 'singer' | 'aerial' | 'flycam' | 'pit' | 'crane' | 'wide';
 
 export interface WorkshopSettings {
   /** null = theo mặc định (?latency= hoặc theo loại micro). */
@@ -82,6 +83,8 @@ export interface PauseMenuOptions {
   duration(): number;
   /** Mở bảng developer (chế độ developer, ui/devPanel.ts). */
   onDevPanel?(): void;
+  /** Danh sách góc máy (id + nhãn), mặc định VIEWS. */
+  views?: readonly { id: string; label: string }[];
 }
 
 export interface PauseMenu {
@@ -99,7 +102,7 @@ export interface PauseMenu {
 }
 
 const VIEWS: [ViewName, string][] = [
-  ['singer', 'Ca sĩ'], ['flycam', 'Flycam'], ['pit', 'Hố'], ['crane', 'Cần cẩu'], ['wide', 'Toàn cảnh'],
+  ['singer', 'Ca sĩ'], ['aerial', 'Trên không'], ['flycam', 'Flycam'], ['pit', 'Hố'], ['crane', 'Cần cẩu'], ['wide', 'Toàn cảnh'],
 ];
 const SECRET_LABEL: Record<string, string> = { ufo: 'UFO', rocket: 'Tên lửa', dragon: 'Rồng', jet: 'Máy bay phản lực' };
 const SECRETS: [SecretKind, string][] = [['ufo', 'UFO'], ['rocket', 'Tên lửa'], ['dragon', 'Rồng'], ['jet', 'Máy bay phản lực']];
@@ -167,7 +170,7 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
       <div class="cs-pm-note">Xem thử khi bài đang dừng; Enter để bỏ qua.</div>
     </section>
     <section class="cs-pm-sec"><h3>Góc máy &amp; điều khiển</h3>
-      <div class="cs-pm-btns">${VIEWS.map(([v, n]) => `<button type="button" class="cs-pm-btn" data-view="${v}">${n}</button>`).join('')}</div>
+      <div class="cs-pm-btns">${(o.views ? o.views.map((v) => [v.id, v.label] as const) : VIEWS).map(([v, n]) => `<button type="button" class="cs-pm-btn" data-view="${v}">${n}</button>`).join('')}</div>
       <button type="button" class="cs-pm-btn cs-pm-look">Chuột tự do: tắt</button>
       <div class="cs-pm-note">Di chuột để xoay, bấm M hoặc Esc để thoát. WASD để đi lại, kéo chuột để nhìn.</div>
     </section>

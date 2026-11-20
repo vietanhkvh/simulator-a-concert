@@ -29,6 +29,21 @@
   --cs-btn-bg: var(--cs-berry-500);
   --cs-btn-fg: var(--cs-night-700);
 
-  --cs-font-display: 'Baloo 2', system-ui, sans-serif;
+  /* Font: không tải file ngoài; 'Baloo 2' dùng nếu máy có, không thì rơi về font tròn của hệ thống. */
+  --cs-font-display: 'Baloo 2', 'Nunito', ui-rounded, 'SF Pro Rounded', 'Segoe UI', system-ui, sans-serif;
   --cs-font-body: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --cs-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Thang khoảng cách */
+  --cs-sp-1: 4px; --cs-sp-2: 8px; --cs-sp-3: 12px; --cs-sp-4: 16px; --cs-sp-5: 24px; --cs-sp-6: 32px;
+
+  /* Chữ (đã tính tương phản trên night-500, xem báo cáo) */
+  --cs-text: var(--cs-cream-500);
+  --cs-text-dim: var(--cs-grape-100);
+  --cs-text-mute: var(--cs-grape-300);
+  --cs-panel: rgba(20, 16, 43, 0.9);
+  --cs-panel-border: 2px solid var(--cs-grape-500);
+  --cs-focus: 2px solid var(--cs-cream-500);
+  --cs-hit: 36px;
+  --cs-glow-soft: 0 0 8px rgba(255, 244, 230, 0.3); /* tổng additive gần khung lời <= 0,35 */
 }

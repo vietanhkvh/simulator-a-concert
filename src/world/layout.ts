@@ -97,7 +97,7 @@ export const SKY_RADIUS = 185;
  * đủ để cả vỏ lẫn băng rôn treo dưới (~35 m) ló trên mép khán đài từ mắt ca sĩ.
  */
 export const BALLOON_Y = { min: 70, max: 84 } as const;
-/** Máy bay kéo băng rôn bay ngang sân ở độ cao/độ sâu này. */
-export const FLYBY = { y: 36, z: -30 } as const;
+/** Máy bay kéo băng rôn bay ngang sân ở độ cao/độ sâu này (thấp hơn cụm khinh khí cầu, lọt khung nhìn mặc định của ca sĩ). */
+export const FLYBY = { y: 38, z: -66 } as const;
 /** Tâm bầu trời phía trên sân nơi các sự kiện bí mật diễn ra (pháo hoa tên lửa, trái tim khói…). */
 export const SKY_SHOW_CENTRE = { x: 0, y: 50, z: -30 } as const;

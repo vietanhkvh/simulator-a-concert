@@ -239,7 +239,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
     body.rotateZ(-Math.PI / 2);
     addPart(body, id, 0, 1);
     const wing = new THREE.CapsuleGeometry(0.5, 3.4, 4, 8); // cánh ngắn, dày
-    wing.rotateX(Math.PI / 2); wing.scale(2.1, 0.55, 1); wing.translate(0.2, -0.45, 0);
+    wing.rotateX(Math.PI / 2); wing.scale(1.5, 0.6, 1); wing.translate(0.2, -0.45, 0);
     addPart(wing, id, 0, 0);
     const tail = new THREE.CapsuleGeometry(0.34, 1.5, 4, 8);
     tail.rotateX(Math.PI / 2); tail.scale(1.7, 0.6, 1); tail.translate(-2.1, 0.35, 0);

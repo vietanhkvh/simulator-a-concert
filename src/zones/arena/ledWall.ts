@@ -1,36 +1,75 @@
-// Khu SÂN TRUNG TÂM — phần sau lưng ca sĩ: tường LED (shader), cánh gà hai bên, dải đèn trang trí. 3 draw call.
-// (Trời đêm, khinh khí cầu, máy bay nằm ở zones/outside; khán đài ở zones/stands.)
+// Khu SÂN TRUNG TÂM — phần sau lưng ca sĩ (Kẹo đêm): tường LED (shader palette: gradient kẹo, bokeh, tim/sao bay, cột equaliser bo tròn),
+// khung vành bo + cột ống + cánh gà bo tròn, dải sáng theo Hype. 3 draw call.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
 import type { Uniforms } from '../../world/shared/glowPoints';
+import { PAL, hypeColors } from '../../world/style';
+import { GLSL_SHAPES, Toy, bakeToonShade, createToyMaterial, ringGeo, slabGeo, updateToyHype } from './stageStyle';
 
 const LED_FRAG = /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uLevel; uniform float uPhase;
+uniform vec3 uA; uniform vec3 uB; uniform vec3 uC;
 varying vec2 vUv;
-vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h*6.0+vec3(0.,4.,2.),6.0)-3.0)-1.0,0.,1.); return v*mix(vec3(1.),k,s); }
+${GLSL_SHAPES}
+const vec3 N5 = vec3(0.078, 0.063, 0.169);
+const vec3 N3 = vec3(0.165, 0.137, 0.314);
+const vec3 CREAM = vec3(1.0, 0.957, 0.9);
 void main(){
-  vec2 p = (vUv - 0.5) * vec2(2.6, 1.0);
+  vec2 q = (vUv - 0.5) * vec2(26.0, 10.0);
+  float sd = sdRoundRect(q, vec2(12.9, 4.9), 1.0);
+  if (sd > 0.0) discard;
   float t = uTime;
-  float r = length(p);
-  float a = atan(p.y, p.x);
-  // nền gradient chảy
-  float flow = sin(p.x*3.0 + t*0.7) + sin(p.y*4.0 - t*0.9 + p.x*1.5) + sin(r*6.0 - t*1.3 - uPhase*1.5);
-  float baseH = mix(0.58, 0.95, uHype) + flow*mix(0.04, 0.16, uHype) + vUv.x*mix(0.08,0.35,uHype);
-  vec3 col = hsv(fract(baseH), 0.85, 0.35 + 0.15*uLevel);
-  // tia sáng từ tâm (quay chậm), mạnh hơn khi hype
-  float rays = pow(0.5 + 0.5*sin(a*12.0 + t*0.6), 6.0) * smoothstep(1.4, 0.1, r);
-  col += hsv(fract(baseH + 0.33), 0.7, 1.0) * rays * (0.15 + 0.6*uHype);
-  // vòng xung theo beat
-  float ring = smoothstep(0.06, 0.0, abs(r - fract(uPhase)*1.6));
-  col += hsv(fract(baseH + 0.5), 0.6, 1.0) * ring * (0.25 + 0.75*uPulse) * (0.3 + uHype);
-  // lưới pixel LED
+  // nền kẹo: gradient mềm trôi
+  float fl = 0.5 + 0.5 * sin(q.x * 0.22 + t * 0.35) * sin(q.y * 0.4 - t * 0.27 + q.x * 0.1);
+  vec3 col = mix(N5, N3, 0.35 + 0.4 * vUv.y);
+  col = mix(col, uA * 0.8, ss(0.15, 1.0, fl) * (0.5 + 0.4 * uHype));
+  col = mix(col, uB * 0.7, ss(0.1, 1.0, 1.0 - fl) * (0.3 + 0.5 * vUv.y) * (0.4 + 0.4 * uHype));
+  // vòng xung mềm theo beat
+  float r = length(q * vec2(0.8, 1.2));
+  float ring = ss(0.7, 0.0, abs(r - fract(uPhase * 0.25) * 16.0));
+  col += mix(uB, uC, 0.5) * ring * (0.1 + 0.25 * uPulse) * (0.4 + uHype);
+  // bokeh
+  for (int i = 0; i < 18; i++) {
+    float fi = float(i);
+    float yy = fract(hash11(fi + 3.0) + t * (0.02 + 0.03 * hash11(fi)) * (0.5 + uHype));
+    vec2 c = vec2((hash11(fi + 9.0) - 0.5) * 25.0, (yy - 0.5) * 11.0);
+    float rr = 0.4 + 0.8 * hash11(fi + 5.0);
+    float m = ss(rr, rr * 0.25, length(q - c));
+    col = mix(col, mix(uB, uC, hash11(fi + 1.0)) , m * 0.22);
+  }
+  // tim và sao lơ lửng
+  for (int i = 0; i < 10; i++) {
+    float fi = float(i);
+    float yy = fract(hash11(fi + 21.0) + t * (0.035 + 0.02 * hash11(fi + 2.0)) * (0.5 + uHype));
+    vec2 c = vec2((hash11(fi + 31.0) - 0.5) * 24.0 + sin(t * 0.7 + fi) * 0.5, (yy - 0.5) * 11.0);
+    float sz = 0.8 + 0.6 * hash11(fi + 7.0) + 0.15 * uPulse;
+    vec2 hc = (q - c) / sz;
+    float sdm = (mod(fi, 2.0) < 1.0) ? sdHeart(hc) * sz : (sdStar5(hc, 1.0, 0.5) - 0.14) * sz;
+    vec3 mc = (mod(fi, 2.0) < 1.0) ? mix(uA, CREAM, 0.15) : mix(uC, CREAM, 0.2);
+    col = mix(col, mc * (0.75 + 0.3 * uPulse), ss(0.03, -0.03, sdm) * 0.8);
+    col = mix(col, CREAM, ss(0.03, -0.03, abs(sdm + 0.03) - 0.03) * 0.5);
+  }
+  // cột equaliser bo tròn dọc mép dưới
+  for (int c = 0; c < 26; c++) {
+    float fc = float(c);
+    float cx = (fc - 12.5) * 0.98;
+    float rnd = hash11(fc * 1.7 + floor(t * (2.0 + 4.0 * uHype)) * 0.37);
+    float h = clamp(0.5 + 3.0 * uLevel * (0.25 + rnd) + 1.6 * uPulse * rnd * (0.3 + uHype), 0.4, 4.2);
+    vec2 pa = vec2(cx, -4.1), pb = vec2(cx, -4.1 + h);
+    vec2 pp = q - pa, ba = pb - pa;
+    float tt = clamp(dot(pp, ba) / dot(ba, ba), 0.0, 1.0);
+    float d = length(pp - ba * tt) - 0.3;
+    vec3 bc = mix(uA, uB, fc / 25.0);
+    bc = mix(bc, uC, ss(0.6, 1.0, (q.y + 4.1) / max(h, 0.1)) * 0.7);
+    float inside = ss(0.02, -0.02, d);
+    col = mix(col, bc * (0.7 + 0.3 * uPulse), inside * 0.9);
+    col = mix(col, CREAM, ss(0.02, -0.02, length(q - vec2(cx - 0.1, -4.1 + h - 0.18)) - 0.07) * inside * 0.8);
+  }
+  // lưới điểm LED rất nhẹ + viền tối mép bo
   vec2 g = fract(vUv * vec2(260.0, 100.0));
-  float pix = smoothstep(0.0, 0.18, g.x) * smoothstep(0.0, 0.18, g.y) * smoothstep(1.0, 0.82, g.x) * smoothstep(1.0, 0.82, g.y);
-  col *= 0.72 + 0.28*pix;
-  col *= 0.75 + 0.35*uPulse*uHype;
-  // viền tối mép
-  col *= smoothstep(0.0, 0.03, vUv.y) * smoothstep(1.0, 0.97, vUv.y);
+  col *= 0.9 + 0.1 * ss(0.0, 0.2, g.x) * ss(0.0, 0.2, g.y);
+  col *= 0.85 + 0.2 * uPulse * uHype;
+  col = mix(col, uA * 0.9 + 0.12, ss(-0.18, -0.05, sd) * 0.85);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -38,10 +77,11 @@ void main(){
 export function createLedWall(scene: THREE.Scene, uniforms: Uniforms) {
   const disposables: { dispose(): void }[] = [];
 
-  // Tường LED
+  // Tường LED (góc bo tròn bằng discard)
   const ledGeo = new THREE.PlaneGeometry(26, 10);
+  const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uC: { value: new THREE.Vector3() } };
   const ledMat = new THREE.ShaderMaterial({
-    uniforms,
+    uniforms: { ...uniforms, ...own },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: LED_FRAG,
     fog: false,
@@ -52,56 +92,46 @@ export function createLedWall(scene: THREE.Scene, uniforms: Uniforms) {
   scene.add(led);
   disposables.push(ledGeo, ledMat);
 
-  // Cánh gà + khung truss tối (1 mesh)
-  const dark: THREE.BufferGeometry[] = [];
-  const box = (w: number, h: number, d: number, x: number, y: number, z: number, ry = 0) => {
-    const g = new THREE.BoxGeometry(w, h, d);
-    if (ry) g.rotateY(ry);
-    g.translate(x, y, z);
-    dark.push(g.toNonIndexed());
-    g.dispose();
-  };
-  box(28, 0.6, 0.6, 0, 10.5, 3.4); // xà trên tường LED
-  box(28, 0.3, 0.4, 0, 0.0, 3.4); // chân tường
+  // Nền sau tường + cột ống + cánh gà bo tròn (1 mesh toy)
+  const toy = new Toy();
+  toy.add(slabGeo(27.4, 11.2, 0.5, 1.7, 0.12), PAL.night[300], false, new THREE.Matrix4().makeTranslation(0, 5.2, 3.82));
   for (const sx of [-1, 1]) {
-    box(0.5, 13, 0.5, sx * 13.3, 6.2, 3.4); // cột khung
-    box(6, 12, 0.3, sx * 16.2, 6, 3.2, -sx * 0.5); // cánh gà xiên
-    box(0.3, 12, 9, sx * 13.9, 6, -1); // tường cánh hai bên sân khấu
-    box(0.4, 0.4, 9, sx * 13.3, 12.4, -1); // xà dọc
+    toy.tubeBands(new THREE.Vector3(sx * 13.9, -0.1, 3.4), new THREE.Vector3(sx * 13.9, 12.8, 3.4), 0.5, PAL.night[300], PAL.grape[500], 0.26, 1.4);
+    toy.sphere(0.36, sx * 13.9, 12.85, 3.4, PAL.cream[500]);
+    toy.star(0.7, 0.28, sx * 13.9, 13.9, 3.4, PAL.honey[500], { ry: Math.PI, trim: true });
+    toy.box(6, 12, 0.3, sx * 16.2, 6, 3.2, PAL.night[300], { ry: -sx * 0.5, r: 0.14 }); // cánh gà xiên
+    toy.box(0.3, 12, 9, sx * 13.9, 6, -1, PAL.night[300], { r: 0.14 }); // tường cánh hai bên sân khấu
+    toy.tube(new THREE.Vector3(sx * 13.55, 12.3, -5.4), new THREE.Vector3(sx * 13.55, 12.3, 3.3), 0.36, PAL.grape[500]); // xà dọc
+    // váy xếp cung dọc tường cánh (mặt trong)
+    for (let k = 0; k < 9; k++) toy.sphere(1, sx * 13.7, 11.5, -5.0 + k * 1.0, k & 1 ? PAL.grape[700] : PAL.night[500], {}, 0.2, 0.55, 0.5);
   }
-  const darkGeo = mergeGeometries(dark);
-  const darkMat = new THREE.MeshBasicMaterial({ color: 0x15122c });
-  scene.add(new THREE.Mesh(darkGeo, darkMat));
-  disposables.push(darkGeo, darkMat);
-  dark.forEach((g) => g.dispose());
+  const darkGeo = toy.build();
+  const toyM = createToyMaterial();
+  scene.add(new THREE.Mesh(darkGeo, toyM.mat));
+  disposables.push(darkGeo, toyM);
 
-  // Dải đèn trang trí trên cánh gà/tường bên (1 mesh, màu chạy theo hype)
-  const acc: THREE.BufferGeometry[] = [];
+  // Dải đèn: khung vành bo quanh tường + ống sáng trên tường bên (1 mesh, màu chạy theo hype)
+  const acc = new Toy();
+  acc.add(ringGeo(26.8, 10.8, 0.5, 1.5, 0.28), 0xffffff, false, new THREE.Matrix4().makeTranslation(0, 5.2, 3.4));
   for (const sx of [-1, 1]) {
-    for (let i = 0; i < 6; i++) {
-      const g = new THREE.BoxGeometry(0.06, 0.06, 8.6);
-      g.translate(sx * 13.72, 1.2 + i * 1.9, -1);
-      acc.push(g.toNonIndexed()); g.dispose();
-    }
-    for (let i = 0; i < 4; i++) {
-      const g = new THREE.BoxGeometry(0.08, 11, 0.08);
-      g.translate(sx * (13.3 + 0.27), 6.2, 3.1 - i * 0.0);
-      if (i > 0) { g.dispose(); continue; }
-      acc.push(g.toNonIndexed()); g.dispose();
-    }
+    for (let i = 0; i < 6; i++) acc.tube(new THREE.Vector3(sx * 13.62, 1.2 + i * 1.9, -4.9), new THREE.Vector3(sx * 13.62, 1.2 + i * 1.9, 3.2), 0.1, 0xffffff);
   }
-  const g0 = new THREE.BoxGeometry(26.4, 0.08, 0.08); g0.translate(0, 10.17, 3.08); acc.push(g0.toNonIndexed()); g0.dispose();
-  const g9 = new THREE.BoxGeometry(26.4, 0.08, 0.08); g9.translate(0, 0.17, 3.08); acc.push(g9.toNonIndexed()); g9.dispose();
-  const accGeo = mergeGeometries(acc);
-  const accMat = new THREE.MeshBasicMaterial({ color: 0xff3fa8, fog: false });
+  const accGeo = bakeToonShade(acc.build());
+  const accMat = new THREE.MeshBasicMaterial({ color: PAL.berry[500], vertexColors: true, fog: false });
   scene.add(new THREE.Mesh(accGeo, accMat));
   disposables.push(accGeo, accMat);
-  acc.forEach((g) => g.dispose());
 
   const c = new THREE.Color();
   return {
     update(f: FrameState, t: number) {
-      accMat.color.copy(c.setHSL((0.6 + f.hype * 0.35 + t * 0.03) % 1, 0.9, 0.45 + 0.2 * f.beatPulse));
+      updateToyHype(f.hype);
+      const hc = hypeColors(f.hype);
+      own.uA.value.set(hc.primary[0], hc.primary[1], hc.primary[2]);
+      own.uB.value.set(hc.secondary[0], hc.secondary[1], hc.secondary[2]);
+      own.uC.value.set(hc.accent[0], hc.accent[1], hc.accent[2]);
+      c.setRGB(hc.primary[0], hc.primary[1], hc.primary[2], THREE.SRGBColorSpace);
+      accMat.color.copy(c).multiplyScalar(0.85 + 0.35 * f.beatPulse);
+      void t;
     },
     dispose() { disposables.forEach((d) => d.dispose()); },
   };

@@ -1,32 +1,70 @@
-// Bảng màu dùng chung giữa lights.ts và các đồ trang trí sân khấu (stageDeco*.ts).
+// Bảng màu đèn dùng chung giữa lights.ts và các đồ trang trí sân khấu (stageDeco*.ts).
+// Adapter mỏng trên 3 trạng thái Hype dùng chung (src/world/style: cool 0–40 %, warm 40–80 %, vivid 80–100 %),
+// nên đèn, lightstick, khán đài và trời luôn cùng một bảng. Đa dạng = mỗi nhóm đèn lấy vai trò
+// primary / secondary / accent khác nhau và vai trò chạy đuổi theo phách.
 import * as THREE from 'three';
+import { HYPE_STAGES, PAL, hypeColors, hypeMix, rgbToColor, toColor } from '../../world/style';
 
-const hex = (h: number[]) => h.map((x) => new THREE.Color(x));
-export const PALETTES: THREE.Color[][] = [
-  hex([0x00e5ff, 0xff1fb4, 0x00e5ff, 0xff1fb4, 0x7a5cff]), // cyan + magenta
-  hex([0xffb000, 0xff2a2a, 0xff6a00, 0xffd000, 0xff1f5a]), // hổ phách + đỏ
-  hex([0x9dff00, 0x8a2bff, 0x30ff8a, 0xc23bff, 0xe6ff3a]), // chanh + tím
-  [], // cầu vồng chase (tính bằng HSL)
-  hex([0xff3d7f, 0x3d7bff, 0xffe14d, 0x2bffc6, 0xb04dff]), // pop nhiều màu
-];
-export const COOL = hex([0x2a5bff, 0x6a3dff, 0x1fb4ff, 0x4a6bff]);
+/** Trạng thái hiện tại; lights.ts cập nhật mỗi frame (hype, beat). */
+export const livePal = { hype: 0, beat: 0, chase: 0 };
 
-export function palColor(p: number, k: number, beat: number, out: THREE.Color) {
-  const pal = PALETTES[p]!;
-  if (pal.length === 0) return out.setHSL((k * 0.11 + beat * 0.06) % 1, 1, 0.55);
-  return out.copy(pal[((k % pal.length) + pal.length) % pal.length]!);
+// 3 màu Hype (THREE.Color tuyến tính, như mọi màu khác của three) — tính lại khi hype đổi.
+const tri: THREE.Color[] = [new THREE.Color(), new THREE.Color(), new THREE.Color()];
+/** Màu thứ 4 chỉ xuất hiện khi rực rỡ: kem chớp (thay trắng tinh). */
+const CREAM = toColor(PAL.cream[300]);
+const SODA = toColor(PAL.soda[500]);
+let triHype = -1;
+
+function refresh(h: number) {
+  if (Math.abs(h - triHype) < 0.002) return;
+  triHype = h;
+  const c = hypeColors(h);
+  rgbToColor(c.primary, tri[0]);
+  rgbToColor(c.secondary, tri[1]);
+  rgbToColor(c.accent, tri[2]);
+  // ở mức rực rỡ vẫn giữ một chút soda trong vai accent để bảng không ngả hết về nóng
+  const w = hypeMix(h);
+  tri[2]!.lerp(SODA, 0.35 * w[2]);
 }
 
-/** Trạng thái palette hiện tại; lights.ts cập nhật mỗi frame. */
-export const livePal = { pCur: 0, pPrev: 4, mix: 1, vivid: 0.3, beat: 0 };
+/** Bộ 3 màu Hype hiện tại [primary, secondary, accent] (đừng sửa). */
+export function hypeTriad(h = livePal.hype): readonly THREE.Color[] {
+  refresh(Math.min(1, Math.max(0, h)));
+  return tri;
+}
 
+/** Tỉ lệ đèn bật theo guide 2.3 (25 % / 60 % / 100 %), trộn mượt. */
+export function lightFraction(h: number): number {
+  const w = hypeMix(h);
+  return w[0] * HYPE_STAGES[0].lightFraction + w[1] * HYPE_STAGES[1].lightFraction + w[2] * HYPE_STAGES[2].lightFraction;
+}
+
+// vai trò cho chỉ số k: primary nhiều nhất (≈ 60/30/10 theo guide), accent ít
+const ROLE = [0, 1, 0, 2, 1, 0, 1, 0] as const;
 const A = new THREE.Color();
-const B = new THREE.Color();
-export function liveColor(k: number, out: THREE.Color, minVivid = 0.3) {
-  palColor(livePal.pPrev, k, livePal.beat, B);
-  palColor(livePal.pCur, k, livePal.beat, A);
-  out.copy(B).lerp(A, livePal.mix);
-  A.copy(COOL[((k % 4) + 4) % 4]!);
-  out.lerpColors(A, out, Math.max(livePal.vivid, minVivid));
+
+/**
+ * Màu cho đèn thứ k: vai trò chạy đuổi theo phách (mỗi 4 phách dịch 1 bước, chỉ khi hype ≥ 40 %),
+ * trộn mượt giữa hai bước. Ở mức rực rỡ, nhịp mạnh thỉnh thoảng chớp kem.
+ */
+export function palColor(k: number, out: THREE.Color, beat = livePal.beat, hype = livePal.hype): THREE.Color {
+  const t = hypeTriad(hype);
+  const w = hypeMix(hype);
+  const moving = 1 - w[0];
+  const ph = (beat / 4) * moving + livePal.chase;
+  const step = Math.floor(ph);
+  const f = ph - step;
+  const kk = ((k % 8) + 8) % 8;
+  const r0 = ROLE[(kk + step) % 8]!, r1 = ROLE[(kk + step + 1) % 8]!;
+  const s = f * f * (3 - 2 * f);
+  out.copy(t[r0]!).lerp(t[r1]!, s * s);
+  // kem chớp nhẹ ở accent khi rực rỡ (không trắng tinh)
+  if (w[2] > 0 && r0 === 2) out.lerp(A.copy(CREAM), 0.25 * w[2]);
   return out;
+}
+
+/** Giữ chữ ký cũ: màu trực tiếp của đèn k. minVivid giữ lại cho tương thích (bảng mới luôn đủ màu). */
+export function liveColor(k: number, out: THREE.Color, minVivid = 0.3) {
+  void minVivid;
+  return palColor(k, out);
 }

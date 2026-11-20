@@ -128,7 +128,7 @@ void main(){
   float x = s * 0.07 + t * 0.25 + vId * 13.0;
   // tia mềm, ít gắt hơn (kẹo)
   float rays = n1(x * 2.2) * 0.55 + n1(x * 5.1 - t * 0.6) * 0.3 + n1(x * 11.0 + t * 1.2) * 0.15;
-  rays = 0.35 + 0.9 * rays * rays;
+  rays = 0.45 + 0.75 * rays * rays;
   float big = smoothstep(0.15, 0.7, n1(s * 0.013 - t * 0.05 + vId * 5.0)) * 0.8 + 0.2;
   float bottom = smoothstep(0.0, 0.08, y);
   float body = exp(-y * 2.2) * 0.85 + 0.15;
@@ -144,7 +144,7 @@ void main(){
   c = mix(c, mix(c1, c2, smoothstep(0.45, 0.8, k)), hi);
   c = mix(c, mix(c, c3, smoothstep(0.75, 1.1, k)), hi);
   float edge = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
-  float amp = 0.9 * pow(uAur, 0.6) * (0.8 + 0.25 * hi) * (1.0 + 0.2 * uPulse * hi);
+  float amp = 1.1 * pow(uAur, 0.6) * (0.8 + 0.25 * hi) * (1.0 + 0.2 * uPulse * hi);
   gl_FragColor = vec4(c * I * edge * amp, 1.0);
 }`;
 

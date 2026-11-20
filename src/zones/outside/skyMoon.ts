@@ -26,14 +26,14 @@ function crescentLayer(fill: string, cx: number, cy: number, r: number, grow: nu
 }
 
 function drawMoon(g: CanvasRenderingContext2D, x0: number, awake: boolean) {
-  const S = MOON_CELL, cx = x0 + S * 0.5, cy = S * 0.5, r = S * 0.4;
+  const S = MOON_CELL, cx = x0 + S * 0.5, cy = S * 0.5, r = S * 0.37;
   g.save();
   g.beginPath();
   g.rect(x0, 0, S, S);
   g.clip();
   // quầng mờ quanh hình khuyết
   g.save();
-  g.filter = `blur(${S * 0.05}px)`;
+  g.filter = `blur(${S * 0.03}px)`;
   g.globalAlpha = 0.45;
   g.drawImage(crescentLayer(col(PAL.grape[300]), S * 0.5, cy, r, S * 0.03), x0, 0);
   g.restore();

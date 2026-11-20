@@ -1,5 +1,6 @@
 /** HUD (P5): điểm, thanh Hype, trạng thái micro / thông báo. Chỉ cập nhật khi giá trị đổi. */
 import type { Hud } from '../core/types';
+import './tokens.css';
 import './style.css';
 
 function div(cls: string, parent?: HTMLElement): HTMLDivElement {
@@ -62,7 +63,7 @@ export function createHud(root: HTMLElement): Hud {
       if (Math.abs(h - lastHype) > 0.002) {
         lastHype = h;
         hypeFill.style.transform = `scaleX(${h.toFixed(3)})`;
-        hypeFill.style.filter = `hue-rotate(${(-h * 40).toFixed(0)}deg)`;
+        hypeBox.dataset.stage = h >= 0.8 ? '2' : h >= 0.4 ? '1' : '0'; // lạnh / ấm dần / rực (STYLE_GUIDE 2.3)
         const nowHot = h > 0.7;
         if (nowHot !== hot) {
           hot = nowHot;

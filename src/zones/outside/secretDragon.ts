@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
-import { INK_SKY, OUTLINE, PAL, SECRET_CORE, SECRET_RIM, hexToRgb, popScale, shadowOf } from '../../world/style';
+import { INK, INK_SKY, OUTLINE, PAL, SECRET_CORE, SECRET_RIM, hexToRgb, mixHex, popScale, shadowOf } from '../../world/style';
 import { type SecretAct, disposeTree, makePoints, pxScale, seededRnd } from './secretShared';
 import { createSecretHalo } from './secretHalo';
 import { DRAGON_GLSL, DRAGON_PTS_FRAG } from './secretDragonShaders';
@@ -327,7 +327,7 @@ export function createDragon(scene: THREE.Scene): SecretAct {
   const rnd = seededRnd(9001);
   const cols = [PAL.berry[500], PAL.berry[300], PAL.honey[500], PAL.honey[300], PAL.mint[500], PAL.soda[300], PAL.cream[100], PAL.peach[300]];
   const pts = makePoints(2600, DRAGON_GLSL.pts, ptsU, (i, s, c) => {
-    s.set([rnd(), rnd(), rnd(), rnd()], i * 4);
+    s.set([rnd(), rnd(), rnd(), i < 8 ? 0.975 : i < 10 ? 0.99 : rnd() * 0.97], i * 4);
     c.set(hexToRgb(cols[Math.floor(rnd() * cols.length)]!), i * 3);
   }, { additive: false, frag: DRAGON_PTS_FRAG });
   pts.renderOrder = 7;
@@ -347,8 +347,8 @@ export function createDragon(scene: THREE.Scene): SecretAct {
     start() {
       root.visible = true;
       const way = WAYS[Math.floor(Math.random() * WAYS.length)]!;
-      const slots = [...way, INK_SKY === PAL.night[100] ? 0x2b1d5c : INK_SKY, PAL.berry[700], SECRET_CORE, PAL.cream[100]];
-      slots.forEach((hex, k) => { v3(hex, uCol[k]); v3(shadowOf(hex), uSh[k]); });
+      const slots = [...way, INK, PAL.berry[700], SECRET_CORE, PAL.cream[100]];
+      slots.forEach((hex, k) => { v3(hex, uCol[k]); v3(mixHex(shadowOf(hex), hex, 0.3), uSh[k]); });
       blinks = [];
       for (let t = 1 + Math.random() * 2; t < D; t += 3 + Math.random() * 2) blinks.push(t);
     },

@@ -160,7 +160,7 @@ const vec3 L = normalize(vec3(0.35, 0.85, 0.4));
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 toy(vec3 base, vec3 sh, vec3 n, vec3 v) {
   float ndl = dot(n, L) * 0.5 + 0.5;
-  vec3 c = mix(sh, base, smoothstep(0.4, 0.52, ndl));
+  vec3 c = mix(sh, base, smoothstep(0.3, 0.42, ndl));
   float hi = smoothstep(0.955, 0.972, dot(n, normalize(L + v)));
   c = mix(c, ${g3(PAL.cream[100])}, hi * 0.4);
   float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
@@ -199,7 +199,7 @@ void main() {
     float belly = smoothstep(-0.32, -0.5, ln.y);
     float line = 1.0 - smoothstep(0.05, 0.1, abs(fract(vSeg * 1.4) - 0.5));
     base = mix(base, mix(uCol[1], uSh[1], line * 0.6), belly);
-    sh = mix(sh, uSh[1], belly);
+    sh = mix(sh, mix(uSh[1], uCol[1], 0.5), belly);
   }
   c = toy(base, sh, n, v);
 #else

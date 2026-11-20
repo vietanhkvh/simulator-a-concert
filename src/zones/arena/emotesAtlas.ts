@@ -1,6 +1,8 @@
 // Atlas biểu tượng cảm xúc vẽ bằng canvas 2D (không dùng font emoji): ô 128 px, gradient,
 // viền tối, highlight và quầng sáng (shadowBlur). 8 cột × 5 hàng = 40 ô, dùng 34.
 
+import { INK_HEX, PAL_HEX } from '../../world/style';
+
 export const ATLAS_COLS = 8;
 export const ATLAS_ROWS = 5;
 export const CELL = 128;
@@ -46,17 +48,24 @@ export const ICON_COUNT = 34;
 
 /** Màu chủ đạo mỗi icon (0..1) cho vệt sáng / quầng. */
 export const ICON_TINT: [number, number, number][] = [
-  [1, 0.2, 0.4], [1, 0.45, 0.8], [1, 0.6, 0.3], [1, 0.8, 0.3], [1, 0.3, 0.55],
-  [1, 0.85, 0.3], [1, 0.85, 0.3], [1, 0.8, 0.2], [1, 0.8, 0.3], [1, 0.85, 0.2],
-  [0.6, 0.9, 1], [0.2, 0.9, 1], [1, 0.35, 0.9], [1, 0.8, 0.3], [1, 0.5, 0.1],
-  [1, 0.8, 0.4], [1, 0.8, 0.4], [1, 0.4, 0.6], [1, 0.7, 0.3], [0.7, 0.8, 1],
-  [1, 0.8, 0.2], [0.8, 0.4, 1], [1, 0.25, 0.25], [1, 0.95, 0.3], [1, 0.2, 0.3],
-  [1, 0.25, 0.45], [1, 0.8, 0.2], [0.9, 0.5, 1], [0.8, 0.4, 1], [1, 0.25, 0.4],
-  [1, 0.6, 0.15], [1, 0.8, 0.2], [0.2, 0.9, 1], [1, 0.4, 0.75],
+  [1, 0.37, 0.66], [1, 0.58, 0.77], [1, 0.6, 0.42], [1, 0.83, 0.35], [1, 0.37, 0.66],
+  [1, 0.83, 0.35], [1, 0.83, 0.35], [1, 0.83, 0.35], [1, 0.83, 0.35], [1, 0.83, 0.35],
+  [0.56, 0.91, 1], [0.27, 0.85, 1], [0.55, 0.42, 1], [1, 0.83, 0.35], [1, 0.6, 0.42],
+  [1, 0.83, 0.35], [1, 0.83, 0.35], [1, 0.37, 0.66], [1, 0.83, 0.35], [0.71, 0.63, 1],
+  [1, 0.83, 0.35], [1, 0.37, 0.66], [1, 0.37, 0.66], [1, 0.83, 0.35], [1, 0.37, 0.66],
+  [1, 0.37, 0.66], [1, 0.83, 0.35], [0.55, 0.42, 1], [0.55, 0.42, 1], [1, 0.37, 0.66],
+  [1, 0.6, 0.42], [1, 0.83, 0.35], [0.27, 0.85, 1], [1, 0.58, 0.77],
 ];
 
 type G = CanvasRenderingContext2D;
-const INK = '#1c0629';
+// Màu lấy từ palette "Kẹo đêm"; viền ink thống nhất (STYLE_GUIDE 2, 6).
+const C = PAL_HEX;
+const INK = INK_HEX;
+/** '#rrggbb' + alpha → 'rgba(...)' cho quầng sáng / má hồng. */
+const al = (hex: string, a: number): string => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+};
 const FONT = '"Segoe UI", "Helvetica Neue", Arial, "Noto Sans", "DejaVu Sans", "Liberation Sans", sans-serif';
 
 export function drawEmoteAtlas(): HTMLCanvasElement {
@@ -98,7 +107,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
   const shine = (x: number, y: number, rx: number, ry: number, rot: number, a = 0.8) => {
     g.beginPath();
     g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
-    g.fillStyle = `rgba(255,255,255,${a})`;
+    g.fillStyle = al(C.cream[100], a);
     g.fill();
   };
   const heartPath = (cx: number, cy: number, s: number) => () => {
@@ -130,11 +139,11 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.closePath();
   };
   const face = () => {
-    shape(() => g.arc(0, 0, 47, 0, Math.PI * 2), rad(-14, -18, 70, ['#fff7a8', '#ffd23a', '#f59a00']), 'rgba(255,200,40,0.9)');
+    shape(() => g.arc(0, 0, 47, 0, Math.PI * 2), rad(-14, -18, 70, [C.honey[100], C.honey[500], C.honey[700]]), al(C.honey[500], 0.85));
     shine(-20, -28, 13, 7, -0.5, 0.55);
   };
   const blush = () => {
-    g.fillStyle = 'rgba(255,90,120,0.45)';
+    g.fillStyle = al(C.berry[500], 0.55);
     g.beginPath();
     g.ellipse(-28, 12, 9, 5, 0, 0, 7);
     g.ellipse(28, 12, 9, 5, 0, 0, 7);
@@ -144,7 +153,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.lineWidth = w;
     g.strokeStyle = INK;
   };
-  const SKIN = () => lin(0, -50, 0, 50, ['#ffe9a6', '#ffc94a', '#f0a020']);
+  const SKIN = () => lin(0, -50, 0, 50, [C.honey[300], C.honey[500], C.honey[700]]);
   /** Bàn tay xòe (lòng bàn tay + 4 ngón + ngón cái) ở gốc tọa độ, cao ~100*s. */
   const openHand = (x: number, y: number, s: number, rot: number, flip: boolean) => {
     g.save();
@@ -156,10 +165,10 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       for (let k = 0; k < 4; k++) g.roundRect(-30 + k * 14.5, -52 + (k === 1 || k === 2 ? -6 : 4) + (k === 3 ? 8 : 0), 12, 56, 6);
       g.ellipse(-34, 22, 10, 21, 0.85, 0, Math.PI * 2);
     };
-    shape(p, SKIN(), 'rgba(255,190,60,0.8)', 7);
+    shape(p, SKIN(), al(C.honey[500], 0.8), 7);
     g.restore();
   };
-  const fist = (pathExtra: () => void, glow = 'rgba(255,190,60,0.8)') => {
+  const fist = (pathExtra: () => void, glow = al(C.honey[500], 0.8)) => {
     shape(() => {
       g.roundRect(-30, -8, 58, 56, 16);
       pathExtra();
@@ -200,39 +209,39 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.lineWidth = 6;
     g.strokeStyle = INK;
     g.strokeText(text, x0, ty);
-    g.fillStyle = '#ffffff';
+    g.fillStyle = C.cream[100];
     g.fillText(text, x0, ty);
-    if (heartAfter) heart(x0 + tw + hw / 2 + 2, -8, 0.3, '#ff2f6d', undefined, 4);
+    if (heartAfter) heart(x0 + tw + hw / 2 + 2, -8, 0.3, C.honey[500], undefined, 4);
   };
 
   const cells: (() => void)[] = [];
   // 0 tim đỏ cổ điển
-  cells[IC.HEART] = () => heart(0, 4, 1, lin(0, -50, 0, 50, ['#ff6a8e', '#ff1f4f', '#b0002a']), 'rgba(255,40,90,0.9)');
+  cells[IC.HEART] = () => heart(0, 4, 1, lin(0, -50, 0, 50, [C.berry[300], C.berry[500], C.berry[700]]), al(C.berry[500], 0.9));
   // 1 tim hồng lấp lánh
   cells[IC.HEART_PINK] = () => {
-    heart(0, 6, 0.92, lin(-40, -40, 40, 50, ['#ffc2e6', '#ff5fbf', '#d0208f']), 'rgba(255,110,210,0.95)');
-    shape(sparkPath(38, -38, 17), '#ffffff', 'rgba(255,255,255,1)', 3);
-    shape(sparkPath(-44, 30, 10), '#fff3a0', 'rgba(255,255,200,1)', 3);
-    shape(sparkPath(26, 34, 8), '#ffffff', 'rgba(255,255,255,1)', 2);
+    heart(0, 6, 0.92, lin(-40, -40, 40, 50, [C.berry[100], C.berry[300], C.berry[500]]), al(C.berry[300], 0.95));
+    shape(sparkPath(38, -38, 17), C.cream[100], al(C.cream[100], 1), 3);
+    shape(sparkPath(-44, 30, 10), C.honey[300], al(C.honey[100], 1), 3);
+    shape(sparkPath(26, 34, 8), C.cream[100], al(C.cream[100], 1), 2);
   };
   // 2 tim cầu vồng
   cells[IC.HEART_RAINBOW] = () =>
-    heart(0, 4, 1, lin(-50, -40, 50, 40, ['#ff3b3b', '#ff9a1f', '#ffe53b', '#3bd96b', '#2fa8ff', '#9a4dff']), 'rgba(255,255,255,0.7)');
+    heart(0, 4, 1, lin(-50, -40, 50, 40, [C.berry[500], C.peach[500], C.honey[500], C.mint[500], C.soda[500], C.grape[500]]), al(C.cream[100], 0.7));
   // 3 mặt mắt tim
   cells[IC.HEART_EYES] = () => {
     face();
-    heart(-18, -8, 0.32, '#ff2050', undefined, 3);
-    heart(18, -8, 0.32, '#ff2050', undefined, 3);
+    heart(-18, -8, 0.32, C.berry[500], undefined, 3);
+    heart(18, -8, 0.32, C.berry[500], undefined, 3);
     shape(() => {
       g.moveTo(-24, 14);
       g.quadraticCurveTo(0, 46, 24, 14);
       g.closePath();
-    }, '#5a1020', undefined, 4);
+    }, C.berry[700], undefined, 4);
   };
   // 4 hai trái tim
   cells[IC.HEARTS2] = () => {
-    heart(-16, 10, 0.68, lin(0, -30, 0, 40, ['#ff7aa8', '#e8105a']), 'rgba(255,60,120,0.9)');
-    heart(22, -16, 0.5, lin(0, -30, 0, 30, ['#ffd0ea', '#ff5fbf']), 'rgba(255,120,200,0.9)');
+    heart(-16, 10, 0.68, lin(0, -30, 0, 40, [C.berry[300], C.berry[700]]), al(C.berry[500], 0.9));
+    heart(22, -16, 0.5, lin(0, -30, 0, 30, [C.peach[100], C.peach[500]]), al(C.peach[300], 0.9));
   };
   // 5 mặt cười
   cells[IC.SMILE] = () => {
@@ -266,12 +275,12 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.quadraticCurveTo(26, 38, 0, 38);
       g.quadraticCurveTo(-26, 38, -28, 4);
       g.closePath();
-    }, '#5a1020', undefined, 4);
-    g.fillStyle = '#ff6b8a';
+    }, C.berry[700], undefined, 4);
+    g.fillStyle = C.berry[300];
     g.beginPath();
     g.ellipse(0, 30, 12, 6, 0, 0, 7);
     g.fill();
-    g.fillStyle = '#fff';
+    g.fillStyle = C.cream[300];
     g.fillRect(-20, 6, 40, 6);
     for (const sx of [-1, 1]) {
       shape(() => {
@@ -279,22 +288,22 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
         g.quadraticCurveTo(sx * 58, 6, sx * 50, 14);
         g.quadraticCurveTo(sx * 40, 18, sx * 38, 6);
         g.closePath();
-      }, lin(0, -10, 0, 16, ['#bff0ff', '#2fa8ff']), 'rgba(80,180,255,0.9)', 3);
+      }, lin(0, -10, 0, 16, [C.soda[100], C.soda[500]]), al(C.soda[500], 0.9), 3);
     }
   };
   // 7 mắt sao
   cells[IC.STARSTRUCK] = () => {
     face();
-    shape(starPath(-17, -10, 15, 6.5), lin(0, -24, 0, 4, ['#ffdf5e', '#ff4a1f']), undefined, 3);
-    shape(starPath(17, -10, 15, 6.5), lin(0, -24, 0, 4, ['#ffdf5e', '#ff4a1f']), undefined, 3);
+    shape(starPath(-17, -10, 15, 6.5), lin(0, -24, 0, 4, [C.honey[100], C.honey[500]]), undefined, 3);
+    shape(starPath(17, -10, 15, 6.5), lin(0, -24, 0, 4, [C.honey[100], C.honey[500]]), undefined, 3);
     shape(() => {
       g.moveTo(-24, 12);
       g.quadraticCurveTo(0, 16, 24, 12);
       g.quadraticCurveTo(20, 38, 0, 38);
       g.quadraticCurveTo(-20, 38, -24, 12);
       g.closePath();
-    }, '#5a1020', undefined, 4);
-    g.fillStyle = '#fff';
+    }, C.berry[700], undefined, 4);
+    g.fillStyle = C.cream[300];
     g.fillRect(-18, 13, 36, 5);
   };
   // 8 fan hét
@@ -304,7 +313,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     for (const sx of [-1, 1]) {
       g.beginPath();
       g.arc(sx * 17, -12, 11, 0, 7);
-      g.fillStyle = '#fff';
+      g.fillStyle = C.cream[300];
       g.fill();
       ink(3);
       g.stroke();
@@ -313,28 +322,28 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.fillStyle = INK;
       g.fill();
     }
-    shape(() => g.ellipse(0, 22, 13, 18, 0, 0, Math.PI * 2), '#5a1020', undefined, 4);
-    g.fillStyle = '#ff6b8a';
+    shape(() => g.ellipse(0, 22, 13, 18, 0, 0, Math.PI * 2), C.berry[700], undefined, 4);
+    g.fillStyle = C.berry[300];
     g.beginPath();
     g.ellipse(0, 32, 8, 5, 0, 0, 7);
     g.fill();
-    heart(40, -40, 0.24, '#ff2f6d', 'rgba(255,60,120,1)', 3);
-    heart(-44, -34, 0.18, '#ff7ac0', 'rgba(255,60,160,1)', 3);
+    heart(40, -40, 0.24, C.berry[500], al(C.berry[500], 1), 3);
+    heart(-44, -34, 0.18, C.berry[300], al(C.berry[300], 1), 3);
   };
   // 9 ngôi sao
   cells[IC.STAR] = () => {
-    shape(starPath(0, 6, 56, 24), rad(-8, -6, 60, ['#fffbd0', '#ffe03a', '#ff9d00']), 'rgba(255,220,60,1)');
+    shape(starPath(0, 6, 56, 24), rad(-8, -6, 60, [C.honey[100], C.honey[500], C.honey[700]]), al(C.honey[500], 1));
     shine(-14, -10, 10, 5, -0.6, 0.7);
   };
   // 10 lấp lánh
   cells[IC.SPARKLE] = () => {
-    shape(sparkPath(-6, 6, 46), rad(-6, 6, 46, ['#ffffff', '#bff4ff', '#4cc9ff']), 'rgba(140,230,255,1)', 5);
-    shape(sparkPath(34, -32, 20), rad(34, -32, 20, ['#ffffff', '#fff3a0', '#ffc400']), 'rgba(255,240,150,1)', 4);
-    shape(sparkPath(36, 38, 12), rad(36, 38, 12, ['#ffffff', '#ffb0f0']), 'rgba(255,170,240,1)', 3);
+    shape(sparkPath(-6, 6, 46), rad(-6, 6, 46, [C.cream[100], C.soda[100], C.soda[500]]), al(C.soda[300], 1), 5);
+    shape(sparkPath(34, -32, 20), rad(34, -32, 20, [C.cream[100], C.honey[300], C.honey[500]]), al(C.honey[300], 1), 4);
+    shape(sparkPath(36, 38, 12), rad(36, 38, 12, [C.cream[100], C.berry[300]]), al(C.berry[300], 1), 3);
   };
   // 11 nốt nhạc đơn
   cells[IC.NOTE] = () => {
-    const f = lin(0, -50, 0, 50, ['#9ff6ff', '#2fd6ff', '#1a7dff']);
+    const f = lin(0, -50, 0, 50, [C.soda[300], C.soda[500], C.soda[700]]);
     shape(() => {
       g.ellipse(-14, 34, 22, 16, -0.4, 0, Math.PI * 2);
       g.rect(2, -50, 11, 84);
@@ -343,14 +352,14 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.lineTo(32, 0);
       g.quadraticCurveTo(34, -22, 2, -28);
       g.closePath();
-    }, f, 'rgba(60,220,255,1)');
+    }, f, al(C.soda[500], 1));
     g.fillStyle = f;
     g.fillRect(2, -40, 11, 74);
     shine(-22, 28, 7, 4, -0.4, 0.7);
   };
   // 12 nốt đôi
   cells[IC.NOTES2] = () => {
-    const f = lin(0, -50, 0, 50, ['#ffb0ff', '#ff3dd8', '#a01aff']);
+    const f = lin(0, -50, 0, 50, [C.grape[300], C.grape[500], C.grape[700]]);
     shape(() => {
       g.ellipse(-30, 36, 18, 13, -0.4, 0, Math.PI * 2);
       g.ellipse(26, 26, 18, 13, -0.4, 0, Math.PI * 2);
@@ -361,7 +370,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.lineTo(44, -34);
       g.lineTo(-22, -18);
       g.closePath();
-    }, f, 'rgba(255,80,230,1)');
+    }, f, al(C.grape[500], 1));
     g.fillStyle = f;
     g.fillRect(-22, -26, 10, 60);
     g.fillRect(34, -40, 10, 64);
@@ -381,7 +390,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.save();
     g.beginPath();
     p();
-    g.shadowColor = 'rgba(255,210,80,1)';
+    g.shadowColor = al(C.honey[500], 1);
     g.shadowBlur = 16;
     g.lineWidth = 15;
     g.strokeStyle = INK;
@@ -390,9 +399,9 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.beginPath();
     p();
     g.lineWidth = 8;
-    g.strokeStyle = lin(0, -55, 0, 50, ['#fff3b0', '#ffc61a', '#ff8a00']);
+    g.strokeStyle = lin(0, -55, 0, 50, [C.honey[100], C.honey[500], C.honey[700]]);
     g.stroke();
-    shape(() => g.arc(-12, 42, 8, 0, 7), '#ffc61a', undefined, 4);
+    shape(() => g.arc(-12, 42, 8, 0, 7), C.honey[500], undefined, 4);
   };
   // 14 lửa
   cells[IC.FIRE] = () => {
@@ -405,13 +414,13 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.bezierCurveTo(-12, -10, -8, -4, -6, 4);
       g.bezierCurveTo(-4, -20, -6, -40, 0, -58);
       g.closePath();
-    }, lin(0, -58, 0, 58, ['#ff3a1a', '#ff6a14', '#ffb21a']), 'rgba(255,100,20,1)');
+    }, lin(0, -58, 0, 58, [C.peach[700], C.peach[500], C.honey[500]]), al(C.peach[500], 1));
     g.beginPath();
     g.moveTo(0, -4);
     g.bezierCurveTo(16, 14, 26, 30, 14, 48);
     g.quadraticCurveTo(0, 54, -14, 48);
     g.bezierCurveTo(-24, 30, -8, 16, 0, -4);
-    g.fillStyle = lin(0, -4, 0, 52, ['#ffe34d', '#fff8c8']);
+    g.fillStyle = lin(0, -4, 0, 52, [C.honey[300], C.honey[100]]);
     g.fill();
   };
   // 15 vỗ tay
@@ -419,7 +428,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     openHand(-12, 10, 0.78, -0.35, false);
     openHand(14, 8, 0.78, 0.3, true);
     ink(5);
-    g.strokeStyle = '#fff3a0';
+    g.strokeStyle = C.honey[300];
     g.beginPath();
     for (const [a, r0, r1] of [[-2.2, 46, 60], [-1.57, 50, 62], [-0.9, 46, 60]] as [number, number, number][]) {
       g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0 - 4);
@@ -444,7 +453,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     shape(() => g.roundRect(-12, -42, 14, 40, 7), SKIN(), undefined, 6);
     g.restore();
     g.restore();
-    heart(28, -34, 0.36, '#ff2050', 'rgba(255,40,90,1)', 4);
+    heart(28, -34, 0.36, C.berry[500], al(C.berry[500], 1), 4);
   };
   // 18 rock on
   cells[IC.ROCK] = () => {
@@ -453,7 +462,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     shape(() => {
       g.roundRect(-30, -64, 14, 62, 7);
       g.roundRect(14, -60, 14, 58, 7);
-    }, SKIN(), 'rgba(255,190,60,0.8)', 7);
+    }, SKIN(), al(C.honey[500], 0.8), 7);
     fist(() => {});
     shape(() => g.roundRect(-34, 16, 46, 14, 7), SKIN(), undefined, 5);
     g.restore();
@@ -468,14 +477,14 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.lineTo(6, 56);
       g.lineTo(-6, 56);
       g.closePath();
-    }, lin(-10, 0, 10, 0, ['#222', '#666', '#111']), undefined, 5);
-    shape(() => g.rect(-14, -14, 28, 10), lin(0, -14, 0, -4, ['#ff7ad0', '#c0108a']), undefined, 4);
-    shape(() => g.arc(0, -34, 24, 0, Math.PI * 2), rad(-8, -42, 30, ['#ffffff', '#c9d2e0', '#6a7488']), 'rgba(200,220,255,1)');
+    }, lin(-10, 0, 10, 0, [C.night[300], C.night[100], C.night[300]]), undefined, 5);
+    shape(() => g.rect(-14, -14, 28, 10), lin(0, -14, 0, -4, [C.berry[300], C.berry[700]]), undefined, 4);
+    shape(() => g.arc(0, -34, 24, 0, Math.PI * 2), rad(-8, -42, 30, [C.cream[100], C.grape[100], C.grape[300]]), al(C.grape[300], 1));
     g.save();
     g.beginPath();
     g.arc(0, -34, 22, 0, 7);
     g.clip();
-    g.strokeStyle = 'rgba(40,40,70,0.45)';
+    g.strokeStyle = al(INK, 0.45);
     g.lineWidth = 2;
     for (let k = -30; k <= 30; k += 7) {
       g.beginPath();
@@ -500,9 +509,9 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.lineTo(54, -24);
       g.lineTo(50, 34);
       g.closePath();
-    }, lin(0, -40, 0, 34, ['#fff4a8', '#ffcc22', '#d48a00']), 'rgba(255,210,60,1)');
-    shape(() => g.roundRect(-50, 26, 100, 14, 5), lin(0, 26, 0, 40, ['#ffd84a', '#c07800']), undefined, 5);
-    for (const [x, y, r, col] of [[0, -42, 7, '#ff2f6d'], [-54, -26, 6, '#2fd6ff'], [54, -26, 6, '#2fd6ff'], [-24, 33, 5, '#ff2f6d'], [0, 33, 5, '#3bd96b'], [24, 33, 5, '#ff2f6d'], [0, 8, 9, '#a14dff']] as [number, number, number, string][]) {
+    }, lin(0, -40, 0, 34, [C.honey[100], C.honey[500], C.honey[700]]), al(C.honey[500], 1));
+    shape(() => g.roundRect(-50, 26, 100, 14, 5), lin(0, 26, 0, 40, [C.honey[500], C.honey[700]]), undefined, 5);
+    for (const [x, y, r, col] of [[0, -42, 7, C.berry[500]], [-54, -26, 6, C.soda[500]], [54, -26, 6, C.soda[500]], [-24, 33, 5, C.berry[500]], [0, 33, 5, C.mint[500]], [24, 33, 5, C.berry[500]], [0, 8, 9, C.grape[500]]] as [number, number, number, string][]) {
       shape(() => g.arc(x, y, r, 0, Math.PI * 2), col, undefined, 3);
       shine(x - r * 0.3, y - r * 0.35, r * 0.35, r * 0.22, -0.5, 0.9);
     }
@@ -511,14 +520,14 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
   cells[IC.STICK] = () => {
     g.save();
     g.rotate(-0.4);
-    shape(() => g.roundRect(-7, 8, 14, 52, 6), lin(-7, 0, 7, 0, ['#333', '#888', '#222']), undefined, 5);
-    shape(() => g.roundRect(-11, 2, 22, 12, 4), '#ff5fbf', undefined, 4);
+    shape(() => g.roundRect(-7, 8, 14, 52, 6), lin(-7, 0, 7, 0, [C.night[300], C.night[100], C.night[300]]), undefined, 5);
+    shape(() => g.roundRect(-11, 2, 22, 12, 4), C.berry[500], undefined, 4);
     g.save();
-    g.shadowColor = 'rgba(255,90,220,1)';
+    g.shadowColor = al(C.berry[500], 1);
     g.shadowBlur = 26;
-    shape(() => g.arc(0, -24, 28, 0, Math.PI * 2), rad(0, -24, 30, ['#ffffff', '#ffb0f0', '#e040c0', '#8a1ad0']), 'rgba(255,90,220,1)');
+    shape(() => g.arc(0, -24, 28, 0, Math.PI * 2), rad(0, -24, 30, [C.cream[100], C.berry[300], C.berry[500], C.berry[700]]), al(C.berry[500], 1));
     g.restore();
-    heart(0, -24, 0.3, 'rgba(255,255,255,0.95)', undefined, 0.01);
+    heart(0, -24, 0.3, al(C.cream[100], 0.95), undefined, 0.01);
     g.restore();
   };
   // 22 huy hiệu 100
@@ -529,18 +538,18 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.save();
-    g.shadowColor = 'rgba(255,40,40,1)';
+    g.shadowColor = al(C.berry[500], 1);
     g.shadowBlur = 16;
     g.lineWidth = 9;
     g.strokeStyle = INK;
     g.strokeText('100', 0, -6);
     g.restore();
-    g.fillStyle = lin(0, -30, 0, 20, ['#ff7a6a', '#ff1a1a', '#b00000']);
+    g.fillStyle = lin(0, -30, 0, 20, [C.berry[300], C.berry[500], C.berry[700]]);
     g.fillText('100', 0, -6);
     shape(() => {
       g.roundRect(-44, 26, 88, 8, 4);
       g.roundRect(-38, 40, 76, 8, 4);
-    }, '#ff2a2a', undefined, 4);
+    }, C.berry[500], undefined, 4);
     g.restore();
   };
   // 23 tia sét
@@ -554,7 +563,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.lineTo(6, -12);
       g.lineTo(22, -60);
       g.closePath();
-    }, lin(-20, -60, 20, 60, ['#fffbd0', '#ffe82a', '#ffa400']), 'rgba(255,240,80,1)');
+    }, lin(-20, -60, 20, 60, [C.honey[100], C.honey[500], C.honey[700]]), al(C.honey[500], 1));
   // 24 hoa hồng
   cells[IC.ROSE] = () => {
     g.save();
@@ -565,12 +574,12 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.quadraticCurveTo(-6, 30, 2, 62);
     g.stroke();
     g.lineWidth = 6;
-    g.strokeStyle = '#2fae4a';
+    g.strokeStyle = C.mint[700];
     g.stroke();
     shape(() => {
       g.ellipse(-16, 30, 14, 7, -0.6, 0, Math.PI * 2);
-    }, lin(0, 20, 0, 40, ['#6ee07a', '#1f8a3a']), undefined, 4);
-    shape(() => g.ellipse(14, 40, 12, 6, 0.6, 0, Math.PI * 2), lin(0, 30, 0, 50, ['#6ee07a', '#1f8a3a']), undefined, 4);
+    }, lin(0, 20, 0, 40, [C.mint[300], C.mint[700]]), undefined, 4);
+    shape(() => g.ellipse(14, 40, 12, 6, 0.6, 0, Math.PI * 2), lin(0, 30, 0, 50, [C.mint[300], C.mint[700]]), undefined, 4);
     shape(() => {
       g.moveTo(-30, -30);
       g.quadraticCurveTo(-34, 4, 0, 4);
@@ -579,8 +588,8 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.quadraticCurveTo(0, -30, -12, -40);
       g.quadraticCurveTo(-16, -24, -30, -30);
       g.closePath();
-    }, rad(0, -20, 40, ['#ff6a7a', '#e0102e', '#8a0018']), 'rgba(255,40,70,1)');
-    g.strokeStyle = 'rgba(90,0,20,0.8)';
+    }, rad(0, -20, 40, [C.berry[300], C.berry[500], C.berry[700]]), al(C.berry[500], 1));
+    g.strokeStyle = al(INK, 0.8);
     g.lineWidth = 3;
     g.beginPath();
     g.arc(0, -18, 10, 0.3, 4.5);
@@ -597,7 +606,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.bezierCurveTo(14, -30, 34, -30, 50, 0);
       g.bezierCurveTo(30, 36, -30, 36, -50, 0);
       g.closePath();
-    }, lin(0, -30, 0, 30, ['#ff7090', '#f0104a', '#a0002a']), 'rgba(255,40,90,1)');
+    }, lin(0, -30, 0, 30, [C.berry[300], C.berry[500], C.berry[700]]), al(C.berry[500], 1));
     ink(4);
     g.beginPath();
     g.moveTo(-46, 1);
@@ -605,11 +614,11 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.stroke();
     shine(-20, -14, 10, 4, -0.2, 0.7);
     shine(16, 16, 12, 4, 0.1, 0.5);
-    heart(40, -38, 0.22, '#ff2f6d', 'rgba(255,60,120,1)', 3);
+    heart(40, -38, 0.22, C.berry[500], al(C.berry[500], 1), 3);
   };
   // 26 cúp
   cells[IC.TROPHY] = () => {
-    const gold = lin(-40, 0, 40, 0, ['#c07800', '#ffe066', '#fff6c0', '#ffcc22', '#b06a00']);
+    const gold = lin(-40, 0, 40, 0, [C.honey[700], C.honey[500], C.honey[100], C.honey[500], C.honey[700]]);
     ink(10);
     g.beginPath();
     g.arc(-36, -24, 15, Math.PI * 0.5, Math.PI * 1.6);
@@ -617,7 +626,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.arc(36, -24, 15, Math.PI * 0.5, -Math.PI * 0.6, true);
     g.stroke();
     g.lineWidth = 5;
-    g.strokeStyle = '#ffcc22';
+    g.strokeStyle = C.honey[500];
     g.stroke();
     shape(() => {
       g.moveTo(-36, -46);
@@ -625,17 +634,17 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.quadraticCurveTo(36, 10, 0, 14);
       g.quadraticCurveTo(-36, 10, -36, -46);
       g.closePath();
-    }, gold, 'rgba(255,210,60,1)');
+    }, gold, al(C.honey[500], 1));
     shape(() => {
       g.rect(-7, 12, 14, 18);
       g.roundRect(-26, 28, 52, 12, 3);
       g.roundRect(-32, 38, 64, 14, 4);
     }, gold, undefined, 5);
-    shape(starPath(0, -20, 13, 5.5), '#fff6c0', undefined, 3);
+    shape(starPath(0, -20, 13, 5.5), C.honey[100], undefined, 3);
   };
   // 27 pháo giấy
   cells[IC.POPPER] = () => {
-    const cols = ['#ff2f6d', '#2fd6ff', '#ffe03a', '#3bd96b', '#a14dff', '#ff9a1f'];
+    const cols = [C.berry[500], C.soda[500], C.honey[500], C.mint[500], C.grape[500], C.peach[500]];
     for (let k = 0; k < 14; k++) {
       const a = -1.9 + (k / 13) * 1.9 + Math.sin(k * 7.1) * 0.12;
       const r = 26 + ((k * 37) % 30);
@@ -657,7 +666,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.lineTo(-30, -6);
       g.lineTo(6, 30);
       g.closePath();
-    }, lin(-50, 50, 0, 0, ['#a01aff', '#ff3dd8']), 'rgba(255,80,230,0.8)');
+    }, lin(-50, 50, 0, 0, [C.grape[500], C.berry[500]]), al(C.grape[500], 0.8));
     g.save();
     g.beginPath();
     g.moveTo(-50, 52);
@@ -665,7 +674,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.lineTo(6, 30);
     g.closePath();
     g.clip();
-    g.strokeStyle = '#ffe03a';
+    g.strokeStyle = C.honey[500];
     g.lineWidth = 5;
     for (let k = 0; k < 4; k++) {
       g.beginPath();
@@ -674,14 +683,14 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.stroke();
     }
     g.restore();
-    shape(sparkPath(30, -34, 14), '#fff3a0', 'rgba(255,240,150,1)', 3);
+    shape(sparkPath(30, -34, 14), C.honey[300], al(C.honey[300], 1), 3);
   };
-  cells[IC.T_ENCORE] = () => bubble('ENCORE!', '#c45bff', '#ff2fa0');
-  cells[IC.T_LOVE] = () => bubble('LOVE', '#ff5a7a', '#d0002e');
-  cells[IC.T_WOW] = () => bubble('WOW', '#ffb21a', '#ff5a00');
-  cells[IC.T_DINH] = () => bubble('ĐỈNH!', '#ffd84a', '#ff8a00');
-  cells[IC.T_HAY] = () => bubble('HAY QUÁ!', '#3ee6ff', '#1a6dff');
-  cells[IC.T_YEU] = () => bubble('YÊU', '#ff8ad8', '#e0208f', true);
+  cells[IC.T_ENCORE] = () => bubble('ENCORE!', C.grape[500], C.berry[500]);
+  cells[IC.T_LOVE] = () => bubble('LOVE', C.berry[500], C.berry[700]);
+  cells[IC.T_WOW] = () => bubble('WOW', C.honey[500], C.peach[500]);
+  cells[IC.T_DINH] = () => bubble('ĐỈNH!', C.honey[500], C.honey[700]);
+  cells[IC.T_HAY] = () => bubble('HAY QUÁ!', C.soda[500], C.soda[700]);
+  cells[IC.T_YEU] = () => bubble('YÊU', C.berry[300], C.berry[500], true);
 
   for (let i = 0; i < ICON_COUNT; i++) {
     g.save();

@@ -3,6 +3,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { FIELD_Y } from '../../world/layout';
+import { INK, PAL, SKIN, HAIR, shadowOf } from '../../world/style';
+
+/** Màu cho shader thô (không qua colorspace_fragment): giá trị sRGB của token. */
+const glsl = (hex: number) => {
+  const c = new THREE.Color(hex).convertLinearToSRGB();
+  return `vec3(${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)})`;
+};
 
 const LDIR = new THREE.Vector3(0.35, 0.8, -0.5).normalize();
 
@@ -12,13 +19,18 @@ function painted(g: THREE.BufferGeometry, color: number, shade = true): THREE.Bu
   if (ng !== g) g.dispose();
   ng.computeVertexNormals();
   const n = ng.getAttribute('normal');
+  // tô đồ chơi 2 bậc: thân (500) ↔ bóng dịch về tím (shadowOf), ngưỡng mềm; viền rim nhạt ở mặt trên
   const c = new THREE.Color(color);
+  const cs = new THREE.Color(shadowOf(color));
   const col = new Float32Array(n.count * 3);
   const v = new THREE.Vector3();
+  const tmpC = new THREE.Color();
   for (let i = 0; i < n.count; i++) {
     v.fromBufferAttribute(n, i);
-    const k = shade ? 0.45 + 0.55 * Math.max(0, v.dot(LDIR)) : 1;
-    col[i * 3] = c.r * k; col[i * 3 + 1] = c.g * k; col[i * 3 + 2] = c.b * k;
+    const d = v.dot(LDIR);
+    const k = shade ? Math.min(1, Math.max(0, (d + 0.05) / 0.25)) : 1;
+    tmpC.copy(cs).lerp(c, k);
+    col[i * 3] = tmpC.r; col[i * 3 + 1] = tmpC.g; col[i * 3 + 2] = tmpC.b;
   }
   ng.setAttribute('color', new THREE.BufferAttribute(col, 3));
   ng.deleteAttribute('normal');
@@ -33,6 +45,19 @@ function place(g: THREE.BufferGeometry, x: number, y: number, z: number, sx = 1,
     new THREE.Vector3(sx, sy, sz),
   );
   g.applyMatrix4(m);
+  return g;
+}
+
+/** Sao 5 cánh đầu tròn dạng tấm dày (mặt hướng +Z). */
+function starGeo(r: number, depth: number): THREE.BufferGeometry {
+  const sh = new THREE.Shape();
+  for (let i = 0; i <= 10; i++) {
+    const a = Math.PI / 2 + (i / 10) * Math.PI * 2;
+    const rr = i % 2 === 0 ? r : r * 0.5;
+    if (i === 0) sh.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); else sh.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+  }
+  const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: depth * 0.4, bevelSize: r * 0.12, bevelSegments: 2 });
+  g.translate(0, 0, -depth / 2);
   return g;
 }
 
@@ -67,8 +92,9 @@ void main() {
   float alpha = 0.10 + 0.45 * blade;
   alpha *= smoothstep(1.0, 0.9, r) * smoothstep(0.05, 0.16, r);
   alpha += smoothstep(0.98, 0.93, r) * smoothstep(0.88, 0.93, r) * 0.25; // vành đầu cánh
+  alpha *= 0.7; // đĩa nhoè mềm hơn
   alpha += smoothstep(0.12, 0.0, r) * 0.9; // trục
-  gl_FragColor = vec4(vec3(0.78, 0.82, 0.9), alpha);
+  gl_FragColor = vec4(mix(${glsl(PAL.cream[300])}, ${glsl(PAL.soda[300])}, smoothstep(0.85, 0.98, r)), alpha);
 }`;
 
 const LIGHT_VERT = /* glsl */ `
@@ -103,8 +129,8 @@ const CONE_FRAG = /* glsl */ `
 uniform float uOpacity;
 varying float vV;
 void main() {
-  float a = pow(vV, 1.6) * uOpacity;
-  gl_FragColor = vec4(vec3(0.85, 0.92, 1.0) * a, 1.0);
+  float a = pow(vV, 2.2) * uOpacity * 0.8; // nón rọi mềm, kem
+  gl_FragColor = vec4(${glsl(PAL.cream[300])} * a, 1.0);
 }`;
 
 export interface Heli {
@@ -120,19 +146,39 @@ export interface Heli {
 export function createHeli(): Heli {
   const parts: THREE.BufferGeometry[] = [];
   const add = (g: THREE.BufferGeometry, color: number, shade = true) => parts.push(painted(g, color, shade));
-  const BODY = 0x26324a;
-  add(place(new THREE.SphereGeometry(1, 18, 12), 0, 0, 0, 3.0, 1.35, 1.25), BODY);
-  add(place(new THREE.SphereGeometry(1, 14, 10), 1.85, 0.2, 0, 1.35, 0.95, 1.08), 0x7fd8ff, false); // kính buồng lái sáng
-  add(place(new THREE.BoxGeometry(5.6, 0.18, 2.56), 0, -0.25, 0), 0xd0207a); // sọc sơn
-  add(place(new THREE.BoxGeometry(1.4, 1.25, 0.06), 0.15, -0.1, -1.24), 0xffc46b, false); // cửa mở, trong sáng ấm
-  add(place(new THREE.CylinderGeometry(0.38, 0.16, 6, 10), -5.2, 0.35, 0, 1, 1, 1, 0, 0, Math.PI / 2), BODY);
-  add(place(new THREE.BoxGeometry(1.0, 1.7, 0.12), -8.0, 1.0, 0, 1, 1, 1, 0, 0, -0.35), 0xd0207a);
-  add(place(new THREE.BoxGeometry(0.7, 0.08, 2.2), -7.4, 0.4, 0), BODY);
-  add(place(new THREE.BoxGeometry(2.2, 0.65, 1.2), -0.5, 1.25, 0), 0x323e58);
-  add(place(new THREE.CylinderGeometry(0.14, 0.14, 0.6, 8), 0, 1.7, 0), 0x55607a);
+  // Trực thăng đồ chơi mập: thân trứng (dài ≤ 2,2 × đường kính, tính cả đuôi ngắn), vòm kính bong bóng có phi công chibi,
+  // đuôi ngắn cong, càng bo tròn; cream / berry / soda + huy hiệu sao. Phương tiện: không có mặt.
+  const BODY = PAL.cream[500], TRIM = PAL.berry[500], ACC = PAL.soda[500];
+  add(place(new THREE.SphereGeometry(1, 22, 16), -0.2, 0, 0, 2.15, 1.6, 1.4), BODY);            // thân trứng Ø≈2,8–3,2
+  add(place(new THREE.SphereGeometry(1, 22, 10, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45), -0.2, 0.05, 0, 2.18, 1.63, 1.43), TRIM); // bụng berry
+  add(place(new THREE.TorusGeometry(1, 0.09, 8, 32), -0.2, -0.2, 0, 2.12, 1.38, 1.0, Math.PI / 2, 0, 0), ACC); // đai soda
+  add(place(new THREE.SphereGeometry(1, 18, 14), 1.15, 0.35, 0, 1.05, 1.0, 1.05), PAL.soda[100], false); // vòm kính bong bóng
+  add(place(new THREE.BoxGeometry(1.2, 1.15, 0.06), 0.0, -0.15, -1.36), PAL.honey[300], false); // cửa mở, trong sáng ấm
+  // phi công chibi trong vòm (đầu to, mũ bảo hiểm berry, mắt chấm, má hồng)
+  add(place(new THREE.SphereGeometry(0.36, 14, 10), 1.35, 0.42, 0, 1, 0.95, 1), SKIN[1]!);
+  add(place(new THREE.SphereGeometry(0.39, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), 1.33, 0.48, 0), TRIM);
+  add(place(new THREE.SphereGeometry(0.39, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.3), 1.3, 0.48, 0, 1.02, 1.02, 1.02, 0, 0, -0.5), HAIR[4]!);
   for (const sz of [-1, 1]) {
-    add(place(new THREE.BoxGeometry(4.4, 0.12, 0.12), 0.2, -1.95, sz * 1.05), 0x9aa3b5);
-    for (const sx of [-1, 1]) add(place(new THREE.BoxGeometry(0.1, 0.65, 0.1), sx * 1.1 + 0.2, -1.62, sz * 0.98, 1, 1, 1, sz * 0.25, 0, 0), 0x9aa3b5);
+    add(place(new THREE.SphereGeometry(0.05, 8, 6), 1.68, 0.44, sz * 0.12, 0.6, 1.3, 1), INK, false);
+    add(place(new THREE.SphereGeometry(0.05, 8, 6), 1.66, 0.33, sz * 0.21, 0.4, 0.6, 1), PAL.berry[300], false);
+  }
+  add(place(new THREE.SphereGeometry(0.42, 12, 8), 1.2, -0.12, 0, 1, 0.7, 1.1), ACC); // thân phi công
+  // huy hiệu sao hai bên
+  for (const sz of [-1, 1]) {
+    add(place(new THREE.CylinderGeometry(0.52, 0.52, 0.06, 24), -0.9, 0.25, sz * 1.36, 1, 1, 1, Math.PI / 2, 0, 0), TRIM, false);
+    add(place(starGeo(0.4, 0.07), -0.9, 0.25, sz * 1.4, 1, 1, 1, 0, sz > 0 ? 0 : Math.PI, 0), PAL.honey[500], false);
+  }
+  // đuôi ngắn mập cong lên + vây tròn + rotor đuôi
+  add(place(new THREE.CapsuleGeometry(0.34, 1.6, 6, 12), -2.75, 0.5, 0, 1, 1, 1, 0, 0, Math.PI / 2 - 0.25), BODY);
+  add(place(new THREE.SphereGeometry(0.62, 16, 12), -3.65, 0.95, 0, 0.9, 1.0, 0.28), TRIM);
+  add(place(new THREE.CapsuleGeometry(0.16, 0.9, 4, 10), -3.45, 0.55, 0, 1, 1, 1, Math.PI / 2, 0, 0), TRIM);
+  // trụ rotor + mũ cầu
+  add(place(new THREE.CylinderGeometry(0.22, 0.3, 0.45, 14), -0.2, 1.65, 0), ACC);
+  add(place(new THREE.SphereGeometry(0.3, 14, 10), -0.2, 1.92, 0, 1, 0.6, 1), TRIM);
+  // càng bo tròn (ống capsule) + chân
+  for (const sz of [-1, 1]) {
+    add(place(new THREE.CapsuleGeometry(0.13, 3.6, 6, 10), 0.2, -1.95, sz * 1.05, 1, 1, 1, 0, 0, Math.PI / 2), PAL.grape[300]);
+    for (const sx of [-1, 1]) add(place(new THREE.CapsuleGeometry(0.08, 0.5, 4, 8), sx * 0.9 + 0.2, -1.6, sz * 0.95, 1, 1, 1, sz * 0.25, 0, 0), PAL.grape[300]);
   }
   const bodyGeo = mergeGeometries(parts)!;
   for (const p of parts) p.dispose();
@@ -140,8 +186,8 @@ export function createHeli(): Heli {
   const body = new THREE.Mesh(bodyGeo, bodyMat);
 
   // Rotor chính + rotor đuôi: 1 mesh, shader nhoè chuyển động
-  const main = new THREE.CircleGeometry(6.0, 48).rotateX(-Math.PI / 2).translate(0, 2.0, 0);
-  const tail = new THREE.CircleGeometry(1.15, 24).translate(-8.15, 1.15, 0.2);
+  const main = new THREE.CircleGeometry(4.4, 48).rotateX(-Math.PI / 2).translate(-0.2, 2.05, 0);
+  const tail = new THREE.CircleGeometry(0.8, 24).translate(-3.75, 0.95, 0.3);
   const rotorGeo = mergeGeometries([main.toNonIndexed(), tail.toNonIndexed()])!;
   main.dispose(); tail.dispose();
   const rotorMat = new THREE.ShaderMaterial({
@@ -154,17 +200,17 @@ export function createHeli(): Heli {
   // Đèn hàng hải: đỏ (trái), xanh (phải), chớp trắng đuôi, đèn hiệu đỏ trên nóc, chớp bụng
   const L: [number, number, number, number, number, number, number][] = [
     // x, y, z, màu, tần số, pha, cỡ
-    [0.6, -0.25, -1.35, 0xff2030, 0, 0, 0.9],
-    [0.6, -0.25, 1.35, 0x20ff60, 0, 0, 0.9],
-    [-8.3, 1.9, 0, 0xffffff, 1.1, 0, 1.6],
-    [-0.4, 1.6, 0, 0xff3030, 0.9, 0.5, 1.3],
-    [0.5, -1.4, 0, 0xffffff, 1.1, 0.35, 1.4],
-    [3.1, -0.3, 0, 0xfff2c0, 0, 0, 1.0],
+    [0.6, -0.25, -1.45, PAL.berry[500], 0, 0, 0.9],
+    [0.6, -0.25, 1.45, PAL.mint[500], 0, 0, 0.9],
+    [-3.9, 1.5, 0, PAL.cream[300], 1.1, 0, 1.2],
+    [-0.2, 2.2, 0, PAL.berry[300], 0.9, 0.5, 1.1],
+    [0.3, -1.6, 0, PAL.honey[300], 1.1, 0.35, 1.1],
+    [2.15, -0.1, 0, PAL.cream[300], 0, 0, 1.0],
   ];
   const lp = new Float32Array(L.length * 3), lc = new Float32Array(L.length * 3), lb = new Float32Array(L.length * 3);
   L.forEach(([x, y, z, c, f, ph, s], i) => {
     lp.set([x, y, z], i * 3);
-    const col = new THREE.Color(c);
+    const col = new THREE.Color(c).convertLinearToSRGB();
     lc.set([col.r, col.g, col.b], i * 3);
     lb.set([f, ph, s], i * 3);
   });
@@ -182,13 +228,13 @@ export function createHeli(): Heli {
   lights.renderOrder = 7;
 
   // Đèn pha rọi xuống: nón mở, đỉnh ở bụng trực thăng
-  const coneGeo = new THREE.ConeGeometry(7, 40, 28, 1, true).translate(0, -20, 0);
+  const coneGeo = new THREE.ConeGeometry(6, 40, 32, 1, true).translate(0, -20, 0);
   const coneMat = new THREE.ShaderMaterial({
     vertexShader: CONE_VERT, fragmentShader: CONE_FRAG, uniforms: { uOpacity: { value: 0.16 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
   const cone = new THREE.Mesh(coneGeo, coneMat);
-  cone.position.set(2.4, -1.2, 0);
+  cone.position.set(1.6, -1.3, 0);
   cone.renderOrder = 4;
 
   const group = new THREE.Group();
@@ -286,8 +332,8 @@ void main() {
   float v = vUv.y; // 0 = đầu (ca sĩ), 1 = đuôi
   float a = pow(1.0 - v, 1.4) * uOpacity;
   a *= 0.8 + 0.2 * sin(vUv.x * 40.0 + uTime * 30.0 + v * 20.0);
-  vec3 c = mix(vec3(1.0, 0.95, 0.85), vec3(1.0, 0.45, 0.15), smoothstep(0.0, 0.35, v));
-  c = mix(c, vec3(0.75, 0.2, 1.0), smoothstep(0.35, 0.9, v));
+  vec3 c = mix(${glsl(PAL.cream[300])}, ${glsl(PAL.honey[500])}, smoothstep(0.0, 0.35, v));
+  c = mix(c, ${glsl(PAL.berry[500])}, smoothstep(0.35, 0.9, v));
   gl_FragColor = vec4(c * a, 1.0);
 }`;
 
@@ -317,13 +363,14 @@ void main() {
   float k = ang * n / 6.2831853 + 0.18 * sin(r * 2.7 + seg * 1.9);
   float d = abs(fract(k) - 0.5) * 6.2831853 / n * r;
   float len = 2.2 + 1.6 * fract(sin(seg * 12.9898) * 43758.5453);
-  float crack = smoothstep(0.07, 0.0, d) * smoothstep(len, len * 0.6, r) * step(0.35, r);
+  float crack = smoothstep(0.11, 0.02, d) * smoothstep(len, len * 0.6, r) * step(0.35, r);
   float onDeck = max(step(abs(vW.x), 1.5), step(-4.9, vW.z) * step(abs(vW.x), 12.8));
   float heat = exp(-uAge * 0.9) * 0.85 + 0.15;
   float scorch = exp(-r * r * 1.4) * (exp(-uAge * 3.0) * 0.6 + 0.12);
-  vec3 col = vec3(0.6, 0.95, 1.0) * ring * 1.6
-           + vec3(1.0, 0.55, 0.15) * crack * heat * onDeck * 1.4
-           + vec3(1.0, 0.5, 0.2) * scorch * onDeck;
+  // vòng xung kích soda, vết nứt honey → berry, quầng giữa kem/peach
+  vec3 col = ${glsl(PAL.soda[300])} * ring * 1.3
+           + mix(${glsl(PAL.berry[500])}, ${glsl(PAL.honey[500])}, heat) * crack * heat * onDeck * 1.2
+           + ${glsl(PAL.peach[300])} * scorch * onDeck * 0.8;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -339,7 +386,7 @@ void main() {
   float ring = exp(-pow((r - R) / w, 2.0)) + 0.35 * exp(-pow((r - R + w * 2.5) / (w * 2.0), 2.0));
   float fade = 1.0 - smoothstep(1.4, 2.6, uAge);
   float front = smoothstep(-5.0, -6.5, vW.z); // chỉ quét qua khán giả, không quét sân khấu
-  vec3 c = mix(vec3(0.3, 0.9, 1.0), vec3(1.0, 0.3, 0.85), 0.5 + 0.5 * sin(atan(vP.y, vP.x) * 3.0));
+  vec3 c = mix(${glsl(PAL.soda[500])}, ${glsl(PAL.berry[500])}, 0.5 + 0.5 * sin(atan(vP.y, vP.x) * 3.0));
   gl_FragColor = vec4(c * ring * fade * front * 0.9, 1.0);
 }`;
 
@@ -349,6 +396,8 @@ uniform float uPx;
 attribute vec4 aSeed;
 varying vec3 vColor;
 varying float vA;
+varying float vStar;
+varying float vSpin;
 void main() {
   float dust = step(0.72, aSeed.w);
   float a = aSeed.x * 6.2831853;
@@ -361,19 +410,33 @@ void main() {
   p.y = max(p.y, position.y + 0.02);
   float life = mix(1.0 + aSeed.z * 0.6, 2.4, dust);
   vA = (uAge < 0.0) ? 0.0 : 1.0 - smoothstep(life * 0.5, life, t);
-  vColor = mix(mix(vec3(1.0, 0.85, 0.4), vec3(1.0, 1.0, 0.95), aSeed.y), vec3(0.16, 0.12, 0.18), dust);
+  vColor = mix(mix(${glsl(PAL.honey[500])}, ${glsl(PAL.cream[300])}, aSeed.y * aSeed.y), ${glsl(PAL.grape[700])} * 0.45, dust);
+  vStar = 1.0 - dust;
+  vSpin = aSeed.z * 6.28 + t * (aSeed.x - 0.5) * 8.0;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = vA > 0.0 ? max(1.5, uPx * mix(0.07, 0.3 + t * 0.25, dust) / -mv.z) : 0.0;
+  gl_PointSize = vA > 0.0 ? max(1.5, uPx * mix(0.14, 0.3 + t * 0.25, dust) / -mv.z) : 0.0;
 }`;
 const SPARK_FRAG = /* glsl */ `
 varying vec3 vColor;
 varying float vA;
+varying float vStar;
+varying float vSpin;
+float star5(vec2 p, float r) {
+  float a = atan(p.x, p.y);
+  float k = 6.2831853 / 5.0;
+  float m = abs(mod(a + k * 0.5, k) - k * 0.5);
+  float rr = r * mix(0.48, 1.0, pow(max(cos(m * 2.5), 0.0), 3.0));
+  return smoothstep(rr + 0.08, rr - 0.04, length(p));
+}
 void main() {
   if (vA <= 0.0) discard;
-  float d = length(gl_PointCoord - 0.5) * 2.0;
-  float a = smoothstep(1.0, 0.2, d) * vA;
-  gl_FragColor = vec4(vColor, a * 0.85);
+  vec2 p = (gl_PointCoord - 0.5) * 2.0;
+  float c = cos(vSpin), s = sin(vSpin);
+  p = mat2(c, -s, s, c) * p;
+  // tia lửa = sao nhỏ; bụi = cục bông tròn mềm
+  float m = vStar > 0.5 ? star5(p, 0.9) : smoothstep(1.0, 0.35, length(p));
+  gl_FragColor = vec4(vColor, m * vA * 0.9);
 }`;
 
 export interface HeroFx {
@@ -484,16 +547,40 @@ export interface Cable {
 }
 
 export function createCable(): Cable {
-  const parts = [
-    painted(new THREE.CylinderGeometry(0.035, 0.035, 1, 6, 1, true).translate(0, -0.5, 0), 0xd8dde8, false),
-  ];
+  // dây thừng kẹo: 2 sợi xoắn berry/cream (dải sọc theo chiều dài) — co giãn theo y nên sọc giãn theo; móc tròn ở đầu dưới
+  const rope = new THREE.CylinderGeometry(0.06, 0.06, 1, 10, 24, true).translate(0, -0.5, 0).toNonIndexed();
+  {
+    const pos = rope.getAttribute('position');
+    const col = new Float32Array(pos.count * 3);
+    const a = new THREE.Color(PAL.berry[500]), b = new THREE.Color(PAL.cream[500]);
+    const cc = new THREE.Color();
+    for (let i = 0; i < pos.count; i += 3) {
+      let y = 0, ang = 0;
+      for (let k = 0; k < 3; k++) { y += pos.getY(i + k) / 3; ang += Math.atan2(pos.getZ(i + k), pos.getX(i + k)) / 3; }
+      const stripe = Math.sin(ang * 2 + y * 60) > 0;
+      cc.copy(stripe ? a : b);
+      for (let k = 0; k < 3; k++) col.set([cc.r, cc.g, cc.b], (i + k) * 3);
+    }
+    rope.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    rope.deleteAttribute('normal'); rope.deleteAttribute('uv');
+  }
+  const parts = [rope];
   const geo = mergeGeometries(parts)!;
   parts[0].dispose();
+  // móc tròn (vòng xuyến honey + cầu nối), mesh riêng không co giãn → cùng vật liệu, +1 draw call
+  const hookParts = [
+    painted(new THREE.TorusGeometry(0.2, 0.07, 8, 20, Math.PI * 1.6).rotateZ(-Math.PI * 0.3).translate(0, -0.25, 0), PAL.honey[500]),
+    painted(new THREE.SphereGeometry(0.12, 12, 8), PAL.berry[500]),
+  ];
+  const hookGeo = mergeGeometries(hookParts)!;
+  for (const g of hookParts) g.dispose();
   const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
   const line = new THREE.Mesh(geo, mat);
   line.frustumCulled = false;
+  const hook = new THREE.Mesh(hookGeo, mat);
+  hook.frustumCulled = false;
   const group = new THREE.Group();
-  group.add(line);
+  group.add(line, hook);
   group.visible = false;
   const DOWN = new THREE.Vector3(0, -1, 0), d = new THREE.Vector3();
   return {
@@ -505,8 +592,11 @@ export function createCable(): Cable {
       line.position.copy(a);
       if (len > 1e-4) line.quaternion.setFromUnitVectors(DOWN, d.multiplyScalar(1 / len));
       line.scale.set(1, Math.max(len, 1e-3), 1);
+      hook.visible = line.visible;
+      hook.position.copy(b).addScaledVector(d, -0.15);
+      hook.quaternion.copy(line.quaternion);
     },
-    dispose() { geo.dispose(); mat.dispose(); },
+    dispose() { geo.dispose(); hookGeo.dispose(); mat.dispose(); },
   };
 }
 
@@ -518,7 +608,7 @@ varying vec2 vUv;
 void main() {
   float v = vUv.y; // 0 = chân, 1 = ngọn
   float a = pow(1.0 - v, 1.8) * uOpacity * (0.85 + 0.15 * sin(vUv.x * 30.0 + uTime * 3.0));
-  vec3 c = mix(vec3(1.0, 0.92, 0.75), vec3(0.45, 0.8, 1.0), v);
+  vec3 c = mix(${glsl(PAL.cream[300])}, ${glsl(PAL.soda[300])}, v);
   gl_FragColor = vec4(c * a, 1.0);
 }`;
 
@@ -543,8 +633,8 @@ void main() {
     float rr = (0.3 + aSeed.z * 0.8) * (0.4 + ph);
     p += vec3(cos(ang) * rr, ph * (2.5 + aSeed.w * 2.0), sin(ang) * rr);
     size = 0.7 + ph * 2.2;
-    vA = sin(ph * 3.14159) * 0.22 * uSmoke;
-    vColor = mix(vec3(0.55, 0.65, 0.85), vec3(0.95, 0.8, 0.6), aSeed.w);
+    vA = sin(ph * 3.14159) * 0.2 * uSmoke;
+    vColor = mix(${glsl(PAL.grape[300])}, ${glsl(PAL.berry[100])}, aSeed.w);
   } else if (aType < 1.5) { // cột CO2 ở bốn góc
     float L = 0.7;
     float ph = fract((uLock + aSeed.x * L) / L);
@@ -552,8 +642,8 @@ void main() {
     float ang = aSeed.y * 6.2831853;
     p += vec3(cos(ang) * ph * 0.5, ph * (4.5 + aSeed.z * 2.0), sin(ang) * ph * 0.5);
     size = 0.3 + ph * 1.5;
-    vA = (1.0 - ph) * 0.45 * on;
-    vColor = vec3(0.85, 0.92, 1.0);
+    vA = (1.0 - ph) * 0.4 * on;
+    vColor = ${glsl(PAL.soda[100])};
   } else { // tia lửa
     float t = uLock;
     float a = aSeed.x * 6.2831853;
@@ -561,9 +651,9 @@ void main() {
     float up = 4.0 + aSeed.z * 5.0;
     p += vec3(cos(a) * sp * t, up * t - 4.9 * t * t, sin(a) * sp * t);
     p.y = max(p.y, 0.05);
-    size = 0.06;
+    size = 0.12;
     vA = t < 0.0 ? 0.0 : 1.0 - smoothstep(0.6, 1.3 + aSeed.w * 0.4, t);
-    vColor = mix(vec3(1.0, 0.75, 0.3), vec3(1.0, 1.0, 0.9), aSeed.w);
+    vColor = mix(${glsl(PAL.honey[500])}, ${glsl(PAL.cream[300])}, aSeed.w);
   }
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
@@ -574,8 +664,9 @@ varying vec3 vColor;
 varying float vA;
 void main() {
   if (vA <= 0.0) discard;
+  // khói/CO2 = cục bông tròn có viền mềm rõ; tia lửa nhỏ cũng tròn
   float d = length(gl_PointCoord - 0.5) * 2.0;
-  float a = exp(-d * d * 3.0) * smoothstep(1.0, 0.7, d) * vA;
+  float a = (0.55 + 0.45 * smoothstep(1.0, 0.2, d)) * smoothstep(1.0, 0.82, d) * vA;
   gl_FragColor = vec4(vColor * a, 1.0);
 }`;
 
@@ -594,17 +685,22 @@ export function createLiftFx(land: THREE.Vector3): LiftFx {
   const R = 1.2;
 
   const hatchGeo = new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2);
-  const hatchMat = new THREE.MeshBasicMaterial({ color: 0x050308, fog: false });
+  const hatchMat = new THREE.MeshBasicMaterial({ color: PAL.night[700], fog: false });
   const hatch = new THREE.Mesh(hatchGeo, hatchMat);
   hatch.position.y = 0.02;
   hatch.renderOrder = 2;
   disposables.push(hatchGeo, hatchMat);
 
   const pp: THREE.BufferGeometry[] = [];
-  pp.push(painted(new THREE.CylinderGeometry(R, R, 0.4, 40).translate(0, -0.2 + 0.05, 0), 0x2a2d38));
-  pp.push(painted(new THREE.TorusGeometry(R - 0.04, 0.05, 6, 48).rotateX(Math.PI / 2).translate(0, 0.05, 0), 0x6fe8ff, false));
-  pp.push(painted(new THREE.TorusGeometry(R * 0.55, 0.025, 4, 40).rotateX(Math.PI / 2).translate(0, 0.055, 0), 0xff4fd0, false));
-  pp.push(painted(new THREE.CylinderGeometry(R + 0.02, R + 0.02, 0.06, 40, 1, true).translate(0, -0.3, 0), 0x6fe8ff, false));
+  pp.push(painted(new THREE.CylinderGeometry(R, R, 0.4, 40).translate(0, -0.2 + 0.05, 0), PAL.night[300]));
+  pp.push(painted(new THREE.TorusGeometry(R - 0.02, 0.1, 10, 48).rotateX(Math.PI / 2).translate(0, 0.04, 0), PAL.soda[300], false)); // vành sáng tròn mập
+  pp.push(painted(new THREE.TorusGeometry(R * 0.62, 0.04, 6, 40).rotateX(Math.PI / 2).translate(0, 0.055, 0), PAL.berry[300], false));
+  pp.push(painted(starGeo(R * 0.42, 0.03).rotateX(-Math.PI / 2).translate(0, 0.06, 0), PAL.honey[500], false)); // sao khảm giữa bục
+  pp.push(painted(new THREE.TorusGeometry(R + 0.02, 0.07, 8, 48).rotateX(Math.PI / 2).translate(0, -0.3, 0), PAL.soda[500], false));
+  for (let i = 0; i < 12; i++) { // bóng đèn tròn quanh mép
+    const a = (i / 12) * Math.PI * 2;
+    pp.push(painted(new THREE.SphereGeometry(0.075, 8, 6).translate(Math.cos(a) * (R + 0.05), -0.13, Math.sin(a) * (R + 0.05)), i % 2 ? PAL.honey[300] : PAL.berry[300], false));
+  }
   const platGeo = mergeGeometries(pp)!;
   for (const g of pp) g.dispose();
   const platMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
@@ -664,7 +760,7 @@ export function createLiftFx(land: THREE.Vector3): LiftFx {
       hatch.visible = open > 0.01 && lockAge < 0;
       hatch.scale.setScalar(Math.max(0.001, open * 1.28));
       plat.position.y = deckY;
-      shaftMat.uniforms.uOpacity.value = 0.12 * light;
+      shaftMat.uniforms.uOpacity.value = 0.05 * light; // cột sáng kem mềm, không trắng xoá
       shaftMat.uniforms.uTime.value = time;
       shaft.visible = light > 0.01;
       shaft.position.y = Math.min(0, deckY);

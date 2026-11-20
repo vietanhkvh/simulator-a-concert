@@ -90,6 +90,51 @@ Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi 
 | `?fakeMic=perfect` | Micro giả hát đúng giai điệu (xem thử không cần micro). Còn có `off`, `octave`. |
 | `?entrance=jump` | Ghi đè màn chào sân chọn ở sảnh: `jump` (nhảy khỏi trực thăng), `lift` (bục nâng), `cable` (thả cáp), `off` (tắt). Giá trị cũ `hero`→`jump`, `parachute`→`cable`. |
 | `?crowd=8000` | Số khán giả (100–10000). Game tự giảm số người được vẽ nếu máy chậm. |
+| `?dev=1` | Bật chế độ developer (nhớ trong localStorage tới khi mở `?dev=0`). Xem mục dưới. |
+
+## Chế độ developer
+
+Bảng nổi để thử nhanh mọi tính năng, dùng được ở mọi trạng thái (sảnh, chào sân, đang diễn, tạm dừng, kết quả).
+Không đổi gameplay trừ khi bấm một nút trong bảng.
+
+- **Bật:** `?dev=1` (nhớ tới khi `?dev=0`), phím **`** (backquote) hoặc **F2** bất cứ lúc nào, link nhỏ "DEV" góc dưới trái
+  ở sảnh, hoặc nút "Mở bảng developer" trong menu tạm dừng. Huy hiệu vàng "DEV" ở góc trên trái = đang bật (bấm để ẩn/hiện bảng).
+- **Bảng** (`src/ui/devPanel.ts`): kéo bằng thanh tiêu đề, thu gọn bằng "–"; phím game không bị chặn khi bảng không được focus,
+  và bị bỏ qua khi đang gõ trong ô nhập của bảng. Các mục:
+  - *Số liệu* (~4 Hz): FPS / thời gian frame (trung bình + 1% thấp trong 3 s), draw call / tam giác / geometry / texture /
+    program, số khán giả + chất lượng tự động, trạng thái, thời gian bài, Hype (hiển thị và của điểm), micro (chế độ, mức, nốt),
+    góc máy, vị trí/hướng người chơi, sự kiện bí mật / chào sân đang chạy. Nút "Copy stats" chép JSON.
+  - *Trạng thái game*: bắt đầu ngay (không chào sân) hoặc với từng kiểu chào sân, hát lại, kết thúc, màn kết quả, tua ±10/30 s,
+    tới điệp khúc, tới 10 s trước khi hết bài.
+  - *Hype*: khóa Hype hiển thị (0–100 %) cho mọi module hình + âm thanh, **không** đổi điểm; nút nhanh 0/20/40/60/80/95/100 %;
+    quét 0→100 % trong 20 s (thử ngưỡng cực quang 40 %, sao băng 20/40/60/80 %…).
+  - *Micro*: đổi micro giả lúc đang chạy (`real` / `perfect` / `off` / `octave` / `silent`), bù trễ, độ nhạy.
+  - *Kích hoạt*: tương tác (hò reo, sóng, thả tim, flash, pháo hoa, hát theo), pyro, pháo giấy, đội hình tim, từng loại biểu tượng,
+    laser (Hype 90 %), khán giả hát theo bật/tắt, sự kiện bí mật + tỉ lệ, máy bay kéo băng rôn, mưa sao băng, xem thử màn chào sân,
+    đặt băng rôn (nhiều khẩu hiệu cách nhau bằng `|`).
+  - *Camera*: mọi góc máy (theo `VIEW_MODES` của khu sân trung tâm), chuột tự do, dịch chuyển (sân khấu, cuối runway, bục trái/phải,
+    B-stage), độ nhạy nhìn, **camera bay tự do** (WASD, Q/E lên/xuống, kéo chuột để nhìn, giữ Shift để nhanh; không bị giới hạn lối đi).
+  - *Khu & lớp*: ẩn/hiện từng khu (ngoài sân, khán đài, sân trung tâm, điểm sáng dùng chung) và từng lớp trong khu
+    (vd. `crowd`, `lights`, `stageFx`, `emotes`, `confetti`, `led`, `band`, `crew`, `sky`, `balloons`, `stadium`…), chất lượng
+    vẽ khán giả, đổi số khán giả (tải lại với `?crowd=`). Chưa tách riêng được: cực quang (trong `sky`), laser (trong `stageFx`),
+    sao + khán giả chấm sáng (một draw call chung `glow`), vật thể module tạo muộn khi chạy.
+  - *Nhật ký*: 30 sự kiện gần nhất (`cs-interact`, `cs-secret`, `cs-entrance`, `cs-view`, `cs-mouselook`) + lỗi/cảnh báo console
+    từ lúc tải trang, kèm thời điểm (giây).
+
+**Cho kiểm thử tự động: `window.__dev`** (có cả khi chưa bật bảng):
+
+| Hàm | Việc |
+|---|---|
+| `stats()`, `snapshot()`, `log()` | số liệu (như bảng) / không có FPS / `{ events, errors }` |
+| `show()`, `hide()`, `toggle()`, `enable()`, `disable()` | bảng và chế độ developer |
+| `startInstant()`, `startWithEntrance('jump'｜'lift'｜'cable')`, `restart()`, `end()`, `result()` | trạng thái game |
+| `seekBy(s)`, `seekTo(s)`, `chorusSec()`, `duration()` | tua |
+| `setHypeLock(0..1 ｜ null)`, `getHypeLock()`, `sweepHype(sec=20)` | Hype hiển thị |
+| `setMicMode('real'｜'perfect'｜'off'｜'octave'｜'silent')`, `setLatency(ms)`, `setSensitivity(gain)` | micro |
+| `interact('cheer'｜'wave'｜'heart'｜'flash'｜'fireworks'｜'sing')`, `pyro()`, `confetti()`, `emote(kind)`, `formation(kind?)`, `setCrowdSing(on)` | hiệu ứng |
+| `secret(kind)`, `secretKinds()`, `setSecretChance(kind, 0..1)`, `flyby()`, `meteors(n)`, `entrancePreview(kind)`, `banners(lines)` | sự kiện |
+| `views()`, `setView(id)`, `setMouseLook(on)`, `teleportTargets()`, `teleport(name ｜ {x, z, yaw})`, `setLookSens(v)`, `setFreeFly(on)`, `cameraPose()` | camera |
+| `setZoneVisible('outside'｜'stands'｜'arena'｜'glow', on)`, `layers(zone)`, `setLayerVisible(zone, name, on)`, `setCrowdQuality(q)`, `reloadWithCrowd(n)` | khu & lớp |
 
 ## Lệnh khác
 

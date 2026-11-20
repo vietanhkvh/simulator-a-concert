@@ -1,14 +1,17 @@
-// Đèn sân khấu giả (additive, không Light thật, không bóng). 5 draw call (3 + 2 đèn trang trí): chùm sáng, flare/chấm, vệt màu sàn.
+// Đèn sân khấu giả (additive, không Light thật, không bóng). 5 draw call (3 + 2 đèn trang trí): chùm sáng, flare/chấm/sao gobo, vệt màu sàn.
+// Màu: 3 trạng thái Hype dùng chung (stageDecoPal → src/world/style), mỗi nhóm một vai trò, chạy đuổi theo phách.
 import * as THREE from 'three';
 import { WALK_SHAPES, edgeRuns, shapeSignedDist, chaseDistance } from './walkLayout';
 import type { FrameState, Updatable } from '../../core/types';
-import { PALETTES, COOL, palColor, livePal } from './stageDecoPal';
+import { palColor, livePal, lightFraction } from './stageDecoPal';
+import { GLARE_FRAG_PARS, GLARE_VERT_MAIN, GLARE_VERT_PARS } from './lightsGlare';
 import { createDecoFixtures } from './stageDecoFixtures';
 import { CROWD_BARRIER_Z, FIELD_Y, STAGE_Y, fieldY } from '../../world/layout';
 
 const LEN = 60;
 
 // ───────── shader ─────────
+// Chùm "kẹo": mép mềm tròn, lõi hơi kem, đỉnh sáng thấp hơn trước; tắt dần gần camera và ở cửa sổ lời.
 const beamVert = /* glsl */ `
 attribute vec3 aColor;
 attribute float aInt;
@@ -17,6 +20,7 @@ varying float vFres;
 varying vec3 vCol;
 varying float vInt;
 varying float vDepth;
+${GLARE_VERT_PARS}
 void main() {
   vUv = uv;
   vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
@@ -24,52 +28,89 @@ void main() {
   vFres = abs(dot(n, normalize(-mv.xyz)));
   vCol = aColor; vInt = aInt; vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
+  ${GLARE_VERT_MAIN}
 }`;
 const beamFrag = /* glsl */ `
 varying vec2 vUv; varying float vFres; varying vec3 vCol; varying float vInt; varying float vDepth;
+${GLARE_FRAG_PARS}
 void main() {
-  float along = pow(vUv.y, 1.3);
-  float soft = pow(vFres, 1.5);
-  // mờ dần gần camera: chùm không bao giờ thành flash toàn màn hình
-  float near = smoothstep(1.5, 9.0, vDepth);
-  float a = along * soft * vInt * near;
-  gl_FragColor = vec4(vCol * a, a);
+  float along = pow(vUv.y, 1.5) * smoothstep(0.0, 0.25, vUv.y);
+  // mép tròn mềm: hồ sơ gauss theo fresnel thay vì cạnh cứng
+  float soft = exp(-pow(1.0 - vFres, 2.0) * 5.0);
+  float near = smoothstep(1.5, 10.0, vDepth);
+  float a = along * soft * vInt * near * lyricDim() * 0.82;
+  vec3 c = toSrgb(vCol);
+  c = mix(c, vec3(1.0, 0.98, 0.95), soft * soft * 0.18); // lõi kem
+  gl_FragColor = vec4(c * a, a);
 }`;
+// flare: kind 0 = bóng đèn tròn bóng (lens), 1 = chấm runway, 2 = sao gobo ở đầu chùm
 const flareVert = /* glsl */ `
 attribute vec3 aColor;
 attribute float aInt;
-varying vec2 vP; varying vec3 vCol; varying float vInt;
+attribute float aKind;
+varying vec2 vP; varying vec3 vCol; varying float vInt; varying float vKind;
+${GLARE_VERT_PARS}
 void main() {
-  vP = position.xy * 2.0; vCol = aColor; vInt = aInt;
+  vP = position.xy * 2.0; vCol = aColor; vInt = aInt; vKind = aKind;
   vec4 c = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
   float s = length(instanceMatrix[0].xyz);
   c.xy += position.xy * s;
   gl_Position = projectionMatrix * c;
+  ${GLARE_VERT_MAIN}
 }`;
 const flareFrag = /* glsl */ `
-varying vec2 vP; varying vec3 vCol; varying float vInt;
+varying vec2 vP; varying vec3 vCol; varying float vInt; varying float vKind;
+${GLARE_FRAG_PARS}
+float star5(vec2 p, float r) {
+  float a = atan(p.x, p.y);
+  float k = 6.2831853 / 5.0;
+  float m = abs(mod(a + k * 0.5, k) - k * 0.5);
+  float rr = r * mix(0.5, 1.0, pow(cos(m * 2.5), 3.0)); // sao 5 cánh đầu tròn
+  return smoothstep(rr + 0.06, rr - 0.04, length(p));
+}
 void main() {
   float r = length(vP);
-  float core = smoothstep(0.35, 0.0, r);
-  float halo = pow(max(0.0, 1.0 - r), 2.5);
-  float a = (core * 0.9 + halo * 0.5) * vInt;
-  vec3 c = mix(vCol, vec3(1.0), core * 0.6);
+  vec3 col = toSrgb(vCol);
+  float a; vec3 c;
+  if (vKind < 0.5) {
+    // bóng đèn tròn bóng: thân đĩa màu, đốm highlight kem lệch trên-trái, quầng mềm
+    float disc = smoothstep(0.42, 0.36, r);
+    float hi = smoothstep(0.13, 0.03, length(vP - vec2(-0.13, 0.14)));
+    float halo = pow(max(0.0, 1.0 - r), 3.0) * 0.45;
+    a = (disc * (0.55 + 0.35 * smoothstep(0.4, 0.0, r)) + halo) * vInt;
+    c = mix(col, vec3(1.0, 0.98, 0.95), max(hi * 0.85, disc * 0.18));
+    a = max(a, hi * disc * 0.8 * min(1.0, vInt + 0.3));
+  } else if (vKind < 1.5) {
+    float core = smoothstep(0.32, 0.12, r);
+    float halo = pow(max(0.0, 1.0 - r), 2.5) * 0.4;
+    a = (core * 0.85 + halo) * vInt;
+    c = mix(col, vec3(1.0, 0.98, 0.95), core * 0.25);
+  } else {
+    float st = star5(vP, 0.75);
+    float halo = pow(max(0.0, 1.0 - r), 3.0) * 0.35;
+    a = (st * 0.8 + halo) * vInt;
+    c = mix(col, vec3(1.0, 0.96, 0.82), st * 0.45);
+  }
+  a *= lyricDim();
   gl_FragColor = vec4(c * a, a);
 }`;
 const washVert = /* glsl */ `
 attribute vec3 aColor;
 attribute float aInt;
 varying vec2 vP; varying vec3 vCol; varying float vInt;
+${GLARE_VERT_PARS}
 void main() {
   vP = position.xy * 2.0; vCol = aColor; vInt = aInt;
   gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+  ${GLARE_VERT_MAIN}
 }`;
 const washFrag = /* glsl */ `
 varying vec2 vP; varying vec3 vCol; varying float vInt;
+${GLARE_FRAG_PARS}
 void main() {
   float r = length(vP);
-  float a = pow(max(0.0, 1.0 - r), 2.0) * vInt;
-  gl_FragColor = vec4(vCol * a, a);
+  float a = pow(max(0.0, 1.0 - r * r), 2.0) * vInt * lyricDim();
+  gl_FragColor = vec4(toSrgb(vCol) * a, a);
 }`;
 
 function addMat(vs: string, fs: string, side: THREE.Side = THREE.FrontSide) {
@@ -190,7 +231,14 @@ export function createLights(scene: THREE.Scene): Updatable {
   beamGeo.translate(0, -LEN / 2, 0);
   const beams = instanced(beamGeo, addMat(beamVert, beamFrag, THREE.DoubleSide), NBT, 5);
   const flareGeo = new THREE.PlaneGeometry(1, 1);
-  const flares = instanced(flareGeo, addMat(flareVert, flareFrag), NBT + ND, 6);
+  // flare: [0, NBT) bóng đèn, [NBT, NBT+ND) chấm runway, [NBT+ND, 2·NBT+ND) sao gobo ở đầu chùm (cùng draw call)
+  const NF = NBT + ND + NBT;
+  const flares = instanced(flareGeo, addMat(flareVert, flareFrag), NF, 6);
+  {
+    const kd = new THREE.InstancedBufferAttribute(new Float32Array(NF), 1);
+    for (let i = 0; i < NF; i++) kd.array[i] = i < NBT ? 0 : i < NBT + ND ? 1 : 2;
+    flareGeo.setAttribute('aKind', kd);
+  }
   const washGeo = new THREE.PlaneGeometry(1, 1);
   washGeo.rotateX(-Math.PI / 2);
   const washes = instanced(washGeo, addMat(washVert, washFrag), NW, 3);
@@ -253,14 +301,10 @@ export function createLights(scene: THREE.Scene): Updatable {
       const p = ph.v;
       const beat = Math.max(0, f.beat);
 
-      // palette đổi mỗi 8 phách, crossfade trong phách đầu
-      const seg = Math.floor(beat / 8);
-      const pCur = seg % PALETTES.length;
-      const pPrev = (seg + PALETTES.length - 1) % PALETTES.length;
-      const mix = sm(0, 1, (beat / 8 - seg) * 8);
-      const vivid = sm(0.12, 0.65, hype);
-      livePal.pCur = pCur; livePal.pPrev = pPrev; livePal.mix = mix; livePal.vivid = vivid; livePal.beat = beat;
-      const nLit = Math.round(6 + (NBT - 6) * sm(0.05, 0.85, hype));
+      // màu: 3 trạng thái Hype dùng chung; số đèn bật theo guide (25 % / 60 % / 100 %)
+      livePal.hype = hype; livePal.beat = beat;
+      const frac = lightFraction(hype);
+      const nLit = Math.max(4, Math.round(NBT * frac));
       const pulse = f.beatPulse;
 
       const colAttr = beams.col.array as Float32Array;
@@ -269,16 +313,9 @@ export function createLights(scene: THREE.Scene): Updatable {
       const fiAttr = flares.it.array as Float32Array;
       const dt = Math.min(0.1, Math.max(0, f.dt));
 
-      const fixColor = (fx: Fix, out: THREE.Color) => {
-        const k = fx.group * 2 + fx.idx + (pCur === 3 ? 0 : Math.floor(beat / 4 * (hype > 0.6 ? 1 : 0)));
-        palColor(pPrev, fx.group * 2 + fx.idx, beat, cB);
-        palColor(pCur, k, beat, cA);
-        out.copy(cB).lerp(cA, mix);
-        // hype thấp: lạnh, ít bão hòa; hype cao: đủ màu
-        cB.copy(COOL[(fx.group + fx.idx) % COOL.length]!);
-        out.lerpColors(cB, out, vivid);
-        return out;
-      };
+      // mỗi nhóm một vai trò (k lệch theo nhóm) → moving head / tháp / hậu / vòng sân khác màu nhau, chạy đuổi theo phách
+      const fixColor = (fx: Fix, out: THREE.Color) => palColor(fx.group * 3 + (fx.group === 2 ? fx.idx : fx.idx >> 1), out);
+      const starOn = sm(0.72, 0.9, hype);
 
       for (let i = 0; i < NBT; i++) {
         const fx = fixes[i]!;
@@ -288,7 +325,7 @@ export function createLights(scene: THREE.Scene): Updatable {
         const m = lit[i]!;
         const swing = 0.75 + 0.25 * Math.sin(p * 2 + i);
         const strobe = hype > 0.75 ? 0.75 + 0.5 * pulse : 0.85 + 0.25 * pulse;
-        const intensity = (0.4 + 0.7 * hype) * m * swing * strobe * (fx.group === 4 ? 1.1 : fx.group === 2 ? 0.85 : 1);
+        const intensity = (0.36 + 0.5 * hype) * m * swing * strobe * (fx.group === 4 ? 1.1 : fx.group === 2 ? 0.85 : 1);
 
         if (fx.group === 4) {
           const a = p * 0.4 + i;
@@ -311,7 +348,20 @@ export function createLights(scene: THREE.Scene): Updatable {
         tmpM.compose(fx.pos, tmpQ.identity(), tmpS.setScalar(fs));
         flares.mesh.setMatrixAt(i, tmpM);
         fcAttr[i * 3] = col.r; fcAttr[i * 3 + 1] = col.g; fcAttr[i * 3 + 2] = col.b;
-        fiAttr[i] = 0.5 + 0.9 * m * (0.8 + 0.4 * pulse);
+        fiAttr[i] = 0.45 + 0.7 * m * (0.8 + 0.3 * pulse);
+
+        // sao gobo lấp lánh ở đầu chùm (hype cao)
+        const si = NBT + ND + i;
+        if (fx.group === 4 || starOn <= 0) {
+          fiAttr[si] = 0;
+        } else {
+          const tw = 0.5 + 0.5 * Math.sin(f.songTime * 7 + i * 2.3);
+          tmpS.setScalar(1.1 + 0.5 * tw + 0.4 * pulse);
+          tmpM.compose(tgt.y < 0.5 ? tgt.setY(fieldY(Math.hypot(tgt.x, tgt.z)) + 2.4) : tgt, tmpQ.identity(), tmpS);
+          flares.mesh.setMatrixAt(si, tmpM);
+          fcAttr[si * 3] = col.r; fcAttr[si * 3 + 1] = col.g; fcAttr[si * 3 + 2] = col.b;
+          fiAttr[si] = starOn * m * (0.35 + 0.45 * tw);
+        }
       }
 
       // chấm runway chase về phía sân cuối (chỉ số tăng = xa dần)
@@ -326,18 +376,17 @@ export function createLights(scene: THREE.Scene): Updatable {
           let d = (head - row) % CHASE;
           if (d < 0) d += CHASE;
           b = 0.18 + 0.82 * Math.max(0, 1 - d / 4.5);
-          col = palColor(pCur, row, beat, cA);
+          col = palColor(row + 1, cA);
         } else {
           const kk = -1 - dotRow[k]!;
           b = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(p * 2 - kk * 0.63));
-          col = palColor(pCur, kk, beat, cA);
+          col = palColor(kk, cA);
         }
-        cB.copy(COOL[0]!);
-        cB.lerp(col, Math.max(0.35, vivid));
+        cB.copy(col);
         tmpM.compose(dotPos[k]!, tmpQ.identity(), tmpS.setScalar(0.9));
         flares.mesh.setMatrixAt(j, tmpM);
         fcAttr[j * 3] = cB.r; fcAttr[j * 3 + 1] = cB.g; fcAttr[j * 3 + 2] = cB.b;
-        fiAttr[j] = b * (0.9 + 0.4 * pulse);
+        fiAttr[j] = b * (0.8 + 0.3 * pulse);
       }
 
       // vệt màu khán giả trôi chậm
@@ -353,13 +402,9 @@ export function createLights(scene: THREE.Scene): Updatable {
         tmpM.compose(tgt.set(wx, wy, wz), tmpQ.identity(), tmpS);
         washes.mesh.setMatrixAt(w, tmpM);
         // màu trôi chậm theo hue pha + palette
-        palColor(pCur, w, beat * 0.25, cA);
-        palColor(pPrev, w, beat * 0.25, cB);
-        cA.lerp(cB, 1 - mix);
-        cB.copy(COOL[w % COOL.length]!);
-        cA.lerpColors(cB, cA, vivid);
+        palColor(w * 3 + 1, cA, beat * 0.5);
         wcol[w * 3] = cA.r; wcol[w * 3 + 1] = cA.g; wcol[w * 3 + 2] = cA.b;
-        wint[w] = 0.22 + 0.36 * hype + 0.06 * pulse;
+        wint[w] = 0.2 + 0.3 * hype + 0.05 * pulse;
       }
 
       extra.update(f, p);

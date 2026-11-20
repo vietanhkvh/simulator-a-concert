@@ -73,3 +73,10 @@ Quy tắc 1 và 2 được kiểm bằng `src/world/zones.test.ts` (chạy cùng
 Sửa `STAGE_Y` / `FIELD_Y` trong `world/layout.ts`. Các chỗ đã đọc từ đó: khán giả sân, biểu tượng cảm xúc,
 thân runway, mép sân khấu, mặt đất nền, cầu thang + hàng rào hố, đội quay phim, sự kiện trên trời.
 Các chỗ còn số cứng (cần rà khi đổi) được liệt kê ở đầu `world/layout.ts` mục "Chưa chuyển".
+
+## Chế độ developer
+
+`src/ui/devPanel.ts` (bảng + `window.__dev`) chỉ gọi các hành động `main.ts` cung cấp (`DevHost`). Ẩn/hiện khu và lớp dùng
+các hàm debug tùy chọn `setVisible` / `debugLayers` / `setLayerVisible` trên handle mỗi khu, dựa trên `core/debugLayers.ts`:
+index.ts của khu bọc mỗi lời gọi `createX(scene)` bằng `layers.track(tên, …)` để ghi nhận vật thể được thêm vào scene, rồi
+gỡ/gắn lại chúng. `World.setZoneVisible(zone, on)` và `World.stats()` (số liệu renderer) ở `world/world.ts`. Xem README.

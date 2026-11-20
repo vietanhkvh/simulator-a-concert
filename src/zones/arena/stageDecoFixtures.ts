@@ -1,12 +1,15 @@
-// Đèn trang trí thêm: PAR can + pixel bar (sprite additive), màn chùm sáng, uplight, searchlight trời. 2 draw call.
+// Đèn trang trí thêm: PAR can + pixel bar (sprite additive, bóng tròn bóng), màn chùm sáng, uplight, searchlight trời. 2 draw call.
+// Màu lấy từ liveColor() = 3 trạng thái Hype dùng chung; chỉ số k khác nhau → mỗi nhóm một vai trò.
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
-import { liveColor } from './stageDecoPal';
+import { lightFraction, liveColor } from './stageDecoPal';
 import { DECO } from './stageDecoLayout';
+import { GLARE_FRAG_PARS, GLARE_VERT_MAIN, GLARE_VERT_PARS } from './lightsGlare';
 
 const spriteVert = /* glsl */ `
 attribute vec3 aColor; attribute float aInt; attribute float aKind;
 varying vec2 vP; varying vec3 vCol; varying float vInt; varying float vKind;
+${GLARE_VERT_PARS}
 void main() {
   vP = position.xy * 2.0; vCol = aColor; vKind = aKind;
   vec4 c = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
@@ -14,28 +17,35 @@ void main() {
   vInt = aInt * smoothstep(0.8, 3.5, -c.z);
   c.xy += position.xy * s;
   gl_Position = projectionMatrix * c;
+  ${GLARE_VERT_MAIN}
 }`;
 const spriteFrag = /* glsl */ `
 varying vec2 vP; varying vec3 vCol; varying float vInt; varying float vKind;
+${GLARE_FRAG_PARS}
 void main() {
   float r = length(vP);
-  float a; vec3 c = vCol;
-  if (vKind < 0.5) { // thấu kính PAR
-    float disc = smoothstep(0.62, 0.5, r);
-    float lens = 0.55 + 0.9 * smoothstep(0.5, 0.0, r);
-    float halo = pow(max(0.0, 1.0 - r), 3.0) * 0.55;
-    a = (disc * lens + halo) * vInt;
-    c = mix(vCol, vec3(1.0), smoothstep(0.2, 0.0, r) * 0.5);
-  } else { // pixel
-    float core = smoothstep(0.5, 0.0, r);
-    float halo = pow(max(0.0, 1.0 - r), 2.5) * 0.5;
-    a = (core + halo) * vInt;
+  float a; vec3 col = toSrgb(vCol); vec3 c = col;
+  if (vKind < 0.5) { // PAR: bóng đèn tròn bóng, đốm highlight kem trên-trái
+    float disc = smoothstep(0.6, 0.5, r);
+    float body = 0.5 + 0.4 * smoothstep(0.5, 0.0, r);
+    float hi = smoothstep(0.16, 0.04, length(vP - vec2(-0.18, 0.2)));
+    float halo = pow(max(0.0, 1.0 - r), 3.0) * 0.4;
+    a = (disc * body + halo) * vInt;
+    c = mix(col, vec3(1.0, 0.98, 0.95), max(hi * 0.9, disc * 0.12));
+    a = max(a, hi * disc * 0.7 * min(1.0, vInt + 0.25));
+  } else { // pixel: chấm kẹo tròn
+    float core = smoothstep(0.45, 0.3, r);
+    float halo = pow(max(0.0, 1.0 - r), 2.5) * 0.35;
+    a = (core * 0.85 + halo) * vInt;
+    c = mix(col, vec3(1.0, 0.98, 0.95), core * 0.2);
   }
+  a *= lyricDim();
   gl_FragColor = vec4(c * a, a);
 }`;
 const beamVert = /* glsl */ `
 attribute vec3 aColor; attribute float aInt;
 varying vec2 vUv; varying float vFres; varying vec3 vCol; varying float vInt; varying float vDepth;
+${GLARE_VERT_PARS}
 void main() {
   vUv = uv;
   vec4 mv = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
@@ -43,15 +53,17 @@ void main() {
   vFres = abs(dot(n, normalize(-mv.xyz)));
   vCol = aColor; vInt = aInt; vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
+  ${GLARE_VERT_MAIN}
 }`;
 const beamFrag = /* glsl */ `
 varying vec2 vUv; varying float vFres; varying vec3 vCol; varying float vInt; varying float vDepth;
+${GLARE_FRAG_PARS}
 void main() {
-  float along = pow(vUv.y, 0.7);
-  float soft = pow(vFres, 1.5);
+  float along = pow(vUv.y, 0.7) * smoothstep(0.0, 0.2, vUv.y);
+  float soft = exp(-pow(1.0 - vFres, 2.0) * 5.0);
   float near = smoothstep(1.5, 9.0, vDepth);
-  float a = along * soft * vInt * near;
-  gl_FragColor = vec4(vCol * a, a);
+  float a = along * soft * vInt * near * lyricDim() * 0.85;
+  gl_FragColor = vec4(toSrgb(vCol) * a, a);
 }`;
 
 function addMat(vs: string, fs: string, side: THREE.Side = THREE.FrontSide) {
@@ -146,7 +158,7 @@ export function createDecoFixtures(scene: THREE.Scene) {
       const hype = Math.min(1, Math.max(0, f.hype));
       const beat = Math.max(0, f.beat);
       const pulse = f.beatPulse;
-      const frac = 0.3 + 0.7 * sm(0.05, 0.8, hype);
+      const frac = 0.15 + 0.85 * lightFraction(hype);
       const speed = 0.5 + 2.5 * hype;
       const pat = (g: number) => (Math.floor(beat / 8) + g) % 3;
 

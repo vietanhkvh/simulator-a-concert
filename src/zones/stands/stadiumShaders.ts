@@ -65,9 +65,9 @@ void main(){
   if (uFlash > 0.001) {
     float ph = step(0.42, fract(sd * 31.7));
     float tk = 0.5 + 0.5 * sin(uTime * (5.0 + sd * 9.0) + sd * 91.0);
-    vec3 pc = CREAM100 * (0.7 + 1.3 * tk * tk);
+    vec3 pc = CREAM300 * (0.4 + 0.7 * tk * tk);
     col = mix(col, mix(col * 0.22, pc, ph), uFlash);
-    sz += uFlash * ph * (1.0 + 1.2 * tk);
+    sz += uFlash * ph * (0.5 + 0.8 * tk);
   }
   // 2: sóng sân vận động — đáy grape-700, sườn soda-500, bọt cream-100
   if (uWave > 0.001) {
@@ -76,10 +76,10 @@ void main(){
     float swell = exp(-dd * dd / 0.012);
     vec3 deep = GRAPE700 * (0.75 + 0.3 * h11(sd * 9.0));
     vec3 wc = mix(deep, SODA500 * 1.15, swell);
-    wc = mix(wc, CREAM100 * 1.8, crest);
+    wc = mix(wc, CREAM100 * 1.2, crest);
     col = mix(col, wc * hold, uWave);
     p.y += uWave * (crest * 3.5 + swell * 0.8);
-    sz += uWave * (crest * 3.2 + swell * 0.8);
+    sz += uWave * (crest * 2.0 + swell * 0.6);
   }
   // 3: thả tim — hồng dâu, nhịp tim đập đôi + 3 trái tim khổng lồ ghép bằng chấm
   if (uHeart > 0.001) {
@@ -89,9 +89,9 @@ void main(){
     float hs = 0.85 + 0.15 * th;
     float inH = heartIn(vec2(hx / (21.0 * hs), (y - 17.5) / (11.0 * hs)));
     vec3 pink = mix(BERRY700, BERRY300, sd);
-    vec3 hc = mix(pink * (0.35 + 0.5 * th), mix(BERRY500, CREAM100, 0.25 * th) * (1.5 + 1.0 * th), inH);
+    vec3 hc = mix(pink * (0.35 + 0.5 * th), mix(BERRY500, BERRY300, 0.5 * th) * (0.95 + 0.45 * th), inH);
     col = mix(col, hc, uHeart);
-    sz += uHeart * (inH * (2.2 + 1.5 * th) + 0.6 * th);
+    sz += uHeart * (inH * (0.9 + 0.8 * th) + 0.3 * th);
     p.y += uHeart * th * 0.6;
   }
   // 5: pháo hoa — sóng honey/peach lan từ phía sân khấu ra + chớp lấp lánh kem
@@ -99,13 +99,13 @@ void main(){
     float front = uPyroAge * 0.95;
     float wash = smoothstep(0.0, 0.25, front - (1.0 - da));
     float fl = 0.55 + 0.45 * sin(uTime * 23.0 + sd * 70.0);
-    vec3 warm = mix(PEACH500, HONEY500, fl) * (0.9 + 0.5 * fl);
+    vec3 warm = mix(PEACH500, HONEY500, fl) * (0.6 + 0.3 * fl);
     float cell = floor(ang * 36.0) + floor(y / 8.0) * 50.0;
     float bt = fract(uTime * 0.9 + h11(cell));
     float burst = exp(-bt * 5.0) * step(0.55, h11(cell + 7.0)) * step(0.5, fract(sd * 17.3));
     float edge = exp(-pow((front - (1.0 - da)) * 6.0, 2.0));
-    col = mix(col, warm, min(1.0, uPyro * wash * 1.5)) + CREAM300 * (burst * 3.0 * wash + edge * 1.0) * uPyro;
-    sz += uPyro * (wash * 0.8 + burst * 3.0 * wash + edge * 1.5);
+    col = mix(col, warm, min(1.0, uPyro * wash * 1.5)) + CREAM300 * (burst * 1.2 * wash + edge * 0.4) * uPyro;
+    sz += uPyro * (wash * 0.4 + burst * 2.0 * wash + edge * 0.8);
   }
   // 1: hò reo — xung sáng chạy quanh bowl + cả khán đài nhảy, nhấp nháy honey/kem
   if (uCheer > 0.001) {
@@ -113,9 +113,9 @@ void main(){
     float race = exp(-pow((da - r) * 7.0, 2.0));
     float fk = step(0.5, h11(floor(uTime * 12.0) + sd * 311.0));
     vec3 gold = mix(HONEY300, CREAM100, fk);
-    col = mix(col, gold * (0.8 + 0.8 * fk), uCheer * 0.85) + CREAM300 * race * 1.8 * uCheer;
+    col = mix(col, gold * (0.5 + 0.35 * fk), uCheer * 0.85) + CREAM300 * race * 0.9 * uCheer;
     p.y += uCheer * (1.4 * abs(sin(uTime * 8.0 + sd * 20.0)) + race * 1.5);
-    sz += uCheer * (1.2 + 0.8 * fk + 2.5 * race);
+    sz += uCheer * (0.5 + 0.5 * fk + 2.0 * race);
   }
   vCol = col;
   gl_PointSize = sz * uRes;

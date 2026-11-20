@@ -1,6 +1,7 @@
-// Khán giả instanced (P1): BODY = bóng người vẽ bằng SDF; STICK = lightstick phát sáng (additive).
-
-varying vec2 vUv;
+// Khán giả instanced (P1) — CHIBI "Kẹo đêm".
+// BODY: nhân vật 2,1 đầu vẽ bằng SDF trong billboard (alpha-test + depth write), viền ink từ khoảng cách SDF,
+//       tô 2 bậc (bóng dịch về tím), rim theo màu que, mặt ở LOD gần, bóng đơn giản ở LOD xa.
+// STICK: quầng sáng đầu que sao / tim (additive) + đèn flash điện thoại.
 
 #ifdef USE_FOG
 uniform vec3 fogColor;
@@ -13,34 +14,40 @@ uniform float fogFar;
 #endif
 #endif
 
-#ifdef BODY
-varying vec2 vLocal;
-varying vec2 vShoulder;
-varying vec2 vHand;
-varying float vTint;
-varying vec3 vGlow;
-varying vec2 vHand2;
-varying vec2 vHead;
-varying vec4 vShape;
-varying vec3 vStickCol;
-varying float vFront;
-varying float vLod;
-varying vec4 vBox;
+uniform float uHype;
 
-vec3 clothColor(float c) {
-  if (c < 0.2) return vec3(0.06, 0.08, 0.2);    // xanh navy
-  if (c < 0.38) return vec3(0.22, 0.05, 0.08);  // đỏ rượu
-  if (c < 0.54) return vec3(0.04, 0.17, 0.17);  // xanh teal
-  if (c < 0.7) return vec3(0.5, 0.5, 0.5);      // áo phông trắng
-  return vec3(0.025, 0.025, 0.03);              // áo merch đen
-}
+#ifdef BODY
+uniform vec3 uInk;
+uniform vec3 uCream;     // cream-500: giày, que
+uniform vec3 uCreamHi;   // cream-100: đốm mắt, highlight
+uniform vec3 uPants;     // night-100
+uniform vec3 uCheek;     // berry-300
+uniform vec3 uMouth;     // berry-700
+uniform vec3 uStar;      // honey-500
+uniform vec3 uHeart;     // berry-500
+uniform vec3 uShadowTint;// grape-700
+
+varying vec4 vP;
+flat varying vec4 vHeadV;
+flat varying vec4 vHandsV;
+flat varying vec4 vStickV;
+flat varying vec4 vBox;
+flat varying vec4 vSkinV;
+flat varying vec4 vHairV;
+flat varying vec4 vClothV;
+flat varying vec4 vStickColV;
+flat varying vec4 vRimV;
+flat varying vec4 vMiscV;
+flat varying vec3 vAccent;
 #endif
 
 #ifdef STICK
-varying vec3 vColor;
+varying vec2 vUv;
+flat varying vec3 vColor;
 varying vec2 vMetric;
-varying float vGlowScale;
-varying float vPhone;
+flat varying float vGlowScale;
+flat varying float vPhone;
+flat varying float vShapeK;
 #endif
 
 float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
@@ -54,6 +61,34 @@ float sdRoundBox(vec2 p, vec2 halfSize, float r) {
   return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 
+// Sao 5 cánh (iq), bán kính ngoài r, độ lõm rf.
+float sdStar5(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+  const vec2 k2 = vec2(-0.809016994375, -0.587785252292);
+  p.x = abs(p.x);
+  p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+  p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+  p.x = abs(p.x);
+  p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+  float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+
+// Tim (iq): cao ~1,1, đáy ở y = 0.
+float sdHeartRaw(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return length(p - vec2(0.25, 0.75)) - 0.35355339;
+  vec2 a = p - vec2(0.0, 1.0);
+  vec2 b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+// Motif tròn mập theo đơn vị "bán kính ≈ 1".
+float sdMotif(vec2 q, float heart) {
+  if (heart > 0.5) return sdHeartRaw(q * 0.6 + vec2(0.0, 0.55)) / 0.6 - 0.08;
+  return sdStar5(q, 0.95, 0.52) - 0.14;
+}
+
 float fogAmount() {
 #ifdef USE_FOG
 #ifdef FOG_EXP2
@@ -65,120 +100,305 @@ float fogAmount() {
   return 0.0;
 #endif
 }
+// Shader này xuất màu sRGB trực tiếp; fogColor là màu tuyến tính → đổi gần đúng sang sRGB cho khớp nền.
+vec3 fogSrgb() {
+#ifdef USE_FOG
+  return pow(max(fogColor, vec3(0.0)), vec3(0.4545));
+#else
+  return vec3(0.0);
+#endif
+}
+
+#ifdef BODY
+// n·L của khối cầu giả từ tọa độ 2D chuẩn hóa (|n| ≤ 1).
+float sph(vec2 n, vec3 l) {
+  return dot(vec3(n, sqrt(max(1.0 - dot(n, n), 0.0))), l);
+}
+
+// Bậc bóng: tối hơn, dịch về tím (grape-700), không bao giờ đen.
+vec3 shadowOf(vec3 c) {
+  return mix(c * vec3(0.62, 0.56, 0.8), uShadowTint, 0.2) + vec3(0.02, 0.012, 0.05);
+}
+
+// Vùng tóc (x) và phụ kiện mũ / nơ (y) trong hệ đầu chuẩn hóa (bán kính đầu = 1). back = 1 → nhìn từ sau.
+vec2 hairSdf(vec2 q, float type, float side, float back) {
+  float dC = length(q - vec2(0.0, 0.03)) - 1.07;
+  float sideLock = max(0.72 - abs(q.x), -0.28 - q.y);
+  float hair;
+  float acc = 9.0;
+  if (type < 0.5) {
+    // Hai búi tròn.
+    float fr = 0.14 - 0.08 * cos(q.x * 7.5);
+    hair = max(dC, min(fr - q.y, sideLock));
+    hair = min(hair, min(length(q - vec2(0.68, 0.74)), length(q - vec2(-0.68, 0.74))) - 0.34);
+  } else if (type < 1.5) {
+    // Mũ lưỡi trai (màu nhấn) + tóc ngắn hai bên.
+    acc = max(length(q - vec2(0.0, 0.03)) - 1.1, 0.24 - q.y);
+    acc = min(acc, sdRoundBox(q - vec2(side * 0.62, 0.27), vec2(0.56, 0.085), 0.08));
+    hair = max(length(q) - 1.05, max(0.74 - abs(q.x), -0.22 - q.y));
+  } else if (type < 2.5) {
+    // Tóc bob: ôm đầu, mái bằng, ngang cằm.
+    float outer = max(length(q - vec2(0.0, 0.02)) - 1.14, -0.62 - q.y);
+    vec2 w = (q - vec2(0.0, -0.2)) / vec2(0.8, 0.82);
+    float win = max((length(w) - 1.0) * 0.8, q.y - (0.2 - 0.05 * cos(q.x * 9.0)));
+    hair = max(outer, -win * (1.0 - back) + back * -9.0);
+  } else if (type < 3.5) {
+    // Tóc dựng / nhọn tròn đầu.
+    float ang = atan(q.x, q.y);
+    float sp = 0.2 * pow(max(cos(ang * 6.0), 0.0), 2.0) * step(abs(ang), 1.35);
+    float outer = length(q - vec2(0.0, 0.03)) - (1.05 + sp);
+    float fr = 0.04 + 0.28 * abs(fract(q.x * 2.2 + 0.5) - 0.5);
+    hair = max(outer, min(fr - q.y, sideLock));
+  } else {
+    // Đuôi ngựa (vẽ ở lớp sau) + mái lệch + nơ soda.
+    float fr = 0.12 + 0.24 * q.x * side;
+    hair = max(dC, min(fr - q.y, sideLock));
+    vec2 qb = q - vec2(-side * 0.74, 0.62);
+    acc = min(length(qb - vec2(0.15, 0.0)) - 0.15, length(qb + vec2(0.15, 0.0)) - 0.15);
+    acc = min(acc, length(qb) - 0.08);
+  }
+  return vec2(hair, acc);
+}
+#endif
 
 void main() {
 #ifdef BODY
-  vec2 p = vLocal;
+  vec2 p = vP.xy;
   // Discard sớm: ngoài hộp bao người (phần lớn diện tích quad) → bỏ qua toàn bộ SDF.
   if (p.x < vBox.x || p.x > vBox.y || p.y > vBox.z) discard;
-  float hs = vShape.x;
-  float wk = vShape.y;
-  float hair = vShape.z;
-  vec2 hc = vHead;
-  float hr = 0.112 * hs;
-  vec2 sh1 = vShoulder, sh2 = vec2(-vShoulder.x, vShoulder.y);
-  vec3 cloth = clothColor(vShape.w);
+  float u = vP.z;
+  float R = 0.24 * u;
+  vec2 hc = vHeadV.xy;
+  vec2 hand = vHandsV.xy;
+  vec2 hand2 = vHandsV.zw;
+  vec2 sh1 = vec2(vBox.w, 0.43 * u);
+  vec2 sh2 = vec2(-vBox.w, 0.43 * u);
+  vec2 sH = vStickV.xy;
+  vec2 sDir = vStickV.zw;
+  float wk = vMiscV.w;
+  float farMix = vMiscV.z;
+  vec3 farBody = mix(vClothV.rgb, uPants, 0.3);
+  float fog = fogAmount();
+  vec2 bodyC = vec2(0.0, 0.33 * u);
+  vec2 bodyHalf = vec2(0.155 * wk, 0.155) * u;
 
-  if (vLod > 0.5) {
-    // LOD xa: bóng đơn giản (đầu + thân liền chân + 2 tay thẳng), không AA, alpha-test.
-    float dS = min(length(p - hc) - hr * 1.1,
-                   sdRoundBox(p - vec2(0.0, 0.78 * hs), vec2(0.18 * vShape.y * hs, 0.62 * hs), 0.09 * hs));
-    float dA = min(sdCapsule(p, sh1, vHand, 0.055 * hs), sdCapsule(p, sh2, vHand2, 0.055 * hs));
-    float dF = min(dS, dA);
+  if (vP.w > 0.5) {
+    // ── LOD xa (≥ 35 m): đầu tròn màu tóc + thân hạt đậu (liền chân) + tay + đầu que. Không viền, không mặt.
+    float dH = length(p - hc) - R * 1.04;
+    float dB = sdRoundBox(p - vec2(0.0, 0.27 * u), vec2(0.15 * wk, 0.27) * u, 0.13 * u);
+    float dA = min(sdCapsule(p, sh1, hand, 0.05 * u), sdCapsule(p, sh2, hand2, 0.05 * u));
+    float dS = length(p - sH) - 0.095 * u;
+    float dF = min(min(dH, dB), min(dA, dS));
     // Nới theo kích thước pixel để tay mảnh vẫn không bị đứt khi người chỉ vài pixel.
     if (dF > fwidth(dF) * 0.35) discard;
-    float topF = smoothstep(0.8 * hs, 1.9 * hs, p.y);
-    vec3 lightF = vec3(0.14 + vTint * 3.0) + vGlow * (0.6 + 1.2 * topF) + vStickCol * 0.2;
-    vec3 colF = mix(cloth, vec3(0.05), step(p.y, 0.85 * hs) * 0.6) * lightF + vGlow * 0.5 * topF;
-    gl_FragColor = vec4(colF, 1.0);
-#ifdef USE_FOG
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogAmount());
-#endif
+    vec3 c = dS < 0.0 ? vStickColV.rgb : (dH < 0.0 ? vHairV.rgb : farBody);
+    float lit = dS < 0.0 ? 1.0 : 0.82 + 0.18 * smoothstep(0.3 * u, 0.9 * u, p.y);
+    c *= lit;
+    if (dS > 0.0) c += vRimV.rgb * 0.3 * smoothstep(0.5 * u, 1.0 * u, p.y);
+    gl_FragColor = vec4(mix(c, fogSrgb(), fog), 1.0);
     return;
   }
 
-  // Các phần cơ thể (SDF, đơn vị m).
-  float dHead = length((p - hc) * vec2(1.08, 0.95)) - hr;
-  float dNeck = sdCapsule(p, vec2(0.0, 1.36 * hs), hc - vec2(0.0, 0.08 * hs), 0.045 * hs);
-  // Vai thuôn + ngực, eo hẹp hơn.
-  float dTorso = sdRoundBox(p - vec2(0.0, 1.2 * hs), vec2(0.2 * wk, 0.2) * hs, 0.085 * hs);
-  dTorso = min(dTorso, sdRoundBox(p - vec2(0.0, 0.9 * hs), vec2(0.165 * wk, 0.16) * hs, 0.05));
-  float dLegs = sdRoundBox(p - vec2(0.0, 0.4 * hs), vec2(0.155 * wk, 0.42) * hs, 0.04);
-  // Khe giữa hai chân.
-  dLegs = max(dLegs, -sdRoundBox(p - vec2(0.0, 0.18 * hs), vec2(0.018, 0.22) * hs, 0.01));
-  vec2 el1 = mix(sh1, vHand, 0.5) + vec2(sign(sh1.x) * 0.04, -0.02) * hs;
-  vec2 el2 = mix(sh2, vHand2, 0.5) + vec2(sign(sh2.x) * 0.04, -0.02) * hs;
-  float dArm = min(sdCapsule(p, sh1, el1, 0.05 * hs), sdCapsule(p, el1, vHand, 0.042 * hs));
-  dArm = min(dArm, min(sdCapsule(p, sh2, el2, 0.05 * hs), sdCapsule(p, el2, vHand2, 0.042 * hs)));
-  float dHands = min(length(p - vHand) - 0.045 * hs, length(p - vHand2) - 0.045 * hs);
+  // Kích thước pixel (m) → bề dày viền ink: 2,5% chiều cao, kẹp 1,5–3 px, tắt khi nhân vật < 24 px.
+  vec2 fw = fwidth(p);
+  float px = max(max(fw.x, fw.y), 1e-5);
+  float w = clamp(0.025 * u, 1.5 * px, 3.0 * px) * step(24.0 * px, u) * (1.0 - farMix);
+  const vec3 L3 = vec3(-0.42, 0.55, 0.72); // ánh sáng từ trên-trái-trước (sân khấu)
 
-  // Tóc: 0 ngắn, 1 dài, 2 mũ lưỡi trai, 3 búi.
-  float dHair;
-  float hairType = floor(hair * 4.0);
-  if (hairType < 0.5) {
-    dHair = max(length(p - hc - vec2(0.0, 0.02 * hs)) - hr * 1.05, -(p.y - hc.y - 0.01 * hs));
-  } else if (hairType < 1.5) {
-    dHair = min(length(p - hc - vec2(0.0, 0.015 * hs)) - hr * 1.12,
-                sdRoundBox(p - hc - vec2(0.0, -0.13 * hs), vec2(0.13, 0.15) * hs, 0.05 * hs));
-    dHair = max(dHair, -(p.y - hc.y + 0.3 * hs));
-  } else if (hairType < 2.5) {
-    dHair = max(length(p - hc - vec2(0.0, 0.015 * hs)) - hr * 1.1, -(p.y - hc.y - 0.03 * hs));
-    dHair = min(dHair, sdRoundBox(p - hc - vec2(0.07 * hs * (vShoulder.x > 0.0 ? 1.0 : -1.0), 0.035 * hs), vec2(0.11, 0.012) * hs, 0.008));
+  vec3 alb;
+  float dl;          // khoảng cách SDF của lớp trên cùng tại pixel này
+  float ndl = 1.0;   // n·L giả 2D (cho tô 2 bậc)
+  float inner = 9.0; // đường ink mảnh bên trong lớp (tóc / mặt)
+  float isHair = 0.0;
+  float emissive = 0.0;
+  vec2 hq = vec2(0.0);
+  float head = 0.0;
+  bool hit = false;
+
+  // ── Lớp 5 (trước nhất): lightstick (que + đầu sao / tim) hoặc điện thoại.
+  vec2 sPerp = vec2(sDir.y, -sDir.x);
+  vec3 stickC = vStickColV.rgb;
+  float stickShape = mod(vStickColV.w, 2.0);
+  if (vStickColV.w > 1.5) {
+    vec2 pp = p - (hand + sDir * 0.07 * u);
+    float dPh = sdRoundBox(vec2(dot(pp, sPerp), dot(pp, sDir)), vec2(0.045, 0.075) * u, 0.018 * u);
+    if (dPh < 0.0) { hit = true; dl = dPh; alb = uInk * 1.6; }
   } else {
-    dHair = max(length(p - hc) - hr * 1.06, -(p.y - hc.y - 0.035 * hs));
-    dHair = min(dHair, length(p - hc - vec2(0.0, 0.14 * hs)) - 0.055 * hs);
+    float hr = 0.085 * u;
+    vec2 sq = p - sH;
+    vec2 sl = vec2(dot(sq, sPerp), dot(sq, sDir)) / hr;
+    float dHd = dot(sl, sl) < 1.25 ? sdMotif(sl, stickShape) * hr : 1.0;
+    float dWand = sdCapsule(p, hand, sH - sDir * 0.5 * hr, 0.02 * u);
+    if (dHd < 0.0) {
+      hit = true; dl = dHd; alb = stickC; emissive = 1.0;
+      // Đốm highlight kem trên đầu que.
+      alb = mix(alb, uCreamHi, 0.55 * (1.0 - smoothstep(0.16, 0.24, length(sl - vec2(-0.3, 0.35)))));
+    } else if (dWand < 0.0) {
+      hit = true; dl = dWand; alb = uCream; ndl = 0.5;
+    }
   }
-  // Nhìn từ sau: toàn bộ đầu là tóc.
-  dHair = mix(min(dHair, dHead + 0.003), dHair, vFront);
-  if (hairType > 0.5 && hairType < 1.5) dHair = mix(min(dHair, dHead), dHair, vFront);
 
-  float d = min(min(min(dHead, dNeck), min(dTorso, dLegs)), min(min(dArm, dHands), dHair));
+  // ── Lớp 4: tay 1 đoạn + bàn tay tròn.
+  if (!hit) {
+    float dH1 = length(p - hand) - 0.065 * u;
+    float dH2 = length(p - hand2) - 0.065 * u;
+    float dHands = min(dH1, dH2);
+    if (dHands < 0.0) {
+      hit = true; dl = dHands; alb = vSkinV.rgb;
+      vec2 hcN = dH1 < dH2 ? hand : hand2;
+      ndl = sph((p - hcN) / (0.065 * u), L3);
+    } else {
+      float dArm = min(sdCapsule(p, sh1, hand, 0.052 * u), sdCapsule(p, sh2, hand2, 0.052 * u));
+      if (dArm < 0.0) { hit = true; dl = dArm; alb = vClothV.rgb; ndl = 0.3; }
+    }
+  }
+
+  // ── Lớp 3: đầu (da + tóc + mũ / nơ), nghiêng theo vHeadV.zw.
+  float hairType = vSkinV.w;
+  float side = sign(vBox.w + 1e-6);
+  float back = step(vRimV.w, -0.05);
+  vec2 q = p - hc;
+  q = vec2(vHeadV.w * q.x - vHeadV.z * q.y, vHeadV.z * q.x + vHeadV.w * q.y);
+  vec2 qn = q / R;
+  if (!hit && dot(qn, qn) < 1.9) {
+    float dSkin = length(qn) - 1.0;
+    vec2 hs = hairSdf(qn, hairType, side, back);
+    float dHair = back > 0.5 ? min(hs.x, dSkin - 0.001) : hs.x;
+    float dHeadAll = min(dSkin, min(dHair, hs.y));
+    if (dHeadAll < 0.0) {
+      hit = true; head = 1.0; dl = dHeadAll * R; hq = qn;
+      ndl = sph(qn, L3);
+      if (hs.y < 0.0) {
+        alb = vAccent; isHair = 1.0; inner = -hs.y * R;
+      } else if (dHair < 0.0) {
+        alb = vHairV.rgb; isHair = 1.0; inner = -dHair * R + 9.0 * back;
+      } else {
+        alb = vSkinV.rgb;
+      }
+      alb = mix(alb, vHairV.rgb, farMix * (1.0 - isHair));
+    }
+  }
+
+  // ── Lớp 2: thân hạt đậu + motif ngực.
+  if (!hit) {
+    vec2 pb = p - bodyC;
+    pb.x *= 1.0 + 0.12 * clamp(pb.y / bodyHalf.y, -1.0, 1.0); // hạt đậu: vai hẹp hơn hông
+    float dBody = sdRoundBox(pb, bodyHalf, 0.13 * u);
+    if (dBody < 0.0) {
+      hit = true; dl = dBody; alb = vClothV.rgb;
+      ndl = sph(pb / (bodyHalf + 0.01 * u), L3);
+      float motif = vClothV.w;
+      vec2 mq = (p - vec2(0.0, 0.35 * u)) / (0.06 * u);
+      if (vRimV.w > 0.0 && motif > 0.5 && farMix < 0.99 && (motif > 2.5 || dot(mq, mq) < 1.3)) {
+        if (motif > 2.5) {
+          // Áo merch night-300 + chấm honey-500.
+          vec2 g = fract(p / (0.075 * u) + vec2(0.25, 0.0)) - 0.5;
+          if (length(g) < 0.17) alb = uStar;
+        } else {
+          float dM = sdMotif(mq, motif - 1.0) * 0.06 * u;
+          if (dM < 0.0) { alb = motif > 1.5 ? uHeart : uStar; inner = -dM; }
+        }
+      }
+      alb = mix(alb, farBody, farMix);
+    }
+  }
+
+  // ── Lớp 1: chân ngắn + giày kem.
+  if (!hit) {
+    float lx = 0.068 * u;
+    float dLeg = min(sdCapsule(p, vec2(lx, 0.07 * u), vec2(lx, 0.2 * u), 0.048 * u),
+                     sdCapsule(p, vec2(-lx, 0.07 * u), vec2(-lx, 0.2 * u), 0.048 * u));
+    vec2 sp = vec2(abs(p.x) - lx * 1.1, p.y - 0.035 * u);
+    float dShoe = max(length(sp * vec2(0.85, 1.25)) - 0.058 * u, -p.y);
+    if (dShoe < 0.0) { hit = true; dl = dShoe; alb = uCream; ndl = 0.4; }
+    else if (dLeg < 0.0) { hit = true; dl = dLeg; alb = uPants; ndl = -0.6; }
+    if (hit) alb = mix(alb, farBody * 0.8, farMix);
+  }
+
+  // ── Lớp 0 (sau cùng): đuôi ngựa.
+  if (!hit && hairType > 3.5) {
+    vec2 qp = (qn - vec2(-side * 0.98, -0.2)) / vec2(0.34, 0.6);
+    float dP = (length(qp) - 1.0) * 0.34;
+    if (dP < 0.0) { hit = true; dl = dP * R; alb = vHairV.rgb; isHair = 1.0; ndl = -0.2; }
+  }
+
   // Alpha-test (không blend): bỏ pixel ngoài bóng, phần còn lại ghi depth.
-  if (d > 0.0) discard;
+  if (!hit) discard;
 
-  // Vật liệu (màu nền / albedo), theo thứ tự lớp phía sau → phía trước.
-  vec3 skin = mix(vec3(0.42, 0.29, 0.22), vec3(0.62, 0.47, 0.38), fract(hair * 7.3));
-  vec3 pants = vec3(0.03, 0.032, 0.045) + vec3(0.03, 0.035, 0.06) * step(0.5, fract(vShape.w * 5.1));
-  vec3 hairCol = mix(vec3(0.03, 0.022, 0.018), vec3(0.16, 0.1, 0.05), step(0.75, fract(hair * 11.0)));
-  if (hairType > 1.5 && hairType < 2.5) hairCol = clothColor(fract(vShape.w + 0.37)) * 0.8;
-  vec3 alb = pants;
-  float isSkin = 0.0;
-  if (dTorso < 0.0) alb = cloth;
-  if (dNeck < 0.0) { alb = skin; isSkin = 1.0; }
-  if (dHead < 0.0) { alb = skin; isSkin = 1.0; }
-  if (dHair < 0.0) { alb = hairCol; isSkin = 0.0; }
-  if (dArm < 0.0) { alb = vShape.w < 0.85 ? cloth * 0.85 : skin; isSkin = vShape.w < 0.85 ? 0.0 : 1.0; }
-  if (dHands < 0.0) { alb = skin; isSkin = 1.0; }
-  // Logo nhỏ sáng trên áo merch đen.
-  if (vShape.w >= 0.7 && dTorso < 0.0 && dArm > 0.0) {
-    float logo = 1.0 - smoothstep(0.02 * hs, 0.032 * hs, length(p - vec2(0.0, 1.22 * hs)));
-    alb = mix(alb, mix(vec3(1.0, 0.3, 0.7), vec3(1.0, 0.85, 0.3), step(0.85, vShape.w)) * 1.6, logo * vFront);
+  // ── Mặt (LOD gần, nhìn từ trước): mắt elip dọc + đốm, má hồng, miệng nhỏ; 4 biểu cảm + chớp mắt.
+  float faceOn = step(1.5, vMiscV.y) * (1.0 - back) * step(isHair, 0.5) * head;
+  vec3 faceCol = alb;
+  float faceInk = 0.0;
+  if (faceOn > 0.5) {
+    vec2 f = hq - vec2(clamp(vMiscV.x, -0.6, 0.6) * 0.42, 0.0);
+    float expr = vHairV.w;
+    float blink = mod(vMiscV.y, 2.0);
+    vec2 fe = vec2(abs(f.x) - 0.36, f.y + 0.06);
+    // Má
+    float cheek = 1.0 - smoothstep(0.12, 0.16, length(vec2(abs(f.x) - 0.6, f.y + 0.32)));
+    faceCol = mix(faceCol, uCheek, 0.6 * cheek);
+    float lw = 0.045 + 0.6 * px / R; // nét mảnh nhưng không mất pixel
+    if (expr > 2.5) {
+      // Mắt sao.
+      float dS = sdStar5(fe * vec2(1.0, 0.95), 0.24, 0.5) - 0.03;
+      if (dS < 0.0) faceCol = dS > -lw ? uInk : uStar;
+    } else if (expr > 1.5 || blink > 0.5) {
+      // "^ ^" cười tít / chớp mắt (blink: nét ngang).
+      float arc = expr > 1.5 ? max(abs(length(fe - vec2(0.0, -0.12)) - 0.15) - lw, -(fe.y + 0.04))
+                             : sdCapsule(fe, vec2(-0.11, -0.02), vec2(0.11, -0.02), lw);
+      faceInk = max(faceInk, step(arc, 0.0));
+    } else {
+      float dE = (length(fe / vec2(0.13, 0.19)) - 1.0) * 0.13;
+      if (dE < 0.0) {
+        faceCol = uInk;
+        float hl = length(fe - vec2(-0.045, 0.075)) - 0.058;
+        if (hl < 0.0) faceCol = uCreamHi;
+      }
+    }
+    // Miệng: cười / "O" reo / miệng cười mở (cười tít, mắt sao).
+    vec2 fm = f - vec2(0.0, -0.36);
+    if (expr > 0.5 && expr < 1.5) {
+      float o = 0.07 + 0.03 * uHype;
+      float dO = (length(fm / vec2(o * 0.85, o)) - 1.0) * o * 0.85;
+      if (dO < 0.0) faceCol = dO > -lw ? uInk : uMouth;
+    } else if (expr > 1.5) {
+      float dO = max(length(fm - vec2(0.0, 0.04)) - 0.13, fm.y - 0.04);
+      if (dO < 0.0) faceCol = dO > -lw ? uInk : uMouth;
+    } else {
+      float sm = max(abs(length(fm - vec2(0.0, 0.08)) - 0.11) - lw * 0.8, fm.y - 0.02);
+      if (sm < 0.0) faceCol = uMouth;
+    }
+    faceCol = mix(faceCol, uInk, faceInk);
   }
-  // Mặt: mắt / bóng tối nhẹ ở nửa dưới đầu cho cảm giác khối.
-  if (dHead < 0.0 && dHair > 0.0) alb *= 0.8 + 0.2 * smoothstep(-0.08, 0.04, (p.y - hc.y) / hs);
-  // Nhìn từ sau: không thấy mặt.
-  alb = mix(mix(alb, hairCol, step(dHead, 0.0)), alb, vFront);
+  alb = mix(alb, faceCol, faceOn * (1.0 - farMix));
 
-  // Chiếu sáng: nền tối + ánh lightstick riêng (mạnh gần bàn tay) + ánh sân khấu hắt từ trên.
-  float topY = smoothstep(0.8 * hs, 1.9 * hs, p.y);
-  float nearStick = exp(-length(p - vHand) * 5.0 / hs);
-  vec3 light = vec3(0.14 + vTint * 3.0) + vGlow * (0.45 + 0.9 * topY);
-  light += vStickCol * (0.15 + 0.7 * nearStick) * (0.35 + 0.65 * isSkin);
-  vec3 col = alb * light;
-  // Viền sáng (rim) quanh bóng, mạnh hơn ở đầu/vai.
-  float rim = smoothstep(-0.03 * hs, 0.0, d);
-  col += (vGlow * 1.4 + vStickCol * 0.12) * rim * (0.25 + 0.75 * topY);
-  gl_FragColor = vec4(col, 1.0);
-#ifdef USE_FOG
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogAmount());
-#endif
+  // ── Tô đồ chơi 2 bậc + rim + highlight.
+  float toon = smoothstep(0.05, 0.2, ndl); // ngưỡng mềm ~15%
+  vec3 col = mix(shadowOf(alb), alb, toon) * (0.88 - 0.08 * uHype * (1.0 - emissive));
+  if (isHair > 0.5) {
+    // 1 đốm highlight kem trên tóc / mũ (≤ 8% diện tích), 40% (30% khi hype > 80%).
+    vec2 hh = hq - vec2(-0.42, 0.6);
+    hh = vec2(0.85 * hh.x + 0.53 * hh.y, -0.53 * hh.x + 0.85 * hh.y);
+    float blob = 1.0 - smoothstep(0.85, 1.0, length(hh / vec2(0.24, 0.1)));
+    col = mix(col, uCreamHi, blob * mix(0.4, 0.3, step(0.8, uHype)) * (1.0 - farMix));
+  }
+  // Ánh lightstick riêng hắt lên mặt / tay gần bàn tay cầm que.
+  col += stickC * 0.12 * exp(-length(p - sH) * 6.0 / u) * (1.0 - emissive);
+  // Rim (viền sáng) ngay trong nét ink, mạnh ở phía ngược sáng và phía trên.
+  float rimBand = smoothstep(-(w + 0.035 * u), -w, dl) * (1.0 - emissive);
+  float rimSide = clamp(0.8 - ndl * 1.2, 0.0, 1.0) + 0.4 * smoothstep(0.55 * u, 1.0 * u, p.y);
+  col += vRimV.rgb * rimBand * rimSide;
+  // Viền ink (ngoài + nét trong mảnh giữa tóc và da / motif).
+  float ink = step(-w, dl) + step(inner, w * 0.6) * step(0.0, inner);
+  col = mix(col, uInk, clamp(ink, 0.0, 1.0));
+  gl_FragColor = vec4(mix(col, fogSrgb(), fog), 1.0);
 #endif
 
 #ifdef STICK
   vec2 q = vMetric;
   float s = vGlowScale;
   if (vPhone > 0.5) {
-    // Đèn flash điện thoại: lõi trắng nhỏ + quầng mềm.
+    // Đèn flash điện thoại (cream): lõi nhỏ + quầng mềm.
     float ss = 0.6 + 0.4 * s;
     float r = length(q) / ss;
     float pcore = 1.0 - smoothstep(0.022, 0.042, r);
@@ -190,15 +410,16 @@ void main() {
     gl_FragColor = vec4(pc, 1.0);
     return;
   }
-  float core = sdCapsule(q, vec2(0.0, 0.07 * s), vec2(0.0, 0.07 * s + 0.3), 0.022);
-  // Ngoài quầng sáng (đóng góp < ~1%) → bỏ sớm, giảm overdraw additive.
-  if (core > 0.2 * s) discard;
-  float coreMask = 1.0 - smoothstep(0.0, 0.012 + 0.01 * s, core);
-  float glow = exp(-max(core, 0.0) * 22.0 / s) * 0.55;
-  // Mép quad mờ dần về 0 để không lộ hình chữ nhật.
+  // Quầng sao / tim: hình motif mờ to dần + quầng tròn mềm. q tính theo bán kính đầu que.
+  float r = length(q);
+  if (r > 1.6 * s) discard;
+  float dM = sdMotif(q / s, vShapeK);
+  float shape = 1.0 - smoothstep(0.0, 0.3, dM);
+  float glow = exp(-max(dM, 0.0) * 3.2) * 0.32 + exp(-r * 2.6 / s) * 0.12;
   vec2 e = abs(vUv - vec2(0.5)) * 2.0;
-  float edge = (1.0 - smoothstep(0.7, 1.0, e.x)) * (1.0 - smoothstep(0.8, 1.0, e.y));
-  vec3 col = vColor * (glow + coreMask * 0.9) + vec3(1.0) * coreMask * 0.18 * length(vColor);
+  float edge = 1.0 - smoothstep(0.8, 1.0, max(e.x, e.y));
+  // Quầng to ra theo khoảng cách nhưng giữ tổng năng lượng ~ không đổi → biển sáng xa không cháy trắng.
+  vec3 col = vColor * (glow + shape * 0.35) / (s * s);
   col *= edge;
   col *= 1.0 - 0.8 * fogAmount();
   gl_FragColor = vec4(col, 1.0);

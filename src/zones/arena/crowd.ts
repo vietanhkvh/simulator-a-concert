@@ -8,6 +8,7 @@ import vert from './crowd.vert.glsl?raw';
 import frag from './crowd.frag.glsl?raw';
 import { CROWD_BARRIER_Z, FIELD_R0, FIELD_R_MAX, FIELD_SLOPE, FIELD_Y } from '../../world/layout';
 import { distanceToWalkway, pushOutOfWalkways } from './walkLayout';
+import { HAIR, INK, LOD_FAR, PAL, SKIN, hexToRgb, hypeColors, type ColorName } from '../../world/style';
 
 /** Bán kính hàng đầu (m) tính từ ca sĩ. */
 const R0 = FIELD_R0;
@@ -52,14 +53,41 @@ export const CROWD_QUALITY = {
   fastMs: 14,
   fastSec: 10,
   smoothTauSec: 0.5,
-  /** Ngưỡng LOD (m): xa hơn → bóng người đơn giản (± 3 m ngẫu nhiên theo người để không lộ vòng). */
-  lodDist: 35,
+  /** Ngưỡng LOD (m): xa hơn → bóng người đơn giản (± 6 m ngẫu nhiên theo người, màu trộn dần → không lộ vòng). */
+  lodDist: LOD_FAR,
+  /** Gần hơn (m) → vẽ mặt chibi. */
+  faceDist: 18,
+  /** 0..1: billboard nghiêng về camera (camera ca sĩ cao hơn sân 5,15 m → đầu vẫn tròn). */
+  tilt: 0.7,
 };
 /** Mốc quality của các bậc tự động; instance được chia tầng theo mốc này, mỗi tầng xếp gần → xa (early-z). */
 const QUALITY_TIERS = [0.35, 0.4, 0.55, 0.7, 0.85, 1];
 
-const COLOR_A = new THREE.Color(1.0, 0.18, 0.62); // hồng
-const COLOR_B = new THREE.Color(0.2, 0.72, 1.0); // xanh cyan
+// Token màu "Kẹo đêm" → vec3 sRGB 0..1 (shader xuất sRGB trực tiếp, không viết hex trong GLSL).
+const v3 = (hex: number) => new THREE.Vector3(...hexToRgb(hex));
+/** Áo khán giả: 5 hue × bậc [500, 300, 700] (shader chọn 60% 500/300, 40% 700). */
+const CLOTH_HUES: ColorName[] = ['berry', 'grape', 'soda', 'mint', 'cream'];
+const CROWD_PAL = {
+  uSkin: { value: SKIN.map(v3) },
+  uHair: { value: HAIR.map(v3) },
+  uCloth: { value: CLOTH_HUES.flatMap((c) => [PAL[c][500], PAL[c][300], PAL[c][700]].map(v3)) },
+  uMerch: { value: v3(PAL.night[300]) },
+  uAccent: { value: [PAL.soda[500], PAL.berry[500], PAL.mint[500], PAL.honey[500]].map(v3) },
+  uPersonal: { value: [PAL.berry[300], PAL.soda[300], PAL.grape[300], PAL.mint[300], PAL.honey[300]].map(v3) },
+  uWaveCol: { value: [PAL.grape[700], PAL.mint[500], PAL.soda[500], PAL.cream[100]].map(v3) },
+  uPhoneCol: { value: [PAL.cream[500], PAL.honey[100]].map(v3) },
+  uRimBase: { value: v3(PAL.cream[300]) },
+  uVividHi: { value: v3(PAL.cream[100]) },
+  uInk: { value: v3(INK) },
+  uCream: { value: v3(PAL.cream[500]) },
+  uCreamHi: { value: v3(PAL.cream[100]) },
+  uPants: { value: v3(PAL.night[100]) },
+  uCheek: { value: v3(PAL.berry[300]) },
+  uMouth: { value: v3(PAL.berry[700]) },
+  uStar: { value: v3(PAL.honey[500]) },
+  uHeart: { value: v3(PAL.berry[500]) },
+  uShadowTint: { value: v3(PAL.grape[700]) },
+};
 
 /** PRNG có seed để bố trí giống nhau mỗi lần tải. */
 function mulberry32(seed: number): () => number {
@@ -291,10 +319,14 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
     uWavePhase: { value: 0 },
     /** 0 = sóng lan ra từ sân khấu, 1 = sóng sân vận động trái → phải; đổi luân phiên mỗi lần bật lại. */
     uWaveDir: { value: 0 },
-    uColorA: { value: COLOR_A.clone() },
-    uColorB: { value: COLOR_B.clone() },
+    /** hypeColors(hype).primary / .secondary — dùng chung bảng Hype với đèn sân khấu / khán đài. */
+    uColorA: { value: new THREE.Vector3(...hypeColors(0.3).primary) },
+    uColorB: { value: new THREE.Vector3(...hypeColors(0.3).secondary) },
     uFlash: { value: 0 },
     uLodDist: { value: CROWD_QUALITY.lodDist },
+    uFaceDist: { value: CROWD_QUALITY.faceDist },
+    uTilt: { value: CROWD_QUALITY.tilt },
+    ...CROWD_PAL,
   };
   let waveWasOn = false;
   let waveCount = 0;
@@ -368,6 +400,9 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
       shared.uBeat.value = f.beat;
       shared.uBeatPulse.value = f.beatPulse;
       shared.uHype.value = THREE.MathUtils.clamp(f.hype, 0, 1);
+      const hc = hypeColors(shared.uHype.value);
+      shared.uColorA.value.set(...hc.primary);
+      shared.uColorB.value.set(...hc.secondary);
       shared.uWaveMode.value = f.waveMode;
       const target = f.waveMode === 1 ? 1 : 0;
       // Bật lại khi sóng cũ đã tắt hẳn → đổi kiểu sóng (không đổi giữa chừng nên không giật).
