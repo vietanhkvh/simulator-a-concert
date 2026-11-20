@@ -16,18 +16,8 @@ import type {
   PanelControls, SongManifestEntry, Teleprompter,
 } from './core/types';
 import { createMic } from './mic/input';
-import { createConfetti } from './render/confetti';
-import { createCrowd } from './render/crowd';
-import { createEmotes } from './render/emotes';
-import { createLedScreens } from './render/ledScreens';
-import { createLights } from './render/lights';
-import { createCameraCrew } from './render/cameraCrew';
-import { getSecretFocus } from './render/secretEvents';
-import { createEntrance, ENTRANCE_SEC, type EntranceKind } from './render/entrance';
-import { createSinger } from './render/singer';
-import { createStage } from './render/stage';
-import { getControls } from './render/stageControls';
-import { createStageFx } from './render/stageFx';
+import { createWorld } from './world/world';
+import { ENTRANCE_SEC, type EntranceKind, type StageControls } from './zones/arena';
 import { createScoring } from './scoring/scoring';
 import { createVoiceScoring } from './scoring/voice';
 import { findChorusLines } from './song/chorus';
@@ -61,20 +51,14 @@ const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
 
 const bus = new EventBus();
-const stage = createStage(canvas);
-const crowd = createCrowd(stage.scene, { count: crowdCount, rows: 40, arcDeg: 120 });
-const lights = createLights(stage.scene);
-const led = createLedScreens(stage.scene);
-const confetti = createConfetti(stage.scene);
-const emotes = createEmotes(stage.scene);
-const stageFx = createStageFx(stage.scene);
-// Hình ca sĩ + đội quay phim/flycam; phím V đổi góc nhìn (xử lý trong stageControls).
-const singer = createSinger(stage.scene);
-const crew = createCameraCrew(stage.scene);
-const controls = getControls();
-// Màn chào sân (nhảy dù từ trực thăng / đáp đất kiểu siêu anh hùng) phát trong lúc đếm ngược.
-// ?entrance=parachute|hero|off (mặc định: ngẫu nhiên).
-const entrance = createEntrance(stage.scene);
+// Cảnh 3D gồm ba khu (ngoài sân → khán đài → sân trung tâm), ghép ở world/world.ts.
+const world = createWorld(canvas, { crowdCount });
+const stage = world;
+// Handle của khu sân trung tâm: khán giả sân, hiệu ứng, màn hình LED, đội quay phim, màn chào sân,
+// điều khiển người chơi (phím V đổi góc nhìn xử lý trong khu).
+const { crowd, led, confetti, emotes, stageFx, crew, entrance } = world.arena;
+const controls: StageControls | null = world.arena.controls;
+// Màn chào sân phát trước bài hát; ?entrance=jump|lift|cable|off.
 const skipHint = document.createElement('div');
 skipHint.className = 'cs-skip-hint';
 skipHint.textContent = 'Enter: bỏ qua màn chào sân';
@@ -111,7 +95,7 @@ const secretCamTarget = new THREE.Vector3(0, 22, -20);
 const secretCamPose = { position: secretCamPos, target: secretCamTarget, fov: 60 };
 function secretView(): typeof secretCamPose | null {
   if (!secretPrevViewActive()) return null;
-  const focus = getSecretFocus();
+  const focus = world.outside.getSecretFocus();
   // Camera trên cao phía sau khán đài (cao hơn khinh khí cầu), nhìn vào điểm giữa sân khấu và tâm sự kiện.
   const tx = focus ? focus.x * 0.5 : 0;
   const ty = focus ? (focus.y + 10) * 0.5 : 22;
@@ -183,18 +167,13 @@ window.addEventListener('cs-view', (e) => {
   const m = (e as CustomEvent<{ mode: string }>).detail?.mode;
   if (secretPrevView && m !== 'wide') secretPrevView = null;
 });
-function updateCrew(f: FrameState): void {
-  if (!controls) return;
-  const sp = controls.getSingerPose();
-  crew.update(f, sp.position, sp.yaw);
-  entrance.update(f);
+/** Màn chào sân đang chạy thì ẩn giao diện, chỉ để lại gợi ý bỏ qua (khu sân trung tâm tự cập nhật hình). */
+function updateCinematicUi(): void {
   const cinematic = entrance.isPlaying();
   if (cinematic !== uiRoot.classList.contains('cs-cinematic')) {
     uiRoot.classList.toggle('cs-cinematic', cinematic);
     skipHint.hidden = !cinematic;
   }
-  const ep = entrance.getSingerPose();
-  singer.update(f, ep ? ep.position : sp.position, ep ? ep.yaw : sp.yaw, ep ? true : controls.getViewMode() !== 'singer');
 }
 
 // --- Tương tác với khán giả bằng phím (chỉ khi đang diễn) ---
@@ -306,8 +285,7 @@ function applyVolumes(): void {
 let singTestUntil = 0;
 const SING_TEST_NOTES = [262, 294, 330, 392, 330, 294];
 
-// --- Module tùy chọn do agent khác thêm (băng rôn, sự kiện bí mật, máy bay): nạp có điều kiện ---
-// import.meta.glob trả {} nếu file chưa có → build/tsc chạy được cả khi module/export chưa tồn tại.
+// --- API của khu ngoài sân (băng rôn, sự kiện bí mật, máy bay) — lấy qua world.outside ---
 type OptionalApi = {
   setCheerBanners?: (lines: string[]) => void;
   triggerSecret?: (kind?: SecretKind, force?: boolean) => void;
@@ -315,26 +293,20 @@ type OptionalApi = {
   SECRET_CHANCES?: Record<SecretKind, number>;
   triggerFlyby?: () => void;
 };
-const optionalModules = import.meta.glob([
-  './render/backdropBalloons.ts', './render/secretEvents.ts', './render/backdropFlyby.ts',
-]);
-const optional: OptionalApi = {};
+const optional: OptionalApi = {
+  setCheerBanners: world.outside.setCheerBanners,
+  triggerSecret: world.outside.triggerSecret,
+  setSecretChances: world.outside.setSecretChances,
+  SECRET_CHANCES: world.outside.secretChances,
+  triggerFlyby: world.outside.triggerFlyby,
+};
 /** Tỉ lệ theo các khóa của SECRET_CHANCES (module quyết định có 'jet' chưa), giá trị lưu trong cài đặt được ưu tiên. */
 function secretChances(): Record<SecretKind, number> {
   const base = (optional.SECRET_CHANCES ?? { ufo: 0.25, rocket: 0.2, dragon: 0.1 }) as Record<string, number>;
   const saved = (settings.chances ?? {}) as Record<string, number>;
   return Object.fromEntries(Object.keys(base).map((k) => [k, saved[k] ?? base[k]])) as Record<SecretKind, number>;
 }
-const optionalReady = Promise.all(Object.values(optionalModules).map((load) => load().then(
-  (m) => {
-    const mod = m as OptionalApi;
-    for (const k of ['setCheerBanners', 'triggerSecret', 'setSecretChances', 'triggerFlyby'] as const) {
-      if (typeof mod[k] === 'function' && !optional[k]) (optional as Record<string, unknown>)[k] = mod[k];
-    }
-    if (mod.SECRET_CHANCES && typeof mod.SECRET_CHANCES === 'object') optional.SECRET_CHANCES = mod.SECRET_CHANCES;
-  },
-  (err) => console.warn('[workshop] không nạp được module tùy chọn', err),
-))).then(() => {
+const optionalReady = Promise.resolve().then(() => {
   if (settings.banners.length) optional.setCheerBanners?.(settings.banners);
   if (settings.chances) optional.setSecretChances?.(settings.chances);
   pauseMenu.setSecretAvailable(
@@ -876,15 +848,11 @@ function tick(dt: number): void {
       f = { ...f, hype, waveMode: waving || hype > 0.7 ? 1 : 0 };
     }
   }
-  crowd.update(f);
-  lights.update(f);
-  emotes.update(f);
-  stageFx.update(f);
-  led.update(f, state === 'countdown' || state === 'playing' ? song : null);
-  confetti.update(f);
   crowdAudio?.update(f);
-  stage.update(f);
-  updateCrew(f);
+  // Cập nhật cả ba khu (khán giả, đèn, hiệu ứng, camera, trời, khán đài…) trong một lời gọi.
+  world.arena.setSong(state === 'countdown' || state === 'playing' ? song : null);
+  world.update(f);
+  updateCinematicUi();
   // Sảnh mờ đục che kín sân vận động: không vẽ 3D (tiết kiệm GPU), trừ khi đang chuyển cảnh; vẫn vẽ ~1 lần/giây để giữ ấm.
   const hidden = screens.isLobby() && !fadeBusy;
   if (!hidden || performance.now() - lastRenderAt > 1000) {
