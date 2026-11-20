@@ -3,6 +3,7 @@
 // (+ đèn nhà hát / cụm đèn pha nằm trong Points điểm sáng chung của backdropSky).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { FrameState } from '../core/types';
 import { addGlow, type GlowBuf, type Uniforms } from './backdropSky';
 
 const CX = 0, CZ = -10;
@@ -16,9 +17,15 @@ const TIERS = [
 
 const CROWD_VERT = /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uPhase; uniform float uRes;
+// hiệu ứng tương tác (JS nới mềm): bao 0..1 + tuổi (s)
+uniform float uCheer; uniform float uCheerAge; uniform float uWave; uniform float uWavePos;
+uniform float uHeart; uniform float uHeartAge; uniform float uFlash; uniform float uPyro; uniform float uPyroAge;
 attribute vec2 aSeed; // seed, góc chuẩn hoá 0..1
 varying vec3 vCol;
 vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h*6.0+vec3(0.,4.,2.),6.0)-3.0)-1.0,0.,1.); return v*mix(vec3(1.),k,s); }
+float h11(float x){ return fract(sin(x * 127.1) * 43758.5453); }
+float heartIn(vec2 q){ float a = q.x*q.x + q.y*q.y - 1.0; return step(a*a*a - q.x*q.x*q.y*q.y*q.y, 0.0); }
+float thump(float t){ float x = mod(t, 0.85); return exp(-x * 14.0) + 0.7 * exp(-max(x - 0.24, 0.0) * 14.0) * step(0.24, x); }
 void main(){
   float sd = aSeed.x, ang = aSeed.y;
   vec3 p = position;
@@ -34,9 +41,69 @@ void main(){
   vec3 c = mix(mixed, wave, u);
   float tw = 0.55 + 0.45 * sin(uTime * (2.0 + sd * 5.0) + sd * 40.0);
   float b = mix(tw, 0.8 + 0.2 * w, u * 0.7) * (0.45 + 0.35 * uHype + 0.3 * uPulse);
-  b *= step(0.08, fract(sd * 13.7)); // vài chỗ không giơ lightstick
-  vCol = c * b;
-  gl_PointSize = 2.2 * uRes;
+  float hold = step(0.08, fract(sd * 13.7)); // vài chỗ không giơ lightstick
+  vec3 col = c * b * hold;
+  float sz = 2.2;
+  float y = position.y;
+  float da = abs(ang - 0.5) * 2.0; // 0 giữa khán đài xa, 1 hai đầu (cạnh sân khấu)
+  // 4: đèn flash điện thoại — bầu trời sao trắng, lightstick màu tối đi
+  if (uFlash > 0.001) {
+    float ph = step(0.42, fract(sd * 31.7));
+    float tk = 0.5 + 0.5 * sin(uTime * (5.0 + sd * 9.0) + sd * 91.0);
+    vec3 pc = vec3(1.0, 0.97, 0.92) * (0.7 + 1.3 * tk * tk);
+    col = mix(col, mix(col * 0.22, pc, ph), uFlash);
+    sz += uFlash * ph * (1.0 + 1.2 * tk);
+  }
+  // 2: sóng sân vận động — dải sáng cao chạy vòng quanh (bảng màu sóng biển)
+  if (uWave > 0.001) {
+    float dd = ang - uWavePos;
+    float crest = exp(-dd * dd / 0.0012);
+    float swell = exp(-dd * dd / 0.012);
+    vec3 deep = vec3(0.06, 0.14, 0.85) * (0.35 + 0.15 * h11(sd * 9.0));
+    vec3 wc = mix(deep, vec3(0.0, 0.45, 0.85) * 1.2, swell);
+    wc = mix(wc, vec3(0.88, 1.0, 1.0) * 2.0, crest);
+    col = mix(col, wc * hold, uWave);
+    p.y += uWave * (crest * 3.5 + swell * 0.8);
+    sz += uWave * (crest * 3.2 + swell * 0.8);
+  }
+  // 3: thả tim — hồng/đỏ, nhịp tim đập đôi + 3 trái tim khổng lồ ghép bằng chấm sáng
+  if (uHeart > 0.001) {
+    float th = thump(uHeartAge);
+    float a = (ang - 0.5) * 2.0 * 2.2619; // rad
+    float hx = min(min(abs(a), abs(a - 1.15)), abs(a + 1.15)) * 100.0;
+    float hs = 0.85 + 0.15 * th;
+    float inH = heartIn(vec2(hx / (21.0 * hs), (y - 17.5) / (11.0 * hs)));
+    vec3 pink = mix(vec3(1.0, 0.08, 0.3), vec3(1.0, 0.35, 0.7), sd);
+    vec3 hc = mix(pink * (0.3 + 0.45 * th), vec3(1.0, 0.1, 0.25) * (2.2 + 1.6 * th), inH);
+    col = mix(col, hc, uHeart);
+    sz += uHeart * (inH * (2.2 + 1.5 * th) + 0.6 * th);
+    p.y += uHeart * th * 0.6;
+  }
+  // 5: pháo hoa — sóng cam/vàng lan từ phía sân khấu ra + chớp lấp lánh
+  if (uPyro > 0.001) {
+    float front = uPyroAge * 0.95;
+    float wash = smoothstep(0.0, 0.25, front - (1.0 - da));
+    float fl = 0.55 + 0.45 * sin(uTime * 23.0 + sd * 70.0);
+    vec3 warm = mix(vec3(1.0, 0.38, 0.05), vec3(1.0, 0.7, 0.2), fl) * (0.9 + 0.5 * fl);
+    float cell = floor(ang * 36.0) + floor(y / 8.0) * 50.0;
+    float bt = fract(uTime * 0.9 + h11(cell));
+    float burst = exp(-bt * 5.0) * step(0.55, h11(cell + 7.0)) * step(0.5, fract(sd * 17.3));
+    float edge = exp(-pow((front - (1.0 - da)) * 6.0, 2.0));
+    col = mix(col, warm, min(1.0, uPyro * wash * 1.5)) + vec3(1.0, 0.95, 0.75) * (burst * 3.5 * wash + edge * 1.2) * uPyro;
+    sz += uPyro * (wash * 0.8 + burst * 3.0 * wash + edge * 1.5);
+  }
+  // 1: hò reo — xung sáng chạy quanh bowl + cả khán đài nhảy, nhấp nháy trắng-vàng
+  if (uCheer > 0.001) {
+    float r = fract(uCheerAge * 0.85);
+    float race = exp(-pow((da - r) * 7.0, 2.0));
+    float fk = step(0.5, h11(floor(uTime * 12.0) + sd * 311.0));
+    vec3 gold = mix(vec3(1.0, 0.78, 0.35), vec3(1.0), fk);
+    col = mix(col, gold * (0.8 + 0.8 * fk), uCheer * 0.85) + vec3(1.0, 0.95, 0.8) * race * 2.0 * uCheer;
+    p.y += uCheer * (1.4 * abs(sin(uTime * 8.0 + sd * 20.0)) + race * 1.5);
+    sz += uCheer * (1.2 + 0.8 * fk + 2.5 * race);
+  }
+  vCol = col;
+  gl_PointSize = sz * uRes;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 const CROWD_FRAG = /* glsl */ `
@@ -147,8 +214,12 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
   const crowdGeo = new THREE.BufferGeometry();
   crowdGeo.setAttribute('position', new THREE.BufferAttribute(cp, 3));
   crowdGeo.setAttribute('aSeed', new THREE.BufferAttribute(cs, 2));
+  const fxU = {
+    uCheer: { value: 0 }, uCheerAge: { value: 99 }, uWave: { value: 0 }, uWavePos: { value: -1 },
+    uHeart: { value: 0 }, uHeartAge: { value: 99 }, uFlash: { value: 0 }, uPyro: { value: 0 }, uPyroAge: { value: 99 },
+  };
   const crowdMat = new THREE.ShaderMaterial({
-    uniforms, vertexShader: CROWD_VERT, fragmentShader: CROWD_FRAG,
+    uniforms: { ...uniforms, ...fxU }, vertexShader: CROWD_VERT, fragmentShader: CROWD_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
   const crowd = new THREE.Points(crowdGeo, crowdMat);
@@ -157,5 +228,48 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
   scene.add(crowd);
   disposables.push(crowdGeo, crowdMat);
 
-  return { dispose() { disposables.forEach((d) => d.dispose()); } };
+  // Tương tác khán giả (sự kiện 'cs-interact' từ main.ts) → bao hiệu ứng nới mềm trong JS
+  const age = { cheer: 99, wave: 99, heart: 99, pyro: 99 };
+  let flashOn = false, waveModeOn = false, lastT = -1, lastReal = performance.now(), waveLap = 0;
+  const onInteract = (e: Event) => {
+    const d = (e as CustomEvent).detail as { kind?: string; on?: boolean } | undefined;
+    if (!d) return;
+    if (d.kind === 'cheer') age.cheer = 0;
+    else if (d.kind === 'heart') age.heart = 0;
+    else if (d.kind === 'pyro') age.pyro = 0;
+    else if (d.kind === 'flash') flashOn = d.on ?? !flashOn;
+    else if (d.kind === 'wave') { if (fxU.uWave.value < 0.05) waveLap = 0; age.wave = 0; }
+  };
+  window.addEventListener('cs-interact', onInteract);
+  const env = (a: number, dur: number, fin: number, fout: number) => Math.max(0, Math.min(1, a / fin, (dur - a) / fout));
+  const ease = (v: number, target: number, rate: number) => v + Math.max(-rate, Math.min(rate, target - v));
+  const baseStruct = new THREE.Color(1, 1, 1), tmpC = new THREE.Color();
+  crowd.onBeforeRender = () => {
+    const now = performance.now();
+    const t = uniforms.uTime?.value as number ?? now / 1000;
+    let dt = t - lastT;
+    if (lastT < 0 || dt <= 0 || dt > 0.5) dt = Math.min(0.1, (now - lastReal) / 1000); // tạm dừng: dùng đồng hồ thực
+    lastT = t; lastReal = now;
+    age.cheer += dt; age.wave += dt; age.heart += dt; age.pyro += dt;
+    const cheer = env(age.cheer, 2.6, 0.12, 0.9), heart = env(age.heart, 4.2, 0.3, 1.0), pyro = env(age.pyro, 3.4, 0.1, 1.0);
+    fxU.uCheer.value = cheer; fxU.uCheerAge.value = age.cheer;
+    fxU.uHeart.value = heart; fxU.uHeartAge.value = age.heart;
+    fxU.uPyro.value = pyro; fxU.uPyroAge.value = age.pyro;
+    fxU.uFlash.value = ease(fxU.uFlash.value, flashOn ? 1 : 0, dt / 0.7);
+    const waveOn = waveModeOn || age.wave < 6;
+    fxU.uWave.value = ease(fxU.uWave.value, waveOn ? 1 : 0, dt / 0.7);
+    if (fxU.uWave.value > 0) waveLap += dt / 3; else waveLap = 0; // 1 vòng / 3 s
+    fxU.uWavePos.value = (waveLap % 1) * 1.3 - 0.15;
+    // đèn nhà hát / mép khán đài loé theo hò reo, ấm lên khi pháo hoa
+    const fl = cheer * (0.5 + 0.5 * Math.sin(t * 30)) * 14 + pyro * 4;
+    tmpC.copy(baseStruct).multiplyScalar(1 + fl);
+    if (pyro > 0) tmpC.g *= 1 - 0.25 * pyro, tmpC.b *= 1 - 0.6 * pyro;
+    structMat.color.copy(tmpC);
+  };
+
+  return {
+    /** Tuỳ chọn: gọi mỗi khung để đồng bộ waveMode (1 = sóng) với khán đài xa. */
+    update(f: FrameState, _t?: number) { waveModeOn = f.waveMode === 1; },
+    dispose() { window.removeEventListener('cs-interact', onInteract); disposables.forEach((d) => d.dispose()); },
+  };
 }

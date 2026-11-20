@@ -111,6 +111,8 @@ export interface Heli {
   /** Chỗ đứng trên càng (cục bộ, ở mức sàn chân). */
   door: THREE.Vector3;
   update(time: number): void;
+  /** Rọi đèn pha vào điểm (thế giới); null = quét tự do. Gọi trước update(). */
+  aim(target: THREE.Vector3 | null): void;
   dispose(): void;
 }
 
@@ -192,14 +194,22 @@ export function createHeli(): Heli {
   group.add(body, rotor, lights, cone);
   group.visible = false;
 
+  let aimAt: THREE.Vector3 | null = null;
+  const aimTmp = new THREE.Vector3();
+  const DOWN = new THREE.Vector3(0, -1, 0);
   return {
     group,
     door: new THREE.Vector3(0.3, -1.95, -1.15),
+    aim(target) { aimAt = target ? (aimAt ?? new THREE.Vector3()).copy(target) : null; },
     update(time) {
       rotorMat.uniforms.uTime.value = time;
       lightMat.uniforms.uTime.value = time;
       lightMat.uniforms.uPx.value = window.innerHeight * 1.2;
-      cone.rotation.set(0.25 + Math.sin(time * 0.6) * 0.18, 0, 0.35 + Math.sin(time * 0.43) * 0.2);
+      if (aimAt) {
+        group.updateMatrixWorld(true);
+        group.worldToLocal(aimTmp.copy(aimAt)).sub(cone.position).normalize();
+        cone.quaternion.setFromUnitVectors(DOWN, aimTmp);
+      } else cone.rotation.set(0.25 + Math.sin(time * 0.6) * 0.18, 0, 0.35 + Math.sin(time * 0.43) * 0.2);
     },
     dispose() {
       bodyGeo.dispose(); bodyMat.dispose(); rotorGeo.dispose(); rotorMat.dispose();
@@ -459,6 +469,208 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
       sparkMat.uniforms.uAge.value = age;
       sparkMat.uniforms.uPx.value = window.innerHeight * 1.2;
       floor.visible = wave.visible = sparks.visible = age >= 0;
+    },
+    dispose() { for (const d of disposables) d.dispose(); },
+  };
+}
+
+// ---------------------------------------------------------------- Dây tời (1 draw call)
+export interface Cable {
+  group: THREE.Group;
+  /** Kéo dây từ a (trên) tới b (dưới). */
+  set(a: THREE.Vector3, b: THREE.Vector3): void;
+  dispose(): void;
+}
+
+export function createCable(): Cable {
+  const parts = [
+    painted(new THREE.CylinderGeometry(0.035, 0.035, 1, 6, 1, true).translate(0, -0.5, 0), 0xd8dde8, false),
+  ];
+  const geo = mergeGeometries(parts)!;
+  parts[0].dispose();
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  const line = new THREE.Mesh(geo, mat);
+  line.frustumCulled = false;
+  const group = new THREE.Group();
+  group.add(line);
+  group.visible = false;
+  const DOWN = new THREE.Vector3(0, -1, 0), d = new THREE.Vector3();
+  return {
+    group,
+    set(a, b) {
+      d.subVectors(b, a);
+      const len = d.length();
+      line.visible = len > 0.05;
+      line.position.copy(a);
+      if (len > 1e-4) line.quaternion.setFromUnitVectors(DOWN, d.multiplyScalar(1 / len));
+      line.scale.set(1, Math.max(len, 1e-3), 1);
+    },
+    dispose() { geo.dispose(); mat.dispose(); },
+  };
+}
+
+// ---------------------------------------------------------------- Bục nâng sân khấu (4 draw call)
+const SHAFT_FRAG = /* glsl */ `
+uniform float uOpacity;
+uniform float uTime;
+varying vec2 vUv;
+void main() {
+  float v = vUv.y; // 0 = chân, 1 = ngọn
+  float a = pow(1.0 - v, 1.8) * uOpacity * (0.85 + 0.15 * sin(vUv.x * 30.0 + uTime * 3.0));
+  vec3 c = mix(vec3(1.0, 0.92, 0.75), vec3(0.45, 0.8, 1.0), v);
+  gl_FragColor = vec4(c * a, 1.0);
+}`;
+
+const LIFTP_VERT = /* glsl */ `
+uniform float uT;
+uniform float uLock;
+uniform float uSmoke;
+uniform float uPx;
+attribute vec4 aSeed;
+attribute float aType;
+varying vec3 vColor;
+varying float vA;
+void main() {
+  vec3 p = position;
+  float size = 0.1;
+  vA = 0.0;
+  vColor = vec3(1.0);
+  if (aType < 0.5) { // khói từ miệng hầm
+    float L = 2.6;
+    float ph = fract((uT + aSeed.x * L) / L);
+    float ang = aSeed.y * 6.2831853;
+    float rr = (0.3 + aSeed.z * 0.8) * (0.4 + ph);
+    p += vec3(cos(ang) * rr, ph * (2.5 + aSeed.w * 2.0), sin(ang) * rr);
+    size = 0.7 + ph * 2.2;
+    vA = sin(ph * 3.14159) * 0.22 * uSmoke;
+    vColor = mix(vec3(0.55, 0.65, 0.85), vec3(0.95, 0.8, 0.6), aSeed.w);
+  } else if (aType < 1.5) { // cột CO2 ở bốn góc
+    float L = 0.7;
+    float ph = fract((uLock + aSeed.x * L) / L);
+    float on = step(0.0, uLock) * (1.0 - smoothstep(1.3, 1.9, uLock));
+    float ang = aSeed.y * 6.2831853;
+    p += vec3(cos(ang) * ph * 0.5, ph * (4.5 + aSeed.z * 2.0), sin(ang) * ph * 0.5);
+    size = 0.3 + ph * 1.5;
+    vA = (1.0 - ph) * 0.45 * on;
+    vColor = vec3(0.85, 0.92, 1.0);
+  } else { // tia lửa
+    float t = uLock;
+    float a = aSeed.x * 6.2831853;
+    float sp = 0.8 + aSeed.y * 2.2;
+    float up = 4.0 + aSeed.z * 5.0;
+    p += vec3(cos(a) * sp * t, up * t - 4.9 * t * t, sin(a) * sp * t);
+    p.y = max(p.y, 0.05);
+    size = 0.06;
+    vA = t < 0.0 ? 0.0 : 1.0 - smoothstep(0.6, 1.3 + aSeed.w * 0.4, t);
+    vColor = mix(vec3(1.0, 0.75, 0.3), vec3(1.0, 1.0, 0.9), aSeed.w);
+  }
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = vA > 0.0 ? max(1.5, uPx * size / -mv.z) : 0.0;
+}`;
+const LIFTP_FRAG = /* glsl */ `
+varying vec3 vColor;
+varying float vA;
+void main() {
+  if (vA <= 0.0) discard;
+  float d = length(gl_PointCoord - 0.5) * 2.0;
+  float a = exp(-d * d * 3.0) * smoothstep(1.0, 0.7, d) * vA;
+  gl_FragColor = vec4(vColor * a, 1.0);
+}`;
+
+export interface LiftFx {
+  group: THREE.Group;
+  /** open: 0..1 độ mở nắp hầm; deckY: mặt bục (m); light: 0..1 cột sáng; lockAge: giây từ lúc khoá (<0 = chưa). */
+  set(open: number, deckY: number, light: number, smoke: number, lockAge: number, time: number): void;
+  dispose(): void;
+}
+
+export function createLiftFx(land: THREE.Vector3): LiftFx {
+  const group = new THREE.Group();
+  group.position.set(land.x, 0, land.z);
+  group.visible = false;
+  const disposables: { dispose(): void }[] = [];
+  const R = 1.2;
+
+  const hatchGeo = new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2);
+  const hatchMat = new THREE.MeshBasicMaterial({ color: 0x050308, fog: false });
+  const hatch = new THREE.Mesh(hatchGeo, hatchMat);
+  hatch.position.y = 0.02;
+  hatch.renderOrder = 2;
+  disposables.push(hatchGeo, hatchMat);
+
+  const pp: THREE.BufferGeometry[] = [];
+  pp.push(painted(new THREE.CylinderGeometry(R, R, 0.4, 40).translate(0, -0.2 + 0.05, 0), 0x2a2d38));
+  pp.push(painted(new THREE.TorusGeometry(R - 0.04, 0.05, 6, 48).rotateX(Math.PI / 2).translate(0, 0.05, 0), 0x6fe8ff, false));
+  pp.push(painted(new THREE.TorusGeometry(R * 0.55, 0.025, 4, 40).rotateX(Math.PI / 2).translate(0, 0.055, 0), 0xff4fd0, false));
+  pp.push(painted(new THREE.CylinderGeometry(R + 0.02, R + 0.02, 0.06, 40, 1, true).translate(0, -0.3, 0), 0x6fe8ff, false));
+  const platGeo = mergeGeometries(pp)!;
+  for (const g of pp) g.dispose();
+  const platMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  const plat = new THREE.Mesh(platGeo, platMat);
+  disposables.push(platGeo, platMat);
+
+  const sg: THREE.BufferGeometry[] = [new THREE.CylinderGeometry(1.7, R, 8, 32, 1, true).translate(0, 4, 0).toNonIndexed()];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.3;
+    const g = new THREE.CylinderGeometry(0.4, 0.04, 10, 10, 1, true).translate(0, 5, 0);
+    g.applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(Math.sin(a), 0, -Math.cos(a)), 0.38));
+    g.translate(Math.cos(a) * R, 0, Math.sin(a) * R);
+    sg.push(g.toNonIndexed());
+    g.dispose();
+  }
+  const shaftGeo = mergeGeometries(sg)!;
+  for (const g of sg) g.dispose();
+  const shaftMat = new THREE.ShaderMaterial({
+    vertexShader: ROTOR_VERT, fragmentShader: SHAFT_FRAG, uniforms: { uOpacity: { value: 0 }, uTime: { value: 0 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+  });
+  const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+  shaft.renderOrder = 5;
+  disposables.push(shaftGeo, shaftMat);
+
+  const NS = 40, NC = 4 * 24, NK = 4 * 40, N = NS + NC + NK;
+  const pos = new Float32Array(N * 3), seed = new Float32Array(N * 4), type = new Float32Array(N);
+  let s = 4242;
+  const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const C = [[-1.35, -1.35], [1.35, -1.35], [-1.35, 1.35], [1.35, 1.35]];
+  for (let i = 0; i < N; i++) {
+    let ty = 0, x = 0, z = 0;
+    if (i >= NS && i < NS + NC) { ty = 1; [x, z] = C[(i - NS) % 4]; }
+    else if (i >= NS + NC) { ty = 2; [x, z] = C[(i - NS - NC) % 4]; }
+    pos.set([x, 0.05, z], i * 3);
+    seed.set([rnd(), rnd(), rnd(), rnd()], i * 4);
+    type[i] = ty;
+  }
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  pg.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
+  pg.setAttribute('aType', new THREE.BufferAttribute(type, 1));
+  const pMat = new THREE.ShaderMaterial({
+    vertexShader: LIFTP_VERT, fragmentShader: LIFTP_FRAG,
+    uniforms: { uT: { value: 0 }, uLock: { value: -1 }, uSmoke: { value: 0 }, uPx: { value: 600 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  });
+  const particles = new THREE.Points(pg, pMat);
+  particles.frustumCulled = false;
+  particles.renderOrder = 7;
+  disposables.push(pg, pMat);
+
+  group.add(hatch, plat, shaft, particles);
+  return {
+    group,
+    set(open, deckY, light, smoke, lockAge, time) {
+      hatch.visible = open > 0.01 && lockAge < 0;
+      hatch.scale.setScalar(Math.max(0.001, open * 1.28));
+      plat.position.y = deckY;
+      shaftMat.uniforms.uOpacity.value = 0.12 * light;
+      shaftMat.uniforms.uTime.value = time;
+      shaft.visible = light > 0.01;
+      shaft.position.y = Math.min(0, deckY);
+      pMat.uniforms.uT.value = time;
+      pMat.uniforms.uLock.value = lockAge;
+      pMat.uniforms.uSmoke.value = smoke;
+      pMat.uniforms.uPx.value = window.innerHeight * 1.2;
     },
     dispose() { for (const d of disposables) d.dispose(); },
   };

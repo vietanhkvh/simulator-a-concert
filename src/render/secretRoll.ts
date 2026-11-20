@@ -1,6 +1,6 @@
 // Logic thuần (không three.js) cho sự kiện bí mật: tung xúc xắc theo xác suất + bật lại (re-arm) + hồi chiêu.
-export type SecretKind = 'ufo' | 'rocket' | 'dragon';
-export const SECRET_KINDS: readonly SecretKind[] = ['ufo', 'rocket', 'dragon'];
+export type SecretKind = 'ufo' | 'rocket' | 'dragon' | 'jet';
+export const SECRET_KINDS: readonly SecretKind[] = ['ufo', 'rocket', 'dragon', 'jet'];
 
 export const HYPE_FIRE = 0.95;
 export const HYPE_REARM = 0.8;
@@ -27,13 +27,15 @@ export function rollSecret(chances: Record<SecretKind, number>, rnd: () => numbe
 export function pickAnySecret(chances: Record<SecretKind, number>, rnd: () => number): SecretKind {
   const p = SECRET_KINDS.map((k) => Math.max(0, chances[k] || 0));
   const sum = p.reduce((a, b) => a + b, 0);
-  if (sum <= 0) return SECRET_KINDS[Math.min(2, Math.floor(rnd() * 3))]!;
+  const n = SECRET_KINDS.length;
+  if (sum <= 0) return SECRET_KINDS[Math.min(n - 1, Math.floor(rnd() * n))]!;
   let r = rnd() * sum;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < n; i++) {
     if (r < p[i]!) return SECRET_KINDS[i]!;
     r -= p[i]!;
   }
-  return SECRET_KINDS[2]!;
+  for (let i = n - 1; i >= 0; i--) if (p[i]! > 0) return SECRET_KINDS[i]!;
+  return SECRET_KINDS[n - 1]!;
 }
 
 /**

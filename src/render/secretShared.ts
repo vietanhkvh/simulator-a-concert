@@ -9,6 +9,16 @@ export interface SecretAct {
   update(t: number, f: FrameState): void;
   stop(): void;
   dispose(): void;
+  /** Điểm cần nhìn hiện tại (cho camera wide nhìn theo), ghi vào `out`. */
+  focus?(t: number, out: THREE.Vector3): void;
+}
+
+/** Điểm nhìn chung của sự kiện đang chạy (secret hoặc máy bay kéo băng rôn); null khi rảnh. */
+export const secretFocusState: { v: THREE.Vector3; active: boolean } = { v: new THREE.Vector3(), active: false };
+
+/** Phát window CustomEvent 'cs-secret' { kind, phase }. */
+export function emitSecret(kind: string, phase: 'start' | 'end'): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('cs-secret', { detail: { kind, phase } }));
 }
 
 /** Mặt dốc khán giả: y tại z (khớp stage.ts: -1,6 tại z=-6 → +4 tại z=-80). */

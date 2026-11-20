@@ -321,6 +321,8 @@ export interface ScreensOptions {
   onStart: () => void;
   /** Người chơi chọn/thả file từ máy (xử lý cục bộ, không upload). Tùy chọn (bổ sung). */
   onImport?: (files: File[]) => void;
+  /** Nút "Về sảnh" trên màn kết quả (bổ sung). */
+  onLobby?: () => void;
 }
 
 export interface Screens {
@@ -336,7 +338,7 @@ export interface Screens {
 
 // ───────────────────────── Trạng thái & sự kiện ─────────────────────────
 
-export type GameState = 'menu' | 'loading' | 'countdown' | 'playing' | 'result';
+export type GameState = 'menu' | 'loading' | 'intro' | 'countdown' | 'playing' | 'result';
 
 export interface GameEvents {
   state: GameState;

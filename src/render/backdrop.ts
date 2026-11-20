@@ -124,6 +124,7 @@ export function createBackdrop(scene: THREE.Scene) {
       accMat.color.copy(c.setHSL((0.6 + f.hype * 0.35 + t * 0.03) % 1, 0.9, 0.45 + 0.2 * f.beatPulse));
       sky.update(t);
       flyby.update(f, t);
+      stadium.update?.(f, t);
     },
     dispose() { disposables.forEach((d) => d.dispose()); },
   };

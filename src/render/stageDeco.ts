@@ -144,22 +144,25 @@ function buildStatic(): THREE.BufferGeometry {
     bx(11.8, 0.05, 0.05, sx * 7.75, -0.95, BZ, 0x6a68a0);
     bx(0.07, 0.07, 1.2, sx * 13.6, -0.45, BZ + 0.6, 0x9a98c8);
   }
-  // trống (riser bên trái, upstage)
+  // trống (riser bên trái, upstage): tay trống ngồi ở z=1,5 (hậu), bộ trống nằm giữa tay trống và khán giả (-Z)
   bx(3.6, 0.45, 2.8, -6.5, 0.225, 1.5, 0x2c2a52);
-  cyl(0.45, 0.45, 0.5, -6.5, 0.9, 0.75, 0x3c3a78, Math.PI / 2, 0, 16);
-  cyl(0.46, 0.46, 0.04, -6.5, 0.9, 0.49, 0xc8c8e8, Math.PI / 2, 0, 16);
-  for (const dx of [-0.5, 0.5]) cyl(0.22, 0.22, 0.22, -6.5 + dx, 1.5, 0.85, 0x3c3a78, 0.3, 0, 12);
-  cyl(0.24, 0.24, 0.16, -7.6, 1.15, 0.4, 0xc8c8e8, 0, 0, 12);
-  for (const [x, y, z] of [[-8.0, 2.0, 1.2], [-5.0, 2.1, 1.2], [-6.5, 2.3, 2.0]] as [number, number, number][]) {
+  cyl(0.42, 0.42, 0.5, -6.5, 0.87, 0.3, 0x3c3a78, Math.PI / 2, 0, 16); // trống bass
+  cyl(0.43, 0.43, 0.04, -6.5, 0.87, 0.03, 0xc8c8e8, Math.PI / 2, 0, 16); // mặt trống hướng khán giả
+  for (const dx of [-0.4, 0.4]) cyl(0.22, 0.22, 0.22, -6.5 + dx, 1.5, 0.35, 0x3c3a78, 0.3, 0, 12); // tom
+  cyl(0.26, 0.26, 0.14, -6.84, 1.0, 0.85, 0xc8c8e8, 0, 0, 14); // snare (tay trái)
+  rod(V(-6.84, 0.45, 0.85), V(-6.84, 0.93, 0.85), 0.03, 0x8886b8);
+  cyl(0.24, 0.24, 0.04, -6.0, 1.12, 0.85, 0xc9a23a, 0, 0, 14); // hi-hat (tay phải)
+  rod(V(-6.0, 0.45, 0.85), V(-6.0, 1.1, 0.85), 0.03, 0x8886b8);
+  for (const [x, y, z] of [[-7.8, 2.0, 0.5], [-5.3, 2.0, 0.55], [-5.7, 1.85, 1.0]] as [number, number, number][]) {
     cyl(0.38, 0.38, 0.015, x, y, z, 0xc9a23a, 0.2, 0, 16);
     rod(V(x, 0.45, z), V(x, y, z), 0.025, 0x8886b8);
   }
-  // keyboard riser bên phải
+  // keyboard riser bên phải: phím (dải sáng) quay về phía nghệ sĩ (+Z), đàn thứ hai phía khán giả
   bx(3.2, 0.3, 2.2, 6.5, 0.15, 1.5, 0x2c2a52);
-  bx(1.9, 0.08, 0.5, 6.5, 1.0, 0.95, 0x15141f);
-  bx(1.9, 0.02, 0.28, 6.5, 1.05, 0.88, 0xd8d8ee);
-  bx(1.6, 0.08, 0.5, 6.5, 1.45, 1.2, 0x15141f);
-  for (const dx of [-0.8, 0.8]) { rod(V(6.5 + dx, 0.3, 0.95), V(6.5 + dx, 1.0, 0.95), 0.05, 0x8886b8); rod(V(6.5 + dx, 0.3, 1.2), V(6.5 + dx, 1.45, 1.2), 0.05, 0x8886b8); }
+  bx(1.9, 0.08, 0.5, 6.5, 1.2, 1.2, 0x15141f);
+  bx(1.9, 0.02, 0.28, 6.5, 1.25, 1.31, 0xd8d8ee);
+  bx(1.6, 0.08, 0.5, 6.5, 1.5, 0.78, 0x15141f);
+  for (const dx of [-0.8, 0.8]) { rod(V(6.5 + dx, 0.3, 1.2), V(6.5 + dx, 1.2, 1.2), 0.05, 0x8886b8); rod(V(6.5 + dx, 0.3, 0.78), V(6.5 + dx, 1.5, 0.78), 0.05, 0x8886b8); }
   // amp stack
   for (const x of [-10.8, -9.3, 9.3, 10.8]) {
     bx(1.1, 0.95, 0.6, x, 0.475, 2.3, 0x34325e);
@@ -172,8 +175,8 @@ function buildStatic(): THREE.BufferGeometry {
   for (const [x, z] of [[-2.8, -1.8], [2.8, -1.8], [-6, -2.9], [6, -2.9]] as [number, number][]) {
     cyl(0.2, 0.2, 0.03, x, 0.02, z, 0x9a98c8, 0, 0, 14);
     rod(V(x, 0.02, z), V(x, 1.5, z), 0.04, 0x9a98c8);
-    rod(V(x, 1.5, z), V(x, 1.7, z - 0.3), 0.03, 0x9a98c8);
-    bx(0.07, 0.07, 0.16, x, 1.72, z - 0.4, 0x1a1a28);
+    rod(V(x, 1.5, z), V(x, 1.6, z + 0.35), 0.03, 0x9a98c8); // cần mic cong về phía người hát (+Z)
+    bx(0.07, 0.07, 0.16, x, 1.6, z + 0.4, 0x1a1a28);
   }
 
   const merged = mergeGeometries(parts, false)!;

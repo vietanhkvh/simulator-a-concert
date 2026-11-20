@@ -410,3 +410,30 @@
   background: rgba(8, 6, 20, 0.5); padding: 6px 12px; border-radius: 999px; pointer-events: none;
 }
 .cs-skip-hint[hidden] { display: none; }
+
+/* --- Sảnh chờ (lobby) mờ đục: che hoàn toàn sân vận động 3D --- */
+.cs-screen.cs-lobby { overflow-y: auto; align-items: flex-start;
+  background: radial-gradient(ellipse at 20% 10%, #3a1d6e 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 90%, #6b1450 0%, transparent 50%), linear-gradient(160deg, #0b0718, #05030a 70%);
+  background-color: #05030a; background-size: 160% 160%; animation: cs-lobby-bg 18s ease-in-out infinite alternate; }
+.cs-screen.cs-lobby > .cs-card { margin: auto; }
+@keyframes cs-lobby-bg { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
+.cs-entr { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+.cs-entr-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: 100%; }
+@media (max-width: 560px) { .cs-entr-cards { grid-template-columns: 1fr; } }
+.cs-entr-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px;
+  border-radius: 14px; border: 2px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.05);
+  color: #d8d3ee; font: inherit; cursor: pointer; transition: border-color .15s, background .15s, transform .15s; }
+.cs-entr-card:hover { background: rgba(255, 255, 255, 0.1); }
+.cs-entr-card b { color: #fff; font-size: 15px; }
+.cs-entr-card span { font-size: 12px; line-height: 1.35; }
+.cs-entr-card .cs-entr-num { position: absolute; top: 6px; left: 9px; font-size: 12px; opacity: .6; }
+.cs-entr-card[aria-checked="true"] { border-color: var(--cs-accent, #ff4fd8); background: rgba(255, 79, 216, 0.16);
+  color: #fff; transform: translateY(-2px); box-shadow: 0 0 18px rgba(255, 79, 216, 0.35); }
+.cs-entr-skip { font-size: 13px; color: #b9b3d0; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.cs-btn-sub { background: rgba(255, 255, 255, 0.12) !important; }
+/* Màn đen chuyển cảnh sảnh ↔ sân khấu */
+.cs-fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 50; transition: opacity .5s ease; }
+.cs-secret-banner { position: fixed; top: 14%; left: 50%; transform: translateX(-50%); z-index: 40; pointer-events: none;
+  padding: 10px 22px; border-radius: 999px; background: rgba(20, 8, 40, 0.8); color: #ffe66b; font: 700 22px var(--cs-font);
+  letter-spacing: .05em; box-shadow: 0 0 24px rgba(255, 230, 107, 0.4); }

@@ -91,7 +91,7 @@ vec3 emoteMotion(vec3 p, float age, float t, float seed, float beh, vec3 v, out 
   return p;
 }
 float emotePx(float sizeM, float dist) {
-  return clamp(max(22.0, uPx * sizeM / max(dist, 0.1)), 0.0, 170.0);
+  return clamp(max(16.0, uPx * sizeM / max(dist, 0.1)), 0.0, 96.0);
 }
 `;
 
@@ -520,10 +520,10 @@ export function createEmotes(scene: THREE.Scene): Emotes {
       const dt = Math.min(f.dt, 0.1);
       time += dt;
       uniforms.uTime.value = time;
-      uniforms.uPx.value = window.innerHeight * 1.1;
+      uniforms.uPx.value = window.innerHeight * 0.75;
       uniforms.uPulse.value = f.beatPulse;
       const h = f.hype;
-      const rate = h < 0.15 ? 0.5 : 0.5 + 60 * Math.pow(h, 1.8);
+      const rate = h < 0.15 ? 0.5 : 0.5 + 26 * Math.pow(h, 1.8);
       acc += rate * dt;
       const heroChance = h < 0.45 ? 0.03 : h < 0.78 ? 0.06 : 0.1;
       while (acc >= 1) {

@@ -6,7 +6,8 @@ import { renderControls } from './controlsGuide';
  * sự kiện bí mật. Chỉ là UI: mọi tác dụng đi qua callback do main.ts cung cấp.
  */
 
-export type SecretKind = 'ufo' | 'rocket' | 'dragon';
+export type SecretKind = 'ufo' | 'rocket' | 'dragon' | 'jet';
+export type EntrancePreview = 'jump' | 'lift' | 'cable';
 export type TestKind = 'cheer' | 'wave' | 'heart' | 'flash' | 'fireworks' | 'sing';
 export type VolumeKind = 'music' | 'crowd' | 'sing';
 export type ViewName = 'singer' | 'flycam' | 'pit' | 'crane' | 'wide';
@@ -38,7 +39,7 @@ export function loadSettings(): WorkshopSettings {
       volume: { music: num(vol.music, 1, 0, 1.5), crowd: num(vol.crowd, 1, 0, 1.5), sing: num(vol.sing, 1, 0, 1.5) },
       banners: Array.isArray(raw.banners) ? cleanBanners(raw.banners.filter((s) => typeof s === 'string').join('\n')) : [],
       chances: ch && typeof ch === 'object'
-        ? { ufo: num(ch.ufo, 0.25, 0, 1), rocket: num(ch.rocket, 0.2, 0, 1), dragon: num(ch.dragon, 0.1, 0, 1) }
+        ? { ufo: num(ch.ufo, 0.25, 0, 1), rocket: num(ch.rocket, 0.2, 0, 1), dragon: num(ch.dragon, 0.1, 0, 1), jet: num(ch.jet, 0.15, 0, 1) }
         : null,
     };
   } catch {
@@ -72,6 +73,8 @@ export interface PauseMenuOptions {
   onBanners(lines: string[]): void;
   onSecret(kind: SecretKind): void;
   onFlyby(): void;
+  /** Xem thử màn chào sân (tùy chọn). */
+  onEntrance?(kind: EntrancePreview): void;
   onChance(kind: SecretKind, v: number): void;
   seekBy(d: number): void;
   seekTo(sec: number): void;
@@ -96,7 +99,8 @@ export interface PauseMenu {
 const VIEWS: [ViewName, string][] = [
   ['singer', 'Ca sĩ'], ['flycam', 'Flycam'], ['pit', 'Hố'], ['crane', 'Cần cẩu'], ['wide', 'Toàn cảnh'],
 ];
-const SECRETS: [SecretKind, string][] = [['ufo', 'UFO'], ['rocket', 'Tên lửa'], ['dragon', 'Rồng']];
+const SECRET_LABEL: Record<string, string> = { ufo: 'UFO', rocket: 'Tên lửa', dragon: 'Rồng', jet: 'Máy bay phản lực' };
+const SECRETS: [SecretKind, string][] = [['ufo', 'UFO'], ['rocket', 'Tên lửa'], ['dragon', 'Rồng'], ['jet', 'Máy bay phản lực']];
 
 function fmt(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
@@ -143,13 +147,21 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
     </section>
     <section class="cs-pm-sec cs-pm-secret"><h3>Sự kiện bí mật</h3>
       <div class="cs-pm-btns">
-        ${SECRETS.map(([k, n]) => `<button type="button" class="cs-pm-btn" data-secret="${k}">${n}</button>`).join('')}
+        <span class="cs-pm-secret-btns" style="display:contents">${SECRETS.map(([k, n]) => `<button type="button" class="cs-pm-btn" data-secret="${k}">${n}</button>`).join('')}</span>
         <button type="button" class="cs-pm-btn" data-flyby>Máy bay kéo băng rôn</button>
       </div>
       <div class="cs-pm-note">Tỉ lệ xuất hiện khi Hype tối đa</div>
       <div class="cs-pm-chances">
         ${SECRETS.map(([k, n]) => `<label>${n} <input type="number" min="0" max="100" step="1" data-chance="${k}">%</label>`).join('')}
       </div>
+    </section>
+    <section class="cs-pm-sec cs-pm-entrance"><h3>Màn chào sân</h3>
+      <div class="cs-pm-btns">
+        <button type="button" class="cs-pm-btn" data-entrance="jump">Nhảy khỏi trực thăng</button>
+        <button type="button" class="cs-pm-btn" data-entrance="lift">Bục nâng</button>
+        <button type="button" class="cs-pm-btn" data-entrance="cable">Thả cáp</button>
+      </div>
+      <div class="cs-pm-note">Xem thử khi bài đang dừng; Enter để bỏ qua.</div>
     </section>
     <section class="cs-pm-sec"><h3>Góc máy &amp; điều khiển</h3>
       <div class="cs-pm-btns">${VIEWS.map(([v, n]) => `<button type="button" class="cs-pm-btn" data-view="${v}">${n}</button>`).join('')}</div>
@@ -222,15 +234,16 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
     else if (d.view) o.setView(d.view as ViewName);
     else if (d.secret) o.onSecret(d.secret as SecretKind);
     else if (d.flyby !== undefined) o.onFlyby();
+    else if (d.entrance) o.onEntrance?.(d.entrance as EntrancePreview);
     else if (d.seek) o.seekBy(Number(d.seek));
     else if (b === lookBtn) o.setMouseLook(!mouseLook);
   });
-  el.querySelectorAll<HTMLInputElement>('[data-chance]').forEach((inp) => {
-    inp.addEventListener('change', () => {
-      const v = Math.max(0, Math.min(100, Math.round(Number(inp.value) || 0)));
-      inp.value = String(v);
-      o.onChance(inp.dataset.chance as SecretKind, v / 100);
-    });
+  el.addEventListener('change', (e) => {
+    const inp = e.target as HTMLInputElement;
+    if (!inp.dataset?.chance) return;
+    const v = Math.max(0, Math.min(100, Math.round(Number(inp.value) || 0)));
+    inp.value = String(v);
+    o.onChance(inp.dataset.chance as SecretKind, v / 100);
   });
   banners.value = s.banners.join('\n');
   const showBannerNote = () => {
@@ -308,6 +321,14 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
       flashBtn.classList.toggle('on', on);
     },
     setSecretAvailable(secret, flyby, chances) {
+      if (chances) {
+        // Danh sách sự kiện theo SECRET_CHANCES của module (có 'jet' hay chưa).
+        const keys = Object.keys(chances);
+        q<HTMLElement>('.cs-pm-secret-btns').innerHTML = keys
+          .map((k) => `<button type="button" class="cs-pm-btn" data-secret="${k}">${SECRET_LABEL[k] ?? k}</button>`).join('');
+        q<HTMLElement>('.cs-pm-chances').innerHTML = keys
+          .map((k) => `<label>${SECRET_LABEL[k] ?? k} <input type="number" min="0" max="100" step="1" data-chance="${k}">%</label>`).join('');
+      }
       el.querySelectorAll<HTMLButtonElement>('[data-secret]').forEach((b) => { b.hidden = !secret; });
       el.querySelectorAll<HTMLInputElement>('[data-chance]').forEach((inp) => {
         (inp.parentElement as HTMLElement).hidden = !secret;

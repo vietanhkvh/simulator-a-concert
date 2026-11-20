@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 /**
  * Nối dây toàn bộ game. Không chứa logic nghiệp vụ: chỉ khởi tạo module, dựng FrameState mỗi frame
  * và chuyển trạng thái menu → loading → countdown → playing → result.
@@ -21,6 +22,7 @@ import { createEmotes } from './render/emotes';
 import { createLedScreens } from './render/ledScreens';
 import { createLights } from './render/lights';
 import { createCameraCrew } from './render/cameraCrew';
+import { getSecretFocus } from './render/secretEvents';
 import { createEntrance, ENTRANCE_SEC, type EntranceKind } from './render/entrance';
 import { createSinger } from './render/singer';
 import { createStage } from './render/stage';
@@ -34,7 +36,7 @@ import { loadManifest, loadSong } from './song/loader';
 import { loadLocalSong, songHasNotes } from './song/local';
 import { createHud } from './ui/hud';
 import { createHudMicMeter, createMicPanel } from './ui/micPanel';
-import { createScreens } from './ui/screens';
+import { createScreens, getLobbyEntrance, type LobbyEntrance } from './ui/screens';
 import { createTeleprompter, createVideoPanel } from './ui/teleprompter';
 import { createControlsGuide } from './ui/controlsGuide';
 import {
@@ -79,12 +81,47 @@ skipHint.textContent = 'Enter: bỏ qua màn chào sân';
 skipHint.hidden = true;
 document.body.appendChild(skipHint);
 const entranceParam = params.get('entrance');
-function pickEntrance(): EntranceKind | null {
+/** ?entrance=jump|lift|cable|off (cũ: hero→jump, parachute→cable) ưu tiên hơn lựa chọn ở sảnh. */
+function pickEntrance(): LobbyEntrance | null {
   if (entranceParam === 'off') return null;
-  if (entranceParam === 'parachute' || entranceParam === 'hero') return entranceParam;
-  return Math.random() < 0.5 ? 'parachute' : 'hero';
+  if (entranceParam === 'jump' || entranceParam === 'lift' || entranceParam === 'cable') return entranceParam;
+  if (entranceParam === 'hero') return 'jump';
+  if (entranceParam === 'parachute') return 'cable';
+  return getLobbyEntrance();
 }
-controls?.setViewProvider((m) => entrance.getView() ?? crew.getView(m), stage.scene);
+/** Độ dài màn chào sân (giây), chịu được cả khi module entrance chưa có kiểu này. */
+const entranceSec = (k: LobbyEntrance) => (ENTRANCE_SEC as Record<string, number>)[k] ?? 12;
+// Màn đen chuyển cảnh (sảnh → sân khấu, kết quả → sảnh).
+const fade = document.createElement('div');
+fade.className = 'cs-fade';
+document.body.appendChild(fade);
+let fadeBusy = 0;
+function fadeTo(opacity: number, ms: number): Promise<void> {
+  fadeBusy++;
+  fade.style.transitionDuration = `${ms}ms`;
+  fade.style.opacity = String(opacity);
+  return new Promise((r) => setTimeout(() => { fadeBusy--; r(); }, ms));
+}
+/** Đang trong màn chào sân thật (state 'intro'): hạn chót an toàn (performance.now ms). */
+let introDeadline = 0;
+let introKind: LobbyEntrance | null = null;
+// Góc máy cho sự kiện bí mật: lùi về cuối sân, ngẩng lên để thấy cả sân khấu lẫn bầu trời.
+const secretCamPos = new THREE.Vector3(0, 62, -112);
+const secretCamTarget = new THREE.Vector3(0, 22, -20);
+const secretCamPose = { position: secretCamPos, target: secretCamTarget, fov: 60 };
+function secretView(): typeof secretCamPose | null {
+  if (!secretPrevViewActive()) return null;
+  const focus = getSecretFocus();
+  // Camera trên cao phía sau khán đài (cao hơn khinh khí cầu), nhìn vào điểm giữa sân khấu và tâm sự kiện.
+  const tx = focus ? focus.x * 0.5 : 0;
+  const ty = focus ? (focus.y + 10) * 0.5 : 22;
+  const tz = focus ? Math.max(-60, Math.min(20, (focus.z - 10) * 0.5)) : -20;
+  secretCamTarget.x += (tx - secretCamTarget.x) * 0.05;
+  secretCamTarget.y += (ty - secretCamTarget.y) * 0.05;
+  secretCamTarget.z += (tz - secretCamTarget.z) * 0.05;
+  return secretCamPose;
+}
+controls?.setViewProvider((m) => entrance.getView() ?? (m === 'wide' ? secretView() : null) ?? crew.getView(m), stage.scene);
 window.addEventListener('cs-entrance', (e) => {
   const phase = (e as CustomEvent<{ phase: string }>).detail.phase;
   if (phase === 'land') {
@@ -92,12 +129,60 @@ window.addEventListener('cs-entrance', (e) => {
     stageFx.pyro();
     emotes.burst(60);
   } else if (phase === 'end') {
+    if (state === 'intro') { beginSong(); return; }
     const l = entrance.getLandingSpot();
     controls?.teleport(l.x, l.z, l.yaw, 0);
     controls?.setView('singer');
   }
 });
-window.addEventListener('keydown', (e) => { if (e.code === 'Enter' && entrance.isPlaying()) entrance.skip(); });
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Enter' || isTypingTarget(e)) return;
+  if (state === 'intro') { e.preventDefault(); skipIntro(); } else if (entrance.isPlaying()) entrance.skip();
+});
+function skipIntro(): void {
+  if (state !== 'intro') return;
+  if (entrance.isPlaying()) entrance.skip();
+  beginSong();
+}
+
+// --- Sự kiện bí mật: chuyển sang góc toàn cảnh để thấy hết hiệu ứng, xong thì trả lại góc cũ ---
+const secretBanner = document.createElement('div');
+secretBanner.className = 'cs-secret-banner';
+secretBanner.textContent = 'Sự kiện bí mật!';
+secretBanner.hidden = true;
+document.body.appendChild(secretBanner);
+let secretPrevView: ViewName | null = null;
+let secretCamOn = false;
+function secretPrevViewActive(): boolean { return secretCamOn; }
+let secretTimer = 0;
+let bannerTimer = 0;
+function restoreSecretView(): void {
+  clearTimeout(secretTimer);
+  if (secretPrevView && controls && controls.getViewMode() === 'wide') controls.setView(secretPrevView);
+  secretPrevView = null;
+  secretCamOn = false;
+}
+window.addEventListener('cs-secret', (e) => {
+  const phase = (e as CustomEvent<{ phase: string }>).detail?.phase;
+  if (phase === 'start') {
+    if (!controls || pauseMenu.isOpen || state === 'intro' || entrance.isPlaying()) return;
+    secretBanner.hidden = false;
+    clearTimeout(bannerTimer);
+    bannerTimer = window.setTimeout(() => { secretBanner.hidden = true; }, 2000);
+    const cur = controls.getViewMode() as ViewName;
+    secretCamOn = true;
+    if (cur !== 'wide') { secretPrevView ??= cur; controls.setView('wide'); }
+    clearTimeout(secretTimer);
+    secretTimer = window.setTimeout(restoreSecretView, 30000);
+  } else if (phase === 'end') {
+    restoreSecretView();
+  }
+});
+// Người chơi tự đổi góc máy trong lúc sự kiện → không trả lại nữa.
+window.addEventListener('cs-view', (e) => {
+  const m = (e as CustomEvent<{ mode: string }>).detail?.mode;
+  if (secretPrevView && m !== 'wide') secretPrevView = null;
+});
 function updateCrew(f: FrameState): void {
   if (!controls) return;
   const sp = controls.getSingerPose();
@@ -150,6 +235,18 @@ window.addEventListener('blur', () => { handoverHeld = false; });
 
 /** Kích hoạt một tương tác; `test` = bấm thử trong menu tạm dừng (bỏ qua thời gian chờ). */
 function interact(kind: TestKind, test = false): boolean {
+  const ok = interactLocal(kind, test);
+  if (ok) {
+    const k = kind === 'fireworks' ? 'pyro' : kind;
+    if (k !== 'sing') {
+      const detail: { kind: string; on?: boolean } = { kind: k };
+      if (k === 'flash') detail.on = flashOn;
+      window.dispatchEvent(new CustomEvent('cs-interact', { detail }));
+    }
+  }
+  return ok;
+}
+function interactLocal(kind: TestKind, test: boolean): boolean {
   const now = performance.now() / 1000;
   const ready = test || now - lastInteract >= INTERACT_COOLDOWN_SEC;
   switch (kind) {
@@ -222,6 +319,12 @@ const optionalModules = import.meta.glob([
   './render/backdropBalloons.ts', './render/secretEvents.ts', './render/backdropFlyby.ts',
 ]);
 const optional: OptionalApi = {};
+/** Tỉ lệ theo các khóa của SECRET_CHANCES (module quyết định có 'jet' chưa), giá trị lưu trong cài đặt được ưu tiên. */
+function secretChances(): Record<SecretKind, number> {
+  const base = (optional.SECRET_CHANCES ?? { ufo: 0.25, rocket: 0.2, dragon: 0.1 }) as Record<string, number>;
+  const saved = (settings.chances ?? {}) as Record<string, number>;
+  return Object.fromEntries(Object.keys(base).map((k) => [k, saved[k] ?? base[k]])) as Record<SecretKind, number>;
+}
 const optionalReady = Promise.all(Object.values(optionalModules).map((load) => load().then(
   (m) => {
     const mod = m as OptionalApi;
@@ -236,7 +339,7 @@ const optionalReady = Promise.all(Object.values(optionalModules).map((load) => l
   if (settings.chances) optional.setSecretChances?.(settings.chances);
   pauseMenu.setSecretAvailable(
     !!optional.triggerSecret, !!optional.triggerFlyby,
-    settings.chances ?? optional.SECRET_CHANCES ?? { ufo: 0.25, rocket: 0.2, dragon: 0.1 },
+    secretChances(),
   );
 });
 
@@ -329,8 +432,13 @@ const pauseMenu = createPauseMenu(uiRoot, {
   },
   onSecret: (k) => optional.triggerSecret?.(k, true),
   onFlyby: () => optional.triggerFlyby?.(),
+  onEntrance: (k) => {
+    if (!controls || state !== 'playing') return;
+    controls.setView('crane');
+    entrance.play(k as unknown as EntranceKind);
+  },
   onChance: (k, v) => {
-    const cur = settings.chances ?? { ...(optional.SECRET_CHANCES ?? { ufo: 0.25, rocket: 0.2, dragon: 0.1 }) };
+    const cur = settings.chances ?? { ...(optional.SECRET_CHANCES ?? { ufo: 0.25, rocket: 0.2, dragon: 0.1, jet: 0.15 }) };
     cur[k] = v;
     settings.chances = cur;
     saveSettings(settings);
@@ -384,6 +492,7 @@ function setPaused(on: boolean, resumeAudio = true): void {
 pauseBtn.addEventListener('click', () => { setPaused(!paused); pauseBtn.blur(); });
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Escape' || e.repeat) return;
+  if (state === 'intro') { skipIntro(); return; }
   // Esc khi đang ở chuột tự do: chỉ thoát chuột tự do. Ngay sau khi trình duyệt tự thoát pointer lock
   // bằng Esc (~300 ms) thì bỏ qua, để cùng một lần bấm không mở luôn menu tạm dừng.
   if (controls?.isMouseLook()) { controls.setMouseLook(false); return; }
@@ -403,7 +512,7 @@ function restartSong(): void {
   crowdSing?.update(null, 0);
   singBanner.hidden = true;
   setState('menu');
-  void start();
+  void start(false);
 }
 /** Kết thúc buổi diễn ngay: màn kết quả với điểm hiện có (như hết bài). */
 function endConcert(): void {
@@ -419,13 +528,23 @@ const noteScoring: ScoringEngine = createScoring();
 const voiceScoring: ScoringEngine = createVoiceScoring();
 let scoring: ScoringEngine = noteScoring;
 const screens = createScreens(uiRoot, {
-  onStart: () => void start(),
+  // Từ sảnh: có màn chào sân; "Hát lại" ở màn kết quả: không.
+  onStart: () => void start(state === 'menu'),
+  onLobby: () => void backToLobby(),
   onImport: (files) => {
     // Chạy trong chính sự kiện change/drop (cử chỉ người dùng) để mở khóa AudioContext/video.
     localFiles = files;
-    void start();
+    void start(state === 'menu');
   },
 });
+/** Màn kết quả → sảnh, qua màn đen. */
+async function backToLobby(): Promise<void> {
+  if (state !== 'result' || fadeBusy) return;
+  await fadeTo(1, 500);
+  setState('menu');
+  if (entry) screens.showStart(builtinEntry && !localFiles ? builtinEntry : entry);
+  void fadeTo(0, 500);
+}
 
 let state: GameState = 'menu';
 let entry: SongManifestEntry | null = null;
@@ -457,8 +576,8 @@ function setState(s: GameState): void {
   bus.emit('state', s);
 }
 
-async function start(): Promise<void> {
-  if ((!entry && !localFiles) || state === 'loading' || state === 'countdown' || state === 'playing') return;
+async function start(withIntro = true): Promise<void> {
+  if ((!entry && !localFiles) || state === 'loading' || state === 'intro' || state === 'countdown' || state === 'playing') return;
   setState('loading');
   try {
     // Tạo/mở khóa AudioContext ngay trong cú bấm của người dùng.
@@ -518,26 +637,53 @@ async function start(): Promise<void> {
     await openMic();
 
     teleprompter?.dispose();
-    teleprompter = video ? createVideoPanel(uiRoot, video, panelControls) : createTeleprompter(uiRoot, song, panelControls);
+    teleprompter = null;
     hud.setPitchScore?.(hasNotes);
     scoring.reset(song);
     lastLine = -1;
 
-    screens.hide();
-    hud.setVisible(true);
-    const entranceKind = pickEntrance();
-    audio.play(entranceKind ? ENTRANCE_SEC[entranceKind] : LEAD_IN_SEC);
-    setState('countdown');
-    if (entranceKind && controls) {
-      controls.setView('crane');
-      entrance.play(entranceKind);
+    const entranceKind = withIntro && controls ? pickEntrance() : null;
+    if (!entranceKind) {
+      screens.hide();
+      beginSong();
+      return;
     }
+    // Chuyển cảnh: sảnh tối dần → bật màn chào sân (chạy theo thời gian frame thật, chưa phát nhạc) → sáng dần.
+    await fadeTo(1, 500);
+    screens.hide();
+    introKind = entranceKind;
+    introDeadline = performance.now() + (entranceSec(entranceKind) + 6) * 1000;
+    setState('intro');
+    controls?.setView('crane');
+    entrance.play(entranceKind as unknown as EntranceKind);
+    void fadeTo(0, 800);
   } catch (err) {
     console.error(err);
     releaseVideo();
     screens.showError(`Không bắt đầu được: ${err instanceof Error ? err.message : String(err)}`);
     setState('menu');
   }
+}
+
+/**
+ * Sau màn chào sân (hoặc khi không có): đưa ca sĩ tới chỗ đáp, góc ca sĩ, hiện HUD/khung lời, phát nhạc
+ * với LEAD_IN_SEC đếm ngược → 'countdown' → 'playing'.
+ */
+function beginSong(): void {
+  if (state !== 'intro' && state !== 'loading') return;
+  if (!audio || !song) return;
+  if (state === 'intro' && controls) {
+    const l = entrance.getLandingSpot();
+    controls.teleport(l.x, l.z, l.yaw, 0);
+    controls.setView('singer');
+  }
+  introKind = null;
+  introDeadline = 0;
+  teleprompter?.dispose();
+  teleprompter = currentVideo ? createVideoPanel(uiRoot, currentVideo, panelControls) : createTeleprompter(uiRoot, song, panelControls);
+  hud.setVisible(true);
+  audio.play(LEAD_IN_SEC);
+  setState('countdown');
 }
 
 /** Mở (lại) micro của game theo lựa chọn trong bảng micro. */
@@ -636,6 +782,7 @@ function finish(score: ScoreState): void {
   if (entry) screens.showResult(score, entry, mic?.mode ?? 'real', { pitchScore: hasNotes });
 }
 
+let lastRenderAt = 0;
 function tick(dt: number): void {
   topBar.hidden = state !== 'playing';
   if (paused && (state !== 'playing' || !lastFrame)) setPaused(false); // trạng thái đổi (hết bài, chơi lại)
@@ -648,6 +795,7 @@ function tick(dt: number): void {
     endBtn.textContent = 'Kết thúc';
     endBtn.classList.remove('armed');
   }
+  if (state === 'intro' && introDeadline && performance.now() > introDeadline) skipIntro();
   let f: FrameState;
   if (paused && lastFrame && song) {
     // Xưởng chỉnh: frame xem trước — không đụng đồng hồ bài, điểm hay khung lời.
@@ -737,7 +885,12 @@ function tick(dt: number): void {
   crowdAudio?.update(f);
   stage.update(f);
   updateCrew(f);
-  stage.render();
+  // Sảnh mờ đục che kín sân vận động: không vẽ 3D (tiết kiệm GPU), trừ khi đang chuyển cảnh; vẫn vẽ ~1 lần/giây để giữ ấm.
+  const hidden = screens.isLobby() && !fadeBusy;
+  if (!hidden || performance.now() - lastRenderAt > 1000) {
+    stage.render();
+    lastRenderAt = performance.now();
+  }
   // Frame xem trước không ghi đè lastFrame: đồng hồ/điểm/Hype thật giữ nguyên khi tiếp tục.
   if (!paused) lastFrame = f;
 }
@@ -782,7 +935,7 @@ window.__game = {
   get songClock() { return audio?.now() ?? 0; },
   importFiles: (files) => { localFiles = files; return start(); },
   bus,
-  start,
+  start: () => start(state === 'menu'),
   finish: () => { if (lastFrame) finish({ ...lastFrame.score }); },
   seek: (sec) => seekSong(sec),
 };

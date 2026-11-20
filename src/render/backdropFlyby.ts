@@ -1,17 +1,21 @@
 // Màn bay chào mừng khi Hype chạm đỉnh (≥ 0,95; tái kích hoạt khi < 0,8; hồi chiêu ≥ 25 s), ~18 s:
-// máy bay cánh quạt bay thấp (~36 m) ngang phía xa khán giả kéo băng rôn dài (gợn sóng trong vertex shader),
+// máy bay cánh quạt LUÔN bay từ TRÁI sang PHẢI của ca sĩ (ca sĩ nhìn -Z → phải = +X) ở độ cao ~36 m, z = -30
+// (giữa sân, cả camera ca sĩ lẫn camera wide đều thấy), kéo băng rôn dài (gợn sóng trong vertex shader;
+// mặt +Z hướng về ca sĩ đọc xuôi, mặt sau lật UV nên cũng không bị ngược),
+// phát window 'cs-secret' {kind:'plane', phase:'start'|'end'},
 // 4 khinh khí cầu bay lên từ sau khán đài mang băng rôn cổ vũ rồi trôi đi/mờ dần, + bụi sao lấp lánh.
 // 3 draw call, visible=false khi rảnh; mỗi frame chỉ đổi uniform/transform.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../core/types';
 import type { Uniforms } from './backdropSky';
+import { emitSecret, secretFocusState } from './secretShared';
 import { consumeFlybyRequest, drawCheerBanner, getCheerTexts, onCheerChange } from './backdropBalloons';
 export { triggerFlyby, setCheerBanners } from './backdropBalloons';
 
 const DUR = 18;
 const COOLDOWN = 25;
-const PLANE_Y = 36, PLANE_Z = -70, PLANE_X = 105;
+const PLANE_Y = 36, PLANE_Z = -30, PLANE_X = 110, PLANE_SCALE = 1.3;
 const AW = 2048, AH = 1024;
 const TOW = { x: 0, y: 0, w: 2048, h: 352 };
 const BAL_SLOTS = [
@@ -290,9 +294,14 @@ export function createFlyby(scene: THREE.Scene, uniforms: Uniforms) {
   scene.add(spark);
   disposables.push(sparkGeo, sparkMat);
 
-  let armed = true, lastStart = -Infinity, start = -1, dir = -1;
+  plane.scale.setScalar(PLANE_SCALE);
+  // +1 = từ trái sang phải của ca sĩ (−X → +X). Cố định theo yêu cầu.
+  const dir = 1;
+  let armed = true, lastStart = -Infinity, start = -1;
   const begin = (t: number) => {
-    start = t; lastStart = t; dir = -dir;
+    if (start >= 0) emitSecret('plane', 'end');
+    emitSecret('plane', 'start');
+    start = t; lastStart = t;
     plane.visible = bal.visible = spark.visible = true;
   };
   const sm = THREE.MathUtils.smoothstep;
@@ -306,6 +315,8 @@ export function createFlyby(scene: THREE.Scene, uniforms: Uniforms) {
       if (e > DUR || e < 0) {
         start = -1;
         plane.visible = bal.visible = spark.visible = false;
+        emitSecret('plane', 'end');
+        secretFocusState.active = false;
         return;
       }
       uE.value = e;
@@ -313,6 +324,9 @@ export function createFlyby(scene: THREE.Scene, uniforms: Uniforms) {
       const u = Math.min(e / (DUR - 1), 1);
       plane.position.set(dir * THREE.MathUtils.lerp(-PLANE_X, PLANE_X, u), PLANE_Y + Math.sin(e * 0.6) * 0.8, PLANE_Z + Math.sin(e * 0.25) * 2);
       plane.rotation.set(Math.sin(e * 0.9) * 0.06, dir > 0 ? 0 : Math.PI, Math.sin(e * 0.6) * 0.03);
+      // điểm nhìn: giữa máy bay và băng rôn
+      secretFocusState.v.set(plane.position.x - 20 * PLANE_SCALE, PLANE_Y - 3, PLANE_Z);
+      secretFocusState.active = true;
       pU.uFade.value = sm(e, 0, 0.6) * (1 - sm(e, DUR - 0.6, DUR));
       // khinh khí cầu: bay lên từ sau khán đài, trôi ngang, rồi bay cao và mờ đi
       const rise = sm(e, 0, 5.5);

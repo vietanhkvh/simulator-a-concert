@@ -1,22 +1,26 @@
-// Tên lửa: giàn phóng (1 mesh) + tên lửa (1 mesh) cạnh khu B-stage ngoài khán giả, khói (1 Points thường),
+// Tên lửa: phóng từ RẤT XA ngoài sân vận động (~290 m, sau sân khấu: chớp lửa + cột khói ở chân trời), bay vòng cung
+// cao qua khán đài về tâm sân, nổ thành màn pháo hoa nhiều tầng phía trên giữa sân (~(0, 40–60, -44…-12)).
+// giàn phóng (1 mesh) + tên lửa (1 mesh), khói (1 Points thường),
 // lửa/vệt + pháo hoa nhiều tầng + kim tuyến (1 Points cộng sáng). = 4 draw call. Quỹ đạo Bézier tính cả ở CPU lẫn shader.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../core/types';
-import { PALETTE, type SecretAct, disposeTree, groundY, makePoints, pxScale, seededRnd, smooth } from './secretShared';
+import { PALETTE, type SecretAct, disposeTree, makePoints, pxScale, seededRnd, smooth } from './secretShared';
 
-const D = 20;
-const T_IGN = 3.0, T_BURST = 9.0;
-const PAD = new THREE.Vector3(-34, groundY(-66), -66);
-const CTRL = new THREE.Vector3(-33, 30, -72);
-const TOP = new THREE.Vector3(-6, 44, -95);
+const D = 22;
+const T_IGN = 2.5, T_BURST = 10.0;
+const PAD = new THREE.Vector3(-110, 0, 230);
+const CTRL = new THREE.Vector3(-60, 135, 80);
+/** Điểm nổ chính = tâm màn pháo hoa. */
+export const ROCKET_BURST = new THREE.Vector3(0, 50, -30);
+const TOP = ROCKET_BURST;
 const SHELLS: [number, number, number, number][] = [
   [TOP.x, TOP.y, TOP.z, T_BURST],
-  [-30, 40, -92, 9.8],
-  [22, 44, -98, 10.5],
-  [-2, 34, -86, 11.2],
-  [36, 36, -92, 11.9],
-  [-16, 48, -104, 12.5],
+  [-26, 44, -18, T_BURST + 0.8],
+  [24, 58, -40, T_BURST + 1.5],
+  [-4, 40, -12, T_BURST + 2.2],
+  [28, 42, -16, T_BURST + 2.9],
+  [-20, 60, -44, T_BURST + 3.5],
 ];
 const SHELL_COL = [0xffd93d, 0xff3d81, 0x35d0ff, 0x7cff6b, 0xb06bff, 0xff8a3d];
 
@@ -36,17 +40,17 @@ void main() {
   // aSeed.w < 0.2: hơi nước trước khi phóng; còn lại: khói theo đường bay
   float te = aSeed.w < 0.2 ? aSeed.x * ${T_IGN.toFixed(2)} : ${T_IGN.toFixed(2)} - 0.2 + aSeed.x * ${(T_BURST - T_IGN + 0.2).toFixed(2)};
   float age = uT - te;
-  float life = 4.5 + aSeed.y * 3.0;
+  float life = aSeed.w < 0.2 ? 6.0 + aSeed.y * 4.0 : 7.0 + aSeed.y * 4.0;
   vec3 dir = normalize(vec3(cos(aSeed.y * 40.0), 0.35 + aSeed.z, sin(aSeed.y * 40.0)));
   vec3 base = bez(sOf(te));
-  float spread = aSeed.w < 0.2 ? 1.5 : (te < ${(T_IGN + 0.8).toFixed(2)} ? 9.0 : 2.5);
-  vec3 p = base + dir * spread * (1.0 - exp(-age * 1.2)) + vec3(0.6, 0.5, 0.0) * age;
+  float spread = aSeed.w < 0.2 ? 6.0 : (te < ${(T_IGN + 0.8).toFixed(2)} ? 22.0 : 3.5);
+  vec3 p = base + dir * spread * (1.0 - exp(-age * 1.2)) + vec3(0.6, aSeed.w < 0.2 ? 5.0 : 0.5, 0.0) * age;
   vAlpha = (age < 0.0 || age > life) ? 0.0 : smoothstep(0.0, 0.3, age) * (1.0 - smoothstep(life * 0.4, life, age)) * 0.55;
   float glow = exp(-age * 1.8) * step(0.2, aSeed.w);
   vColor = mix(vec3(0.32, 0.31, 0.36), vec3(1.0, 0.55, 0.2), glow);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = clamp(uPx * (1.4 + age * 1.3) / -mv.z, 2.0, 140.0);
+  gl_PointSize = clamp(uPx * (3.0 + age * 1.6) / -mv.z, 2.0, 160.0);
 }`;
 const SMOKE_FRAG = /* glsl */ `
 varying vec3 vColor; varying float vAlpha;
@@ -76,17 +80,17 @@ void main() {
     float age = uT - te;
     float life = 0.5 + aSeed.x * 0.9;
     float s = sOf(te);
-    p = bez(s) - bezT(s) * (age * 9.0 + 1.0) + dir * age * 2.2;
+    p = bez(s) - bezT(s) * (age * 14.0 + 3.0) + dir * age * 3.0;
     float k = age / life;
     vColor = mix(mix(vec3(1.0, 0.95, 0.75), vec3(1.0, 0.55, 0.12), smoothstep(0.0, 0.4, k)), vec3(0.7, 0.12, 0.05), smoothstep(0.4, 1.0, k));
     alpha = (age < 0.0 || k > 1.0) ? 0.0 : 1.0 - k * 0.8;
-    size = mix(2.6, 0.8, k);
+    size = mix(7.0, 2.0, k);
   } else if (cls < 1.5) {
     // chớp lửa khi đánh lửa
     float age = uT - ${T_IGN.toFixed(2)};
-    p = uP0 + dir * vec3(6.0, 2.0, 6.0) * (1.0 - exp(-age * 3.0)) + vec3(0.0, 1.0, 0.0);
-    alpha = age < 0.0 ? 0.0 : exp(-age * 2.5);
-    size = 2.5 + aSeed.z * 2.0;
+    p = uP0 + dir * vec3(26.0, 14.0, 26.0) * (1.0 - exp(-age * 3.0)) + vec3(0.0, 8.0 + age * 6.0, 0.0);
+    alpha = age < 0.0 ? 0.0 : exp(-age * 1.2);
+    size = 12.0 + aSeed.z * 14.0;
     vColor = vec3(1.0, 0.75, 0.4);
   } else {
     vec4 sh = uShell[si];
@@ -94,13 +98,13 @@ void main() {
     if (cls < 3.5) {
       // hoa cúc (cls 3 = bóng mờ trễ 0.12 s tạo vệt)
       float ag = cls > 2.5 ? age - 0.12 : age;
-      float R = 17.0 + aSeed.z * 2.0;
+      float R = 19.0 + aSeed.z * 2.0;
       p = sh.xyz + dir * R * (1.0 - exp(-ag * 2.6));
       p.y -= 0.9 * ag * ag;
       alpha = ag < 0.0 ? 0.0 : (1.0 - smoothstep(1.6, 3.0, ag));
       alpha *= ag > 1.4 ? 0.55 + 0.45 * sin(ag * 38.0 + aSeed.z * 60.0) : 1.0;
       alpha *= cls > 2.5 ? 0.45 : 1.0;
-      size = (cls > 2.5 ? 0.8 : 1.25) * (1.0 + 0.6 * exp(-ag * 5.0));
+      size = (cls > 2.5 ? 1.0 : 1.6) * (1.0 + 0.6 * exp(-ag * 5.0));
       vColor = mix(vec3(1.0), aColor, smoothstep(0.0, 0.35, ag));
     } else if (cls < 4.5) {
       // kim tuyến rơi lấp lánh
@@ -205,8 +209,8 @@ export function createRocket(scene: THREE.Scene): SecretAct {
   root.add(gantry);
   const rocket = new THREE.Mesh(buildRocket(), basic());
   root.add(rocket);
-  gantry.scale.setScalar(1.8);
-  rocket.scale.setScalar(1.8);
+  gantry.scale.setScalar(2.4);
+  rocket.scale.setScalar(3.6);
 
   const bez = { uP0: { value: PAD.clone() }, uC: { value: CTRL.clone() }, uP1: { value: TOP.clone() } };
   const smokeU = { uT: { value: 0 }, uPx: { value: 600 }, ...bez };
@@ -267,6 +271,12 @@ export function createRocket(scene: THREE.Scene): SecretAct {
       if (t > T_IGN - 0.6 && t < T_IGN + 1) rocket.position.x += Math.sin(t * 60) * 0.05;
       rocket.visible = t < T_BURST;
       void f;
+    },
+    focus(t: number, out: THREE.Vector3) {
+      if (t >= T_BURST - 0.5) { out.copy(ROCKET_BURST); return; }
+      const u = Math.min(1, Math.max(0, (t - T_IGN) / (T_BURST - T_IGN)));
+      bezAt(u * u);
+      out.copy(q).lerp(ROCKET_BURST, 0.35);
     },
     dispose() { disposeTree(root); },
   };

@@ -8,38 +8,42 @@ function seeded(seed = 1) {
 
 function tally(ch: Record<SecretKind, number>, n = 10000, seed = 42) {
   const rnd = seeded(seed);
-  const c = { ufo: 0, rocket: 0, dragon: 0, none: 0 };
+  const c = { ufo: 0, rocket: 0, dragon: 0, jet: 0, none: 0 };
   for (let i = 0; i < n; i++) c[rollSecret(ch, rnd) ?? 'none']++;
   return c;
 }
 
 describe('rollSecret', () => {
   it('respects default chances over 10,000 rolls', () => {
-    const c = tally({ ufo: 0.25, rocket: 0.2, dragon: 0.1 });
-    expect(c.ufo / 1e4).toBeCloseTo(0.25, 1);
-    expect(Math.abs(c.ufo / 1e4 - 0.25)).toBeLessThan(0.02);
+    const c = tally({ ufo: 0.2, rocket: 0.2, dragon: 0.1, jet: 0.2 });
+    expect(Math.abs(c.ufo / 1e4 - 0.2)).toBeLessThan(0.02);
+    expect(Math.abs(c.jet / 1e4 - 0.2)).toBeLessThan(0.02);
     expect(Math.abs(c.rocket / 1e4 - 0.2)).toBeLessThan(0.02);
     expect(Math.abs(c.dragon / 1e4 - 0.1)).toBeLessThan(0.015);
-    expect(Math.abs(c.none / 1e4 - 0.45)).toBeLessThan(0.02);
+    expect(Math.abs(c.none / 1e4 - 0.3)).toBeLessThan(0.02);
   });
   it('normalises when chances sum > 1', () => {
-    const c = tally({ ufo: 1, rocket: 1, dragon: 2 });
+    const c = tally({ ufo: 1, rocket: 1, dragon: 2, jet: 1 });
     expect(c.none).toBe(0);
-    expect(Math.abs(c.ufo / 1e4 - 0.25)).toBeLessThan(0.02);
-    expect(Math.abs(c.dragon / 1e4 - 0.5)).toBeLessThan(0.02);
+    expect(Math.abs(c.ufo / 1e4 - 0.2)).toBeLessThan(0.02);
+    expect(Math.abs(c.jet / 1e4 - 0.2)).toBeLessThan(0.02);
+    expect(Math.abs(c.dragon / 1e4 - 0.4)).toBeLessThan(0.02);
   });
   it('zero chances never fire; negatives ignored', () => {
-    expect(tally({ ufo: 0, rocket: -1, dragon: 0 }).none).toBe(10000);
+    expect(tally({ ufo: 0, rocket: -1, dragon: 0, jet: 0 }).none).toBe(10000);
   });
   it('pickAnySecret always returns a kind', () => {
     const rnd = seeded(3);
-    for (let i = 0; i < 100; i++) expect(['ufo', 'rocket', 'dragon']).toContain(pickAnySecret({ ufo: 0, rocket: 0, dragon: 0 }, rnd));
-    expect(pickAnySecret({ ufo: 0, rocket: 0, dragon: 0.1 }, rnd)).toBe('dragon');
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) seen.add(pickAnySecret({ ufo: 0, rocket: 0, dragon: 0, jet: 0 }, rnd));
+    expect([...seen].sort()).toEqual(['dragon', 'jet', 'rocket', 'ufo']);
+    expect(pickAnySecret({ ufo: 0, rocket: 0, dragon: 0.1, jet: 0 }, rnd)).toBe('dragon');
+    expect(pickAnySecret({ ufo: 0, rocket: 0, dragon: 0, jet: 0.3 }, rnd)).toBe('jet');
   });
 });
 
 describe('SecretTrigger', () => {
-  const always = { ufo: 1, rocket: 0, dragon: 0 };
+  const always = { ufo: 1, rocket: 0, dragon: 0, jet: 0 };
   it('fires once on rising edge and re-arms only below 0.8', () => {
     const t = new SecretTrigger(always, seeded());
     expect(t.step(0.5, 0.1, false)).toBeNull();
@@ -61,8 +65,12 @@ describe('SecretTrigger', () => {
     t.step(0.5, COOLDOWN_SEC, false);
     expect(t.step(0.96, 0.1, false)).toBe('ufo');
   });
+  it('rolls jet when only jet is enabled', () => {
+    const t = new SecretTrigger({ ufo: 0, rocket: 0, dragon: 0, jet: 1 }, seeded());
+    expect(t.step(0.97, 0.1, false)).toBe('jet');
+  });
   it('a miss still consumes the arm', () => {
-    const t = new SecretTrigger({ ufo: 0, rocket: 0, dragon: 0 }, seeded());
+    const t = new SecretTrigger({ ufo: 0, rocket: 0, dragon: 0, jet: 0 }, seeded());
     expect(t.step(0.96, 0.1, false)).toBeNull();
     expect(t.armed).toBe(false);
   });

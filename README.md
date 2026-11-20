@@ -37,6 +37,16 @@ Micro chỉ hoạt động trên `localhost` hoặc HTTPS, không chạy khi m�
 
 Ba chế độ sau không có nốt nên không chấm điểm cao độ: Hype tăng khi micro bắt được giọng hát (chế độ `.lrc` chỉ tính trong lúc có câu lời) và giảm khi im lặng. Nhịp cho khán giả/đèn mặc định 120 BPM.
 
+## Sảnh chờ và màn chào sân
+
+Mở trang là vào **sảnh chờ** (che kín sân vận động): tên bài, khu nhập bài, bảng micro và ba thẻ chọn màn chào sân —
+**1** Nhảy khỏi trực thăng, **2** Bục nâng từ dưới sân khấu, **3** Thả cáp từ trực thăng (phím `1`/`2`/`3` hoặc mũi tên;
+lựa chọn được nhớ). Ô **Bỏ qua màn chào sân** để vào thẳng bài. Bấm **Bắt đầu**: xin micro và tải bài, màn hình tối dần
+rồi mở ra sân khấu với màn chào sân. Trong lúc chào sân chưa phát nhạc, chưa hiện lời/video, chưa chấm điểm;
+chỉ khi màn chào sân kết thúc (hoặc bấm `Enter`/`Esc` để bỏ qua) mới đếm ngược 3 s và vào bài.
+**Hát lại** ở màn kết quả và trong menu tạm dừng không chiếu lại màn chào sân; nút **Về sảnh** ở màn kết quả quay về sảnh.
+Khi có sự kiện bí mật, camera tự chuyển sang góc **Toàn cảnh** rồi trả lại góc cũ khi sự kiện kết thúc.
+
 ## Điều khiển khi đang diễn
 
 Bảng hướng dẫn phím hiện ở cạnh trái trong ~15 giây đầu của bài đầu tiên rồi thu về nút **?**; bấm `H` hoặc **?** để ẩn/hiện (được ghi nhớ). Danh sách dưới đây giống hệt bảng trong game (`src/ui/controlsGuide.ts`, có test kiểm tra đồng bộ).
@@ -56,6 +66,8 @@ Bảng hướng dẫn phím hiện ở cạnh trái trong ~15 giây đầu của
 | Tua lùi / tới 10 s | `[` / `]` (hoặc nút ⏪/⏩, bấm thanh tiến độ để tua tới vị trí bất kỳ) |
 | Thu nhỏ khung lời | `T` |
 | Tạm dừng / xưởng chỉnh | `Esc` hoặc nút **Tạm dừng** (chuyển tab cũng tự tạm dừng) |
+| Bỏ qua màn chào sân | `Enter` / `Esc` |
+| Chọn màn chào sân (ở sảnh) | `1` `2` `3` / mũi tên |
 | Ẩn/hiện hướng dẫn | `H` |
 
 Góc trên phải có các nút nhỏ **Góc máy (V)**, **Chuột tự do (M)**, **Kết thúc** (bấm 2 lần trong 3 giây để kết thúc buổi diễn và xem kết quả với điểm hiện có) và **Tạm dừng**. Khi đang gõ trong ô nhập (menu tạm dừng) các phím game không có tác dụng.
@@ -76,7 +88,7 @@ Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi 
 |---|---|
 | `?latency=120` | Bù độ trễ micro (ms). Tăng nếu hát đúng mà bị chấm trễ. Cũng chỉnh được trong menu tạm dừng. |
 | `?fakeMic=perfect` | Micro giả hát đúng giai điệu (xem thử không cần micro). Còn có `off`, `octave`. |
-| `?entrance=parachute` | Màn chào sân: `parachute` (nhảy dù từ trực thăng), `hero` (đáp đất kiểu siêu anh hùng), `off` (tắt). Mặc định chọn ngẫu nhiên; bấm `Enter` để bỏ qua. |
+| `?entrance=jump` | Ghi đè màn chào sân chọn ở sảnh: `jump` (nhảy khỏi trực thăng), `lift` (bục nâng), `cable` (thả cáp), `off` (tắt). Giá trị cũ `hero`→`jump`, `parachute`→`cable`. |
 | `?crowd=8000` | Số khán giả (100–10000). Game tự giảm số người được vẽ nếu máy chậm. |
 
 ## Lệnh khác

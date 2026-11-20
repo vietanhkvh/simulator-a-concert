@@ -1,20 +1,21 @@
-// Sự kiện BÍ MẬT khi Hype chạm đỉnh: UFO / tên lửa + pháo hoa / rồng — chọn theo xác suất (SECRET_CHANCES).
+// Sự kiện BÍ MẬT khi Hype chạm đỉnh: UFO / tên lửa + pháo hoa / rồng / phi đội phản lực vẽ khói — chọn theo xác suất (SECRET_CHANCES).
 // Mỗi sự kiện ~20–24 s, ≤ 4 draw call khi chạy, ẩn khi rảnh. Phát window CustomEvent 'cs-secret' {kind, phase}.
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import type { FrameState } from '../core/types';
 import { SecretTrigger, pickAnySecret, type SecretKind } from './secretRoll';
-import type { SecretAct } from './secretShared';
+import { emitSecret, secretFocusState, type SecretAct } from './secretShared';
 import { createUfo } from './secretUfo';
 import { createRocket } from './secretRocket';
 import { createDragon } from './secretDragon';
+import { createJet } from './secretJet';
 
 export type { SecretKind } from './secretRoll';
 
 /** Chance (0..1) that each secret appears when Hype hits its maximum; the rest of the time nothing secret happens. */
-export const SECRET_CHANCES: Record<SecretKind, number> = { ufo: 0.25, rocket: 0.2, dragon: 0.1 };
+export const SECRET_CHANCES: Record<SecretKind, number> = { ufo: 0.2, rocket: 0.2, dragon: 0.1, jet: 0.2 };
 
 export function setSecretChances(c: Partial<Record<SecretKind, number>>): void {
-  for (const k of ['ufo', 'rocket', 'dragon'] as const) {
+  for (const k of ['ufo', 'rocket', 'dragon', 'jet'] as const) {
     const v = c[k];
     if (typeof v === 'number' && Number.isFinite(v)) SECRET_CHANCES[k] = Math.min(1, Math.max(0, v));
   }
@@ -36,15 +37,26 @@ export function triggerSecret(kind?: SecretKind, force = false): void {
 }
 
 if (typeof window !== 'undefined') {
-  (window as unknown as { __csSecret: unknown }).__csSecret = { trigger: triggerSecret, chances: SECRET_CHANCES };
+  (window as unknown as { __csSecret: unknown }).__csSecret = { trigger: triggerSecret, chances: SECRET_CHANCES, setChances: setSecretChances, focus: getSecretFocus };
 }
 
-const emit = (kind: SecretKind, phase: 'start' | 'end') => {
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('cs-secret', { detail: { kind, phase } }));
+const emit = (kind: SecretKind, phase: 'start' | 'end') => emitSecret(kind, phase);
+
+/** Điểm nhìn mặc định khi act không tự báo (UFO lơ lửng / rồng phun lửa). */
+const FOCUS_FALLBACK: Record<SecretKind, THREE.Vector3> = {
+  ufo: new THREE.Vector3(0, 18, -40),
+  rocket: new THREE.Vector3(0, 50, -20),
+  dragon: new THREE.Vector3(-4, 20, -62),
+  jet: new THREE.Vector3(0, 48, -20),
 };
 
+/** Điểm đáng nhìn hiện tại của sự kiện bí mật / máy bay kéo băng rôn (null khi không có gì). */
+export function getSecretFocus(): THREE.Vector3 | null {
+  return secretFocusState.active ? secretFocusState.v.clone() : null;
+}
+
 export function createSecretEvents(scene: THREE.Scene): SecretEvents {
-  const factories: Record<SecretKind, (s: THREE.Scene) => SecretAct> = { ufo: createUfo, rocket: createRocket, dragon: createDragon };
+  const factories: Record<SecretKind, (s: THREE.Scene) => SecretAct> = { ufo: createUfo, rocket: createRocket, dragon: createDragon, jet: createJet };
   const acts: Partial<Record<SecretKind, SecretAct>> = {}; // tạo lười ở lần đầu cần
   const trigger = new SecretTrigger(SECRET_CHANCES);
   let running: { kind: SecretKind; act: SecretAct; t: number } | null = null;
@@ -55,6 +67,7 @@ export function createSecretEvents(scene: THREE.Scene): SecretEvents {
     running.act.stop();
     emit(running.kind, 'end');
     running = null;
+    secretFocusState.active = false;
     trigger.ended();
   };
   const begin = (kind: SecretKind) => {
@@ -85,7 +98,13 @@ export function createSecretEvents(scene: THREE.Scene): SecretEvents {
       if (running) {
         running.t += dt;
         if (running.t >= running.act.duration) end();
-        else running.act.update(running.t, f);
+        else {
+          running.act.update(running.t, f);
+          const fv = secretFocusState.v;
+          if (running.act.focus) running.act.focus(running.t, fv);
+          else fv.copy(FOCUS_FALLBACK[running.kind]);
+          secretFocusState.active = true;
+        }
       }
     },
     dispose() {

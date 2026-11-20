@@ -35,6 +35,8 @@ export const CONTROLS: ControlGroup[] = [
       { label: 'Tua lùi / tới 10 s', keys: '[[] / []]' },
       { label: 'Thu nhỏ khung lời', keys: '[T]' },
       { label: 'Tạm dừng / xưởng chỉnh', keys: '[Esc]' },
+      { label: 'Bỏ qua màn chào sân', keys: '[Enter] / [Esc]' },
+      { label: 'Chọn màn chào sân (ở sảnh)', keys: '[1][2][3] / mũi tên' },
       { label: 'Ẩn/hiện hướng dẫn', keys: '[H]' },
     ],
   },

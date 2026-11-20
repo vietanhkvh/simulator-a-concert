@@ -40,7 +40,7 @@ const SPECS: Spec[] = [
     look: { jacket: 0x1d5fd0, jacketDark: 0x123a86, trim: 0xffd34d, pants: 0x15131f, boots: 0xe8e8f0, skin: 0xd9a07c, hair: 0x1a1016, hairStyle: 'spiky', sleeve: 0x1d5fd0 },
   },
   { // Guitar chính, cạnh amp bên trái
-    kind: 'guitar', x: -9.9, y: 0, z: 1.15, yaw: -0.32, mirror: 1, poolR: 3.0, poolCol: 0xff8a2a,
+    kind: 'guitar', x: -9.9, y: 0, z: 1.15, yaw: -0.32, mirror: -1, poolR: 3.0, poolCol: 0xff8a2a,
     look: { jacket: 0x24222e, jacketDark: 0x15141c, trim: 0xff8a2a, pants: 0x4a1f6e, boots: 0x0e0d14, skin: 0xe6b494, hair: 0xc9782e, hairStyle: 'long', guitar: 0xd23a2a },
   },
   { // Bass, cạnh amp bên phải
@@ -48,7 +48,7 @@ const SPECS: Spec[] = [
     look: { jacket: 0x14906a, jacketDark: 0x0b5a42, trim: 0xa8ff6a, pants: 0x15131f, boots: 0xf2f2f8, skin: 0xa8714e, hair: 0x7a3cff, hairStyle: 'mohawk', guitar: 0x1a1a22 },
   },
   { // Keyboard sau cây đàn (riser x=6,5 z=1,5 mặt y=0,3), hạ thấp một chút (gập gối) để với tới phím
-    kind: 'keys', x: 6.5, y: 0.2, z: 1.62, yaw: -0.08, poolR: 3.2, poolCol: 0xb47bff,
+    kind: 'keys', x: 6.5, y: 0.3, z: 1.62, yaw: -0.08, poolR: 3.2, poolCol: 0xb47bff,
     look: { jacket: 0xdfe4f4, jacketDark: 0x9aa0c0, trim: 0xb47bff, pants: 0x20203a, boots: 0xf2f2f8, skin: 0xe0a985, hair: 0x5a3a24, hairStyle: 'slick', glasses: true },
   },
   { // 2 vocal phụ sau mic stand (±2,8, -1,8)
@@ -336,13 +336,13 @@ export function createBand(scene: THREE.Scene): Band {
     const barPh = b % 4;
     const crash = smooth(0.6, 0.75, hype) * Math.max(clamp((barPh - 3.3) / 0.7, 0, 1), clamp(1 - barPh * 1.6, 0, 1));
     poseBase(m, 0, -pulse * 0.02 * (0.5 + hype));
-    m.upper.rotation.set(0.1 + pulse * 0.04, 0.12 * (liftS - lift8), 0.04 * Math.sin(Math.PI * b));
-    m.head.rotation.set(0.04 + pulse * 0.16 * (0.4 + hype), Math.sin(b * 0.7) * 0.2, 0);
+    m.upper.rotation.set(-0.12 - pulse * 0.04, 0.12 * (liftS - lift8), 0.04 * Math.sin(Math.PI * b));
+    m.head.rotation.set(0.1 - pulse * 0.16 * (0.4 + hype), Math.sin(b * 0.7) * 0.2, 0);
     // tay phải: hi-hat mỗi 8; crash ở đầu ô nhịp khi hype cao
-    const hy = 1.1 + 0.2 * Math.pow(lift8, 1.3) * (1 - crash);
-    reachRoot(m, m.arms[1]!, 0.38 + 0.3 * crash, hy + 0.35 * crash, -0.5 + 0.15 * crash);
+    const hy = 0.84 + 0.18 * Math.pow(lift8, 1.3) * (1 - crash);
+    reachRoot(m, m.arms[1]!, 0.42 + 0.3 * crash, hy + 0.4 * crash, -0.5 + 0.15 * crash);
     // tay trái: snare ở phách 2 và 4
-    reachRoot(m, m.arms[0]!, -0.3, 1.08 + 0.2 * Math.pow(liftS, 1.3), -0.5);
+    reachRoot(m, m.arms[0]!, -0.34, 0.84 + 0.18 * Math.pow(liftS, 1.3), -0.5);
     // chân đạp trống bass mỗi phách
     m.legs[1]!.rotation.x = 0.03 + 0.18 * pulse;
     m.legs[0]!.rotation.x = 0.02 + 0.05 * Math.sin(Math.PI * b);
@@ -383,13 +383,13 @@ export function createBand(scene: THREE.Scene): Band {
     const pr = 0.5 - 0.5 * Math.cos(TAU * (b * rate + 0.5));
     const groove = 0.4 + 0.6 * hype;
     poseBase(m, 0, Math.abs(Math.sin(Math.PI * b)) * 0.02 * groove, -0.0);
-    m.upper.rotation.set(0.42 + pulse * 0.05, Math.sin(Math.PI * b * 0.5) * 0.1, Math.sin(Math.PI * b) * 0.07 * groove);
-    m.head.rotation.set(-0.25 + pulse * 0.12 * (0.4 + hype), Math.sin(b * 0.5) * 0.18, 0);
+    m.upper.rotation.set(-0.3 - pulse * 0.05, Math.sin(Math.PI * b * 0.5) * 0.1, Math.sin(Math.PI * b) * 0.07 * groove);
+    m.head.rotation.set(0.2 - pulse * 0.12 * (0.4 + hype), Math.sin(b * 0.5) * 0.18, 0);
     m.legs[0]!.rotation.x = Math.sin(Math.PI * b) * 0.08;
     m.legs[1]!.rotation.x = -Math.sin(Math.PI * b) * 0.08;
     const sw = Math.sin(b * Math.PI * 0.5) * 0.3 * (0.4 + hype);
-    reachRoot(m, m.arms[0]!, -0.3 + sw, 0.98 + 0.07 * (1 - pl), -0.86);
-    reachRoot(m, m.arms[1]!, 0.3 + sw, 0.98 + 0.07 * (1 - pr), -0.86);
+    reachRoot(m, m.arms[0]!, -0.3 + sw, 1.03 + 0.07 * (1 - pl), -0.4);
+    reachRoot(m, m.arms[1]!, 0.3 + sw, 1.03 + 0.07 * (1 - pr), -0.4);
   }
 
   function animVocal(m: Mus, b: number, hype: number, pulse: number) {
