@@ -5,6 +5,8 @@ Bầu trời và mọi thứ bay trên trời. Điểm vào duy nhất: `index.t
 | File | Trách nhiệm |
 |---|---|
 | `index.ts` | Tạo khu, cập nhật mỗi frame, lộ API: băng rôn, fly-by, sự kiện bí mật, sao băng |
+| `builders.ts` | Khe builder theo phong cách: `sky`, `skyFeature`, `bannerCarriers`, `flyby`, `secretUfo/Rocket/Dragon/Jet` (docs/THEMES.md) |
+| `themes/<id>/` | Builder riêng của phong cách (tự đăng ký); v0: `lacquer/skyLanterns.ts` (đèn trời), `steel/skySearchlights.ts` (đèn rọi + mây khói) |
 | `sky.ts` | Vòm trời, 3.400 sao + dải ngân hà, sao băng theo mốc Hype, trăng, cực quang, 2 máy bay chở khách |
 | `balloons.ts` | 6 khinh khí cầu + băng rôn cổ vũ (`setCheerBanners`), yêu cầu fly-by (`triggerFlyby`) |
 | `flyby.ts` | Máy bay cánh quạt kéo băng rôn + khinh khí cầu bay lên khi Hype đạt đỉnh |

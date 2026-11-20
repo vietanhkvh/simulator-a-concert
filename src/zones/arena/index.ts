@@ -4,21 +4,10 @@ import { createDebugLayers } from '../../core/debugLayers';
 import type { FrameState, Song } from '../../core/types';
 import { EYE_HEIGHT } from '../../world/layout';
 import type { Zone, ZoneContext } from '../../world/zone';
-import { createBand } from './band';
-import { createCameraCrew, type CameraCrew } from './cameraCrew';
-import { createConfetti, type Confetti } from './confetti';
-import { createCrowd, type Crowd } from './crowd';
-import { createEmotes, type Emotes } from './emotes';
-import { createEntrance, ENTRANCE_SEC, type Entrance, type EntranceKind } from './entrance';
-import { createLedScreens, type LedScreens } from './ledScreens';
-import { createLedWall } from './ledWall';
-import { createLights } from './lights';
-import { createSinger } from './singer';
-import { createStageBase } from './stageBase';
+import { getTheme } from '../../world/style';
+import { pickBuilder, type ArenaBuildContext, type CameraCrew, type Confetti, type Crowd, type Emotes, type Entrance, type LedScreens, type StageFx } from './builders';
+import { DEFAULT_ENTRANCE_KIT, ENTRANCE_SEC, type EntranceKind } from './entrance';
 import { createControls, VIEW_CONTROL_HINTS, VIEW_MODES, VIEW_ORDER, type StageControls, type ViewControlState, type ViewMode } from './stageControls';
-import { createStageDeco } from './stageDeco';
-import { createStageFx, type StageFx } from './stageFx';
-import { createRunway } from './stageRunway';
 import { PLATFORMS } from './walkLayout';
 
 export { ENTRANCE_SEC };
@@ -28,6 +17,9 @@ export { VIEW_ORDER, VIEW_MODES, PLATFORMS };
 export { VIEW_CONTROL_HINTS };
 export type { ViewControlState };
 export type { EntranceKind, ViewMode, StageControls, Crowd, Emotes, Confetti, StageFx, LedScreens, Entrance, CameraCrew };
+export type {
+  AnimatedHandle, ArenaBuildContext, ArenaBuilders, ArenaSlot, Band, CrowdOptions, EntranceKit, SingerAvatar, StaticHandle,
+} from './builders';
 
 export interface ArenaOptions {
   /** Số khán giả đứng dưới sân. */
@@ -59,23 +51,28 @@ export function createArenaZone(ctx: ZoneContext, opts: ArenaOptions): ArenaZone
   const { scene, camera, uniforms } = ctx;
   // Thứ tự tạo giữ nguyên như trước khi tách khu (ảnh hưởng thứ tự vẽ các vật trong suốt).
   const layers = createDebugLayers(scene); // chỉ dùng cho chế độ developer (ẩn/hiện từng lớp)
-  const base = layers.track('base', () => createStageBase(scene)); // sàn diễn, mép, loa monitor, sàn dốc khu khán giả
-  const runway = layers.track('runway', () => createRunway(scene)); // các đường đi + bục
-  const ledWall = layers.track('ledWall', () => createLedWall(scene, uniforms)); // tường LED sau lưng ca sĩ + cánh gà
-  const deco = layers.track('deco', () => createStageDeco(scene)); // mái giàn, tháp, loa, nhạc cụ, cổng đèn
-  const band = layers.track('band', () => createBand(scene)); // nhạc công
+  // Builder của từng khe theo phong cách đang bật; khe chưa có builder riêng → builder mặc định (builders.ts).
+  const feat = getTheme().features;
+  const bctx: ArenaBuildContext = { ...ctx, crowd: { count: opts.crowdCount, rows: 40, arcDeg: 120 } };
+  const stage = feat.stageVariant, rig = feat.rigVariant;
+  const base = layers.track('base', () => pickBuilder('stageBase', stage)(bctx)); // sàn diễn, mép, loa monitor, sàn dốc khu khán giả
+  const runway = layers.track('runway', () => pickBuilder('runway', stage)(bctx)); // các đường đi + bục
+  const ledWall = layers.track('ledWall', () => pickBuilder('ledWall', stage)(bctx)); // tường LED sau lưng ca sĩ + cánh gà
+  const deco = layers.track('deco', () => pickBuilder('stageDeco', stage)(bctx)); // mái giàn, tháp, loa, nhạc cụ, cổng đèn
+  const band = layers.track('band', () => pickBuilder('band', rig)(bctx)); // nhạc công
   const controls = createControls();
-  const crowd = layers.track('crowd', () => createCrowd(scene, { count: opts.crowdCount, rows: 40, arcDeg: 120 })); // khán giả sân
-  const lights = layers.track('lights', () => createLights(scene)); // đèn sân khấu
-  const led = layers.track('led', () => createLedScreens(scene));
-  const confetti = layers.track('confetti', () => createConfetti(scene));
-  const emotes = layers.track('emotes', () => createEmotes(scene)); // biểu tượng cảm xúc
-  const stageFx = layers.track('stageFx', () => createStageFx(scene)); // laser, pháo hoa, đèn chớp, khói
+  const crowd = layers.track('crowd', () => pickBuilder('crowd', feat.crowdVariant)(bctx)); // khán giả sân
+  const lights = layers.track('lights', () => pickBuilder('lights', stage)(bctx)); // đèn sân khấu
+  const led = layers.track('led', () => pickBuilder('ledScreens', stage)(bctx));
+  const confetti = layers.track('confetti', () => pickBuilder('confetti')(bctx));
+  const emotes = layers.track('emotes', () => pickBuilder('emotes')(bctx)); // biểu tượng cảm xúc
+  const stageFx = layers.track('stageFx', () => pickBuilder('stageFx', stage)(bctx)); // laser, pháo hoa, đèn chớp, khói
   // Laser nằm trong nhóm stageFx: nhận theo uniform uSpread của vật liệu (không sửa module).
   layers.split('stageFx', 'lasers', (o) => !!((o as unknown as { material?: { uniforms?: Record<string, unknown> } }).material?.uniforms?.uSpread));
-  const singer = layers.track('singer', () => createSinger(scene)); // hình ca sĩ (chỉ hiện ở góc máy ngoài)
-  const crew = layers.track('crew', () => createCameraCrew(scene)); // đội quay phim + flycam
-  const entrance = layers.track('entrance', () => createEntrance(scene)); // màn chào sân
+  const singer = layers.track('singer', () => pickBuilder('singer', rig)(bctx)); // hình ca sĩ (chỉ hiện ở góc máy ngoài)
+  const crew = layers.track('crew', () => pickBuilder('cameraCrew', rig)(bctx)); // đội quay phim + flycam
+  const kit = { ...DEFAULT_ENTRANCE_KIT, ...pickBuilder('entranceProps')(bctx) };
+  const entrance = layers.track('entrance', () => pickBuilder('entrance')(bctx, kit)); // màn chào sân
 
   let t = 0;
   let song: Song | null = null;

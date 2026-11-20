@@ -2,15 +2,19 @@
 // Điểm vào duy nhất của khu: mã ngoài khu chỉ import từ file này.
 import { createDebugLayers } from '../../core/debugLayers';
 import type { FrameState } from '../../core/types';
+import { getTheme } from '../../world/style';
 import type { Zone, ZoneContext } from '../../world/zone';
-import { createSky, triggerMeteors } from './sky';
-import { createBalloons, setCheerBanners, triggerFlyby } from './balloons';
-import { createFlyby } from './flyby';
+import { triggerMeteors } from './sky';
+import { setCheerBanners, triggerFlyby } from './balloons';
+import { pickBuilder, type OutsideBuildContext } from './builders';
 import {
   createSecretEvents, getSecretFocus, SECRET_CHANCES, setSecretChances, triggerSecret, type SecretKind,
 } from './secretEvents';
 
 export type { SecretKind };
+export type {
+  BannerCarriersHandle, FlybyHandle, OutsideBuildContext, OutsideBuilders, OutsideSlot, SecretAct, SkyFeatureHandle, SkyHandle,
+} from './builders';
 
 export interface OutsideZone extends Zone {
   /** Đổi khẩu hiệu trên băng rôn khinh khí cầu / máy bay. */
@@ -32,12 +36,22 @@ export interface OutsideZone extends Zone {
 }
 
 export function createOutsideZone(ctx: ZoneContext): OutsideZone {
-  const { scene, uniforms, glow } = ctx;
+  const { scene } = ctx;
+  const feat = getTheme().features;
+  // Builder của từng khe theo phong cách đang bật; khe chưa có builder riêng → builder mặc định (builders.ts).
+  const skyFeatureBuilder = feat.skyFeature === 'aurora' ? null : pickBuilder('skyFeature');
+  const bctx: OutsideBuildContext = { ...ctx, aurora: !skyFeatureBuilder };
   const layers = createDebugLayers(scene); // chỉ dùng cho chế độ developer (ẩn/hiện từng lớp)
-  const sky = layers.track('sky', () => createSky(scene, uniforms, glow)); // vòm trời, sao, sao băng, trăng, cực quang, máy bay chở khách
-  const balloons = layers.track('balloons', () => createBalloons(scene, uniforms)); // khinh khí cầu + băng rôn cổ vũ
-  const flyby = layers.track('flyby', () => createFlyby(scene, uniforms)); // máy bay kéo băng rôn khi Hype đạt đỉnh
-  const secrets = layers.track('secrets', () => createSecretEvents(scene)); // UFO, tên lửa, rồng, máy bay phản lực (tạo lười khi cần)
+  const sky = layers.track('sky', () => pickBuilder('sky')(bctx)); // vòm trời, sao, sao băng, trăng, cực quang, máy bay chở khách
+  // Khe "cực quang": đèn trời / đèn rọi + mây khói… (phong cách khác chibi); lớp debug vẫn tên 'aurora'.
+  const skyFeature = skyFeatureBuilder ? layers.track('aurora', () => skyFeatureBuilder(bctx)) : null;
+  const balloons = layers.track('balloons', () => pickBuilder('bannerCarriers', feat.bannerCarrier)(bctx)); // khinh khí cầu + băng rôn cổ vũ
+  const flyby = layers.track('flyby', () => pickBuilder('flyby', feat.secretSet.plane)(bctx)); // máy bay kéo băng rôn khi Hype đạt đỉnh
+  // UFO, tên lửa, rồng, máy bay phản lực (tạo lười khi cần)
+  const secrets = layers.track('secrets', () => createSecretEvents(scene, {
+    ufo: pickBuilder('secretUfo', feat.secretSet.ufo), rocket: pickBuilder('secretRocket', feat.secretSet.rocket),
+    dragon: pickBuilder('secretDragon', feat.secretSet.dragon), jet: pickBuilder('secretJet', feat.secretSet.jet),
+  }));
   // Chế độ developer: tách vài vật thể của sky ra lớp riêng, nhận theo renderOrder cố định trong sky.ts (không sửa module).
   layers.split('sky', 'aurora', (o) => o.renderOrder === -5);
   layers.split('sky', 'stars', (o) => o.renderOrder === -15);
@@ -45,11 +59,14 @@ export function createOutsideZone(ctx: ZoneContext): OutsideZone {
   return {
     update(f: FrameState, t: number) {
       sky.update(t);
+      skyFeature?.update(f, t);
+      balloons.update?.(f, t);
       flyby.update(f, t);
       layers.watch('secrets', () => secrets.update(f)); // sự kiện bí mật tạo vật thể lúc chạy → gán vào lớp 'secrets'
     },
     dispose() {
       sky.dispose();
+      skyFeature?.dispose();
       balloons.dispose();
       flyby.dispose();
       secrets.dispose();
@@ -60,7 +77,7 @@ export function createOutsideZone(ctx: ZoneContext): OutsideZone {
     setSecretChances,
     secretChances: SECRET_CHANCES,
     getSecretFocus,
-    triggerMeteors,
+    triggerMeteors: (n) => (sky.burstMeteors ?? triggerMeteors)(n),
     setVisible: (on) => layers.setAll(on),
     debugLayers: () => layers.names(),
     setLayerVisible: (name, on) => layers.set(name, on),

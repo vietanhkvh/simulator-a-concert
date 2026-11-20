@@ -5,6 +5,8 @@ Sân khấu, các đường đi, nơi người chơi và khán giả sân đứn
 | File | Trách nhiệm |
 |---|---|
 | `index.ts` | Tạo khu, thứ tự cập nhật mỗi frame, camera góc ca sĩ, lộ các handle cho `main.ts` |
+| `builders.ts` | Khe builder theo phong cách: sàn, runway, tường LED, deco, ban nhạc, khán giả, đèn, màn LED, pháo giấy, emote, fx, ca sĩ, quay phim, chào sân (docs/THEMES.md) |
+| `themes/<id>/` | Builder riêng của phong cách (tự đăng ký; hiện chưa có) |
 | `stageBase.ts` `ledWall.ts` | Sàn diễn, mép, loa monitor, mặt đất nền · tường LED sau lưng ca sĩ + cánh gà |
 | `stageDeco.ts` `stageDecoFixtures.ts` `stageDecoLayout.ts` `stageDecoPal.ts` | Mái giàn, tháp, loa, nhạc cụ, hàng rào, sàn LED, cổng đèn · đèn PAR/pixel · bảng màu |
 | `walkLayout.ts` `stageRunway.ts` | Nguồn duy nhất của các lối đi + bục (có test) · dựng hình runway |
