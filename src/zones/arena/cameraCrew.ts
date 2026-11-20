@@ -9,7 +9,7 @@ import { EYE_HEIGHT, FIELD_Y, GROUND_RISE, GROUND_RUN, GROUND_Y0, GROUND_Z0, STA
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import { getControls, walkable, type ViewMode, type ViewPose } from './stageControls';
-import { FOH_TOWER } from './viewControl';
+import { FOH_TOWER, getAerialHint } from './viewControl';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { PAL, INK, SKIN as SKIN_TONES, HAIR, CHAR_H, themed } from '../../world/style';
 import { createToonMaterial, roundedCylinder } from './cameraCrewToon';
@@ -59,45 +59,52 @@ function aimAngles(from: THREE.Vector3, to: THREE.Vector3): [number, number] {
   return [Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))];
 }
 
-export function createCameraCrew(scene: THREE.Scene): CameraCrew {
-  const parts: Part[] = [];
-  const counts = [0, 0, 0, 0, 0];
-  const colors: number[][] = [[], [], [], [], []];
-  const world = new THREE.Object3D(); // cây tạm, không gắn vào scene
+// ── Ngoại hình (thay theo phong cách) tách khỏi logic rig/pose ──
+/** Đèn phát sáng (Points cộng màu): size < 0,5 = tally thở nhẹ. */
+export interface CrewGlow { obj: THREE.Object3D; color: THREE.Color; size: number }
+/** Bộ dựng chung: thêm phần instanced (5 loại hình), node rỗng, đèn phát sáng. */
+export interface CrewKit {
+  part(parent: THREE.Object3D, kind: Kind, color: number,
+    sx: number, sy: number, sz: number, x: number, y: number, z: number, rx?: number, ry?: number, rz?: number): number;
+  node(parent: THREE.Object3D, x?: number, y?: number, z?: number): THREE.Object3D;
+  glow(parent: THREE.Object3D, color: number, x: number, y: number, z: number, size?: number): CrewGlow;
+}
+/**
+ * Ngoại hình đội quay phim. Vị trí node, chuyển động, pose góc nhìn nằm ở createCameraCrew (không đổi theo phong cách);
+ * appearance chỉ vẽ lên các node đã đặt sẵn. Mặc định = chibi (CHIBI_CREW).
+ */
+export interface CrewAppearance {
+  /** 5 hình cho 5 loại part (hộp, trụ, cầu, vòng mập, vòng mảnh); mặc định hình bo tròn chibi. */
+  geometries?(): THREE.BufferGeometry[];
+  material?(): THREE.Material;
+  /** Người quay phim (gốc = chân, nhìn -Z). armsUp = vác máy trên vai. */
+  operator(k: CrewKit, parent: THREE.Object3D, armsUp: boolean): void;
+  /** Thân máy quay (gốc = tâm thân, ống kính -Z); trả node ở mặt ống kính. */
+  camera(k: CrewKit, parent: THREE.Object3D, scale: number): THREE.Object3D;
+  /** Xe dolly: đế + cột nâng tới headY + bục đứng cao opY (tâm z 0,85). */
+  dolly(k: CrewKit, root: THREE.Object3D, headY: number, opY: number): void;
+  /** Tháp FOH (sàn ở độ cao th) + giá xoay trên sàn (towerYaw). */
+  tower(k: CrewKit, tower: THREE.Object3D, th: number): void;
+  towerMount(k: CrewKit, towerYaw: THREE.Object3D): void;
+  /** Chân + cột cần cẩu (trục xoay ở pivotY). */
+  craneBase(k: CrewKit, crane: THREE.Object3D, pivotY: number): void;
+  /** Khớp xoay (craneYaw) + tay cần dài arm (cranePitch, đầu cần về -Z). */
+  craneArm(k: CrewKit, craneYaw: THREE.Object3D, cranePitch: THREE.Object3D, arm: number): void;
+  craneHead(k: CrewKit, head: THREE.Object3D): void;
+  /** Thân drone (đã phóng DS); trả hàm cập nhật đèn mỗi khung. */
+  drone(k: CrewKit, body: THREE.Object3D): (t: number) => void;
+  gimbal(k: CrewKit, gimbal: THREE.Object3D, aim: THREE.Object3D): void;
+  /** Tuỳ chọn: phần không instanced (vd. rig skinned). build sau khi dựng mọi node; update sau khi đặt ma trận. */
+  build?(scene: THREE.Scene): void;
+  update?(dt: number, t: number): void;
+  dispose?(): void;
+}
 
-  const part = (parent: THREE.Object3D, kind: Kind, color: number,
-    sx: number, sy: number, sz: number, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
-    const o = new THREE.Object3D();
-    o.position.set(x, y, z);
-    o.rotation.set(rx, ry, rz);
-    o.scale.set(sx, sy, sz);
-    parent.add(o);
-    const idx = counts[kind]++;
-    colors[kind].push(color);
-    parts.push({ obj: o, kind, idx });
-    return idx;
-  };
-  const node = (parent: THREE.Object3D, x = 0, y = 0, z = 0) => {
-    const o = new THREE.Object3D();
-    o.position.set(x, y, z);
-    parent.add(o);
-    return o;
-  };
-
-  // Đèn phát sáng (tally đỏ, LED drone): Points cộng màu
-  interface Glow { obj: THREE.Object3D; color: THREE.Color; size: number }
-  const glows: Glow[] = [];
-  const glow = (parent: THREE.Object3D, color: number, x: number, y: number, z: number, size = 0.5) => {
-    const o = node(parent, x, y, z);
-    const g = { obj: o, color: new THREE.Color(color), size };
-    glows.push(g);
-    part(parent, 2, color, 0.1, 0.1, 0.1, x, y, z); // bóng đèn tròn
-    return g;
-  };
-
+/** Ngoại hình chibi "Kẹo đêm" (mặc định). */
+export function chibiCrewAppearance(): CrewAppearance {
   /** Người quay phim chibi 2,3 đầu (gốc = chân, nhìn -Z; H = 1,5 m). Tay vươn ra trước tới máy. */
   let opN = 0;
-  const operator = (parent: THREE.Object3D, armsUp = false) => {
+  const operator = ({ part }: CrewKit, parent: THREE.Object3D, armsUp = false) => {
     const H = CHAR_H;
     const n = opN++;
     const acc = ACCENTS[n % 2]!;
@@ -136,7 +143,7 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   };
 
   /** Thân máy quay broadcast (gốc = tâm thân máy, ống kính hướng -Z). Trả về node ở mặt ống kính. */
-  const broadcastCam = (parent: THREE.Object3D, scale = 1) => {
+  const camera = ({ part, node, glow }: CrewKit, parent: THREE.Object3D, scale = 1) => {
     const s = scale;
     part(parent, 0, DARK, 0.34 * s, 0.36 * s, 0.58 * s, 0, 0, 0); // thân hộp bo mập
     part(parent, 0, GREY, 0.36 * s, 0.08 * s, 0.42 * s, 0, 0.13 * s, 0.02 * s); // sọc nắp grape
@@ -150,28 +157,148 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
     return node(parent, 0, 0, -0.72 * s);
   };
 
+  return {
+    operator, camera,
+    dolly({ part }, root, HEAD_Y, OP_Y) {
+      part(root, 0, DARK, 1.0, 0.18, 0.8, 0, 0.22, 0);
+      part(root, 0, STRIPE, 1.02, 0.05, 0.82, 0, 0.26, 0);
+      for (const wx of [-0.42, 0.42]) for (const wz of [-0.32, 0.32]) {
+        part(root, 3, BLACK, 0.12, 0.12, 0.2, wx, 0.13, wz, 0, Math.PI / 2, 0); // bánh mập
+        part(root, 2, GREY, 0.08, 0.08, 0.1, wx, 0.13, wz); // moay-ơ
+      }
+      part(root, 1, METAL, 0.18, HEAD_Y - 0.3, 0.18, 0, (HEAD_Y - 0.3) / 2 + 0.2, 0);
+      part(root, 1, GREY, 0.07, 0.7, 0.07, 0, OP_Y + 0.7, 0.35, 0, 0, Math.PI / 2); // tay đẩy
+      part(root, 0, DARK, 0.66, OP_Y, 0.56, 0, OP_Y / 2, 0.85); // bục đứng cho người quay
+      part(root, 3, STRIPE, 0.3, 0.3, 0.3, 0, OP_Y * 0.55, 0.85, Math.PI / 2, 0, 0);
+    },
+    tower({ part }, tower, TH) {
+      // ống tròn + khớp cầu + sọc quấn grape
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        part(tower, 1, DARK, 0.22, TH, 0.22, sx * 1.1, TH / 2, sz * 1.1);
+        for (let k = 1; k <= 3; k++) part(tower, 3, STRIPE, 0.13, 0.13, 0.4, sx * 1.1, (TH * k) / 4, sz * 1.1, Math.PI / 2, 0, 0);
+        part(tower, 2, METAL, 0.34, 0.34, 0.34, sx * 1.1, TH, sz * 1.1);
+      }
+      for (const sz of [-1, 1]) part(tower, 1, METAL, 0.1, 2.3, 0.1, 0, TH * 0.5, sz * 1.1, 0, 0, 0.9);
+      for (const sx of [-1, 1]) part(tower, 1, METAL, 0.1, 2.3, 0.1, sx * 1.1, TH * 0.5, 0, 0.9, 0, 0);
+      part(tower, 0, DARK, 2.6, 0.18, 2.6, 0, TH, 0);
+      for (const sz of [-1, 1]) part(tower, 1, STRIPE, 0.1, 2.44, 0.1, 0, TH + 1.0, sz * 1.22, 0, 0, Math.PI / 2);
+      for (const sx of [-1, 1]) part(tower, 1, STRIPE, 0.1, 2.44, 0.1, sx * 1.22, TH + 1.0, 0, Math.PI / 2, 0, 0);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        part(tower, 1, METAL, 0.09, 1.0, 0.09, sx * 1.22, TH + 0.5, sz * 1.22);
+        part(tower, 2, YELLOW, 0.16, 0.16, 0.16, sx * 1.22, TH + 1.02, sz * 1.22);
+      }
+      part(tower, 0, PAL.night[500], 2.5, 0.55, 0.08, 0, TH - 0.3, -1.25); // băng rôn trước tháp
+      part(tower, 2, YELLOW, 0.32, 0.32, 0.06, 0, TH - 0.3, -1.3); // sao (motif) trên băng rôn
+    },
+    towerMount({ part }, towerYaw) {
+      for (const a of [0, 2.1, 4.2]) part(towerYaw, 1, METAL, 0.07, 1.45, 0.07, Math.sin(a) * 0.25, 0.7, Math.cos(a) * 0.25 + 0.1, Math.cos(a) * 0.17, 0, -Math.sin(a) * 0.17);
+    },
+    craneBase({ part }, crane, CRANE_PIVOT_Y) {
+      for (const a of [0, 2.1, 4.2]) {
+        part(crane, 1, DARK, 0.16, 1.6, 0.16, Math.sin(a) * 0.55, 0.1, Math.cos(a) * 0.55, Math.PI / 2, a, 0, );
+        part(crane, 3, BLACK, 0.09, 0.09, 0.14, Math.sin(a) * 1.3, 0.09, Math.cos(a) * 1.3, 0, a + Math.PI / 2, 0); // bánh xe tròn
+      }
+      part(crane, 1, METAL, 0.28, CRANE_PIVOT_Y - 0.1, 0.28, 0, (CRANE_PIVOT_Y - 0.1) / 2, 0);
+      for (let k = 1; k <= 3; k++) part(crane, 3, STRIPE, 0.16, 0.16, 0.4, 0, (CRANE_PIVOT_Y * k) / 4, 0, Math.PI / 2, 0, 0);
+    },
+    craneArm({ part }, craneYaw, cranePitch, ARM) {
+      part(craneYaw, 2, GREY, 0.5, 0.42, 0.5, 0, 0, 0);
+      part(cranePitch, 1, DARK, 0.24, ARM + 2.2, 0.24, 0, 0, -(ARM - 2.2) / 2, Math.PI / 2, 0, 0); // tay cần ống tròn
+      for (let k = 0; k < 6; k++) part(cranePitch, 3, STRIPE, 0.14, 0.14, 0.4, 0, 0, 1.6 - k * ((ARM + 1.6) / 6)); // sọc quấn
+      part(cranePitch, 2, BLACK, 0.85, 0.85, 0.85, 0, -0.05, 2.25); // đối trọng cầu
+      part(cranePitch, 2, YELLOW, 0.26, 0.26, 0.1, 0, -0.05, 2.68); // sao trên đối trọng
+      part(cranePitch, 1, GREY, 0.05, ARM, 0.05, 0, 0.45, -ARM / 2 + 0.2, Math.PI / 2 + 0.06, 0, 0); // dây căng
+    },
+    craneHead({ part }, craneHead) {
+      part(craneHead, 1, DARK, 0.1, 0.4, 0.1, 0, 0.18, 0); // giá treo đầu máy
+    },
+    drone({ part, glow }, droneBody) {
+      // thân tròn mập + nắp grape + 4 tay ống + 4 rotor vòng + đĩa nhoè; LED kẹo ở chân tay
+      part(droneBody, 2, PAL.cream[500], 0.5, 0.26, 0.5, 0, 0, 0);
+      part(droneBody, 2, GREY, 0.36, 0.16, 0.36, 0, 0.09, 0);
+      part(droneBody, 3, PAL.berry[500], 0.255, 0.255, 0.3, 0, 0, 0, Math.PI / 2, 0, 0);
+      for (const a of [Math.PI / 4, -Math.PI / 4]) part(droneBody, 1, PAL.cream[700], 0.08, 0.95, 0.08, 0, 0.02, 0, Math.PI / 2, a, 0);
+      const rotorPos: [number, number][] = [[0.33, 0.33], [-0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]];
+      for (const [x, z] of rotorPos) {
+        part(droneBody, 2, PAL.cream[700], 0.1, 0.1, 0.1, x, 0.05, z);
+        // vòng bảo vệ rotor: vòng mảnh riêng (kind 4) ôm sát mép đĩa cánh quạt nhoè — vòng mập dùng chung (ống 0,42) bị "béo"
+        part(droneBody, 4, PAL.soda[500], 0.19, 0.19, 0.19, x, 0.09, z, Math.PI / 2, 0, 0);
+        part(droneBody, 1, PAL.soda[100], 0.34, 0.008, 0.34, x, 0.09, z); // cánh quạt nhoè
+      }
+      const ledR = glow(droneBody, PAL.berry[500], -0.33, -0.03, -0.33, 0.6);
+      const ledG = glow(droneBody, PAL.mint[500], 0.33, -0.03, -0.33, 0.6);
+      const ledB1 = glow(droneBody, PAL.honey[500], -0.33, -0.03, 0.33, 0.45);
+      const ledB2 = glow(droneBody, PAL.soda[500], 0.33, -0.03, 0.33, 0.45);
+      return (t) => {
+        const blink = Math.floor(t * 2) % 2 === 0;
+        const strobe = (t * 1.1) % 1 < 0.08;
+        // LED kẹo nhấp nháy mềm (không trắng): berry/mint xen kẽ, honey/soda chớp
+        ledR.color.setHex(PAL.berry[500]).multiplyScalar(blink ? 1 : 0.15);
+        ledG.color.setHex(PAL.mint[500]).multiplyScalar(!blink ? 1 : 0.15);
+        ledB1.color.setHex(PAL.honey[300]).multiplyScalar(strobe ? 1 : 0.15);
+        ledB2.color.setHex(PAL.soda[300]).multiplyScalar(strobe ? 1 : 0.15);
+      };
+    },
+    gimbal({ part }, gimbal, gimbalAim) {
+      part(gimbal, 1, DARK, 0.07, 0.2, 0.07, 0, 0.1, 0);
+      part(gimbalAim, 2, DARK, 0.26, 0.24, 0.26, 0, 0, 0); // bi gimbal tròn
+      part(gimbalAim, 3, GREY, 0.08, 0.08, 0.1, 0, 0, -0.11); // vành mắt
+      part(gimbalAim, 2, LENS, 0.13, 0.13, 0.06, 0, 0, -0.12); // mắt kính
+      part(gimbalAim, 2, PAL.soda[300], 0.035, 0.035, 0.02, -0.025, 0.025, -0.15); // ánh kính
+    },
+  };
+}
+
+export function createCameraCrew(scene: THREE.Scene, makeAppearance: () => CrewAppearance = chibiCrewAppearance): CameraCrew {
+  const look = makeAppearance();
+  const parts: Part[] = [];
+  const counts = [0, 0, 0, 0, 0];
+  const colors: number[][] = [[], [], [], [], []];
+  const world = new THREE.Object3D(); // cây tạm, không gắn vào scene
+
+  const part = (parent: THREE.Object3D, kind: Kind, color: number,
+    sx: number, sy: number, sz: number, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+    const o = new THREE.Object3D();
+    o.position.set(x, y, z);
+    o.rotation.set(rx, ry, rz);
+    o.scale.set(sx, sy, sz);
+    parent.add(o);
+    const idx = counts[kind]++;
+    colors[kind].push(color);
+    parts.push({ obj: o, kind, idx });
+    return idx;
+  };
+  const node = (parent: THREE.Object3D, x = 0, y = 0, z = 0) => {
+    const o = new THREE.Object3D();
+    o.position.set(x, y, z);
+    parent.add(o);
+    return o;
+  };
+
+  // Đèn phát sáng (tally đỏ, LED drone): Points cộng màu
+  const glows: CrewGlow[] = [];
+  const glow = (parent: THREE.Object3D, color: number, x: number, y: number, z: number, size = 0.5) => {
+    const o = node(parent, x, y, z);
+    const g = { obj: o, color: new THREE.Color(color), size };
+    glows.push(g);
+    part(parent, 2, color, 0.1, 0.1, 0.1, x, y, z); // bóng đèn tròn
+    return g;
+  };
+  const kit: CrewKit = { part, node, glow };
+
   // ── 2 dolly dưới hố ──
   interface Dolly { root: THREE.Object3D; head: THREE.Object3D; lens: THREE.Object3D; x: number; side: number; aim: THREE.Vector3 }
   const dollies: Dolly[] = [];
   for (const side of [-1, 1]) {
     const root = node(world, side * 4, PIT_FLOOR, PIT_Z);
-    part(root, 0, DARK, 1.0, 0.18, 0.8, 0, 0.22, 0);
-    part(root, 0, STRIPE, 1.02, 0.05, 0.82, 0, 0.26, 0);
-    for (const wx of [-0.42, 0.42]) for (const wz of [-0.32, 0.32]) {
-      part(root, 3, BLACK, 0.12, 0.12, 0.2, wx, 0.13, wz, 0, Math.PI / 2, 0); // bánh mập
-      part(root, 2, GREY, 0.08, 0.08, 0.1, wx, 0.13, wz); // moay-ơ
-    }
     // Cột nâng: ống kính cao hơn mặt sân khấu ~0,95 m để nhìn qua mép sàn diễn.
     const HEAD_Y = STAGE_HEIGHT + 0.95;
     const OP_Y = HEAD_Y - 1.2; // người chibi thấp hơn → bục cao hơn để tay chạm máy
-    part(root, 1, METAL, 0.18, HEAD_Y - 0.3, 0.18, 0, (HEAD_Y - 0.3) / 2 + 0.2, 0);
-    part(root, 1, GREY, 0.07, 0.7, 0.07, 0, OP_Y + 0.7, 0.35, 0, 0, Math.PI / 2); // tay đẩy
-    part(root, 0, DARK, 0.66, OP_Y, 0.56, 0, OP_Y / 2, 0.85); // bục đứng cho người quay
-    part(root, 3, STRIPE, 0.3, 0.3, 0.3, 0, OP_Y * 0.55, 0.85, Math.PI / 2, 0, 0);
+    look.dolly(kit, root, HEAD_Y, OP_Y);
     const head = node(root, 0, HEAD_Y, 0);
-    const lens = broadcastCam(head);
+    const lens = look.camera(kit, head, 1);
     const op = node(root, 0, OP_Y, 0.85);
-    operator(op);
+    look.operator(kit, op, false);
     dollies.push({ root, head, lens, x: side * 4, side, aim: new THREE.Vector3(0, 1.3, 0) });
   }
 
@@ -181,95 +308,50 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   const towerFloor = audienceFloor(towerZ);
   const tower = node(world, towerX, towerFloor, towerZ);
   const TH = Math.max(4, 5 - towerFloor); // sàn tháp ở y ≈ 5 để góc 'wide' nhìn qua đầu khán giả
-  // ống tròn + khớp cầu + sọc quấn grape
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    part(tower, 1, DARK, 0.22, TH, 0.22, sx * 1.1, TH / 2, sz * 1.1);
-    for (let k = 1; k <= 3; k++) part(tower, 3, STRIPE, 0.13, 0.13, 0.4, sx * 1.1, (TH * k) / 4, sz * 1.1, Math.PI / 2, 0, 0);
-    part(tower, 2, METAL, 0.34, 0.34, 0.34, sx * 1.1, TH, sz * 1.1);
-  }
-  for (const sz of [-1, 1]) part(tower, 1, METAL, 0.1, 2.3, 0.1, 0, TH * 0.5, sz * 1.1, 0, 0, 0.9);
-  for (const sx of [-1, 1]) part(tower, 1, METAL, 0.1, 2.3, 0.1, sx * 1.1, TH * 0.5, 0, 0.9, 0, 0);
-  part(tower, 0, DARK, 2.6, 0.18, 2.6, 0, TH, 0);
-  for (const sz of [-1, 1]) part(tower, 1, STRIPE, 0.1, 2.44, 0.1, 0, TH + 1.0, sz * 1.22, 0, 0, Math.PI / 2);
-  for (const sx of [-1, 1]) part(tower, 1, STRIPE, 0.1, 2.44, 0.1, sx * 1.22, TH + 1.0, 0, Math.PI / 2, 0, 0);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    part(tower, 1, METAL, 0.09, 1.0, 0.09, sx * 1.22, TH + 0.5, sz * 1.22);
-    part(tower, 2, YELLOW, 0.16, 0.16, 0.16, sx * 1.22, TH + 1.02, sz * 1.22);
-  }
-  part(tower, 0, PAL.night[500], 2.5, 0.55, 0.08, 0, TH - 0.3, -1.25); // băng rôn trước tháp
-  part(tower, 2, YELLOW, 0.32, 0.32, 0.06, 0, TH - 0.3, -1.3); // sao (motif) trên băng rôn
+  look.tower(kit, tower, TH);
   const towerYaw = node(tower, 0, TH, 0);
-  for (const a of [0, 2.1, 4.2]) part(towerYaw, 1, METAL, 0.07, 1.45, 0.07, Math.sin(a) * 0.25, 0.7, Math.cos(a) * 0.25 + 0.1, Math.cos(a) * 0.17, 0, -Math.sin(a) * 0.17);
+  look.towerMount(kit, towerYaw);
   const towerHead = node(towerYaw, 0, 1.5, 0.1);
-  const towerLens = broadcastCam(towerHead, 1.15);
+  const towerLens = look.camera(kit, towerHead, 1.15);
   const towerOp = node(towerYaw, 0, 0, 0.85);
-  operator(towerOp);
+  look.operator(kit, towerOp, false);
   const towerAim = new THREE.Vector3(0, 1.5, -2);
 
   // ── Người vác máy trên sân khấu ──
   const shoulder = node(world, -5, 0, -2.5);
-  operator(shoulder, true);
+  look.operator(kit, shoulder, true);
   const shoulderCamNode = node(shoulder, 0.45, 1.0, -0.15); // trên vai người chibi
-  broadcastCam(shoulderCamNode, 0.7);
+  look.camera(kit, shoulderCamNode, 0.7);
   const shoulderAim = new THREE.Vector3();
 
   // ── Cần cẩu jib ở cánh trái hố ──
   const craneBase = new THREE.Vector3(-9.6, PIT_FLOOR, -5.8);
   const crane = node(world, craneBase.x, craneBase.y, craneBase.z);
-  for (const a of [0, 2.1, 4.2]) {
-    part(crane, 1, DARK, 0.16, 1.6, 0.16, Math.sin(a) * 0.55, 0.1, Math.cos(a) * 0.55, Math.PI / 2, a, 0, );
-    part(crane, 3, BLACK, 0.09, 0.09, 0.14, Math.sin(a) * 1.3, 0.09, Math.cos(a) * 1.3, 0, a + Math.PI / 2, 0); // bánh xe tròn
-  }
   const CRANE_PIVOT_Y = STAGE_HEIGHT + 2.0;
-  part(crane, 1, METAL, 0.28, CRANE_PIVOT_Y - 0.1, 0.28, 0, (CRANE_PIVOT_Y - 0.1) / 2, 0);
-  for (let k = 1; k <= 3; k++) part(crane, 3, STRIPE, 0.16, 0.16, 0.4, 0, (CRANE_PIVOT_Y * k) / 4, 0, Math.PI / 2, 0, 0);
+  look.craneBase(kit, crane, CRANE_PIVOT_Y);
   const craneYaw = node(crane, 0, CRANE_PIVOT_Y, 0);
-  part(craneYaw, 2, GREY, 0.5, 0.42, 0.5, 0, 0, 0);
   const cranePitch = node(craneYaw, 0, 0, 0);
   const ARM = 7.5;
-  part(cranePitch, 1, DARK, 0.24, ARM + 2.2, 0.24, 0, 0, -(ARM - 2.2) / 2, Math.PI / 2, 0, 0); // tay cần ống tròn
-  for (let k = 0; k < 6; k++) part(cranePitch, 3, STRIPE, 0.14, 0.14, 0.4, 0, 0, 1.6 - k * ((ARM + 1.6) / 6)); // sọc quấn
-  part(cranePitch, 2, BLACK, 0.85, 0.85, 0.85, 0, -0.05, 2.25); // đối trọng cầu
-  part(cranePitch, 2, YELLOW, 0.26, 0.26, 0.1, 0, -0.05, 2.68); // sao trên đối trọng
-  part(cranePitch, 1, GREY, 0.05, ARM, 0.05, 0, 0.45, -ARM / 2 + 0.2, Math.PI / 2 + 0.06, 0, 0); // dây căng
+  look.craneArm(kit, craneYaw, cranePitch, ARM);
   const craneHead = node(world, 0, 0, 0);
-  part(craneHead, 1, DARK, 0.1, 0.4, 0.1, 0, 0.18, 0); // giá treo đầu máy
+  look.craneHead(kit, craneHead);
   const craneHeadAim = node(craneHead, 0, 0, 0);
-  const craneLens = broadcastCam(craneHeadAim, 0.75);
+  const craneLens = look.camera(kit, craneHeadAim, 0.75);
   let craneYawSm = 0.3;
   let cranePitchSm = 0.3;
   const craneAim = new THREE.Vector3(0, 1.3, 0);
   const craneOp = node(world, craneBase.x - 0.6, PIT_FLOOR, craneBase.z - 0.3);
-  operator(craneOp);
+  look.operator(kit, craneOp, false);
 
   // ── Drone (fly cam) ──
   const DS = 1.7; // phóng to cho dễ thấy
   const drone = node(world, 0, 10, -15);
   const droneBody = node(drone);
   droneBody.scale.setScalar(DS);
-  // thân tròn mập + nắp grape + 4 tay ống + 4 rotor vòng + đĩa nhoè; LED kẹo ở chân tay
-  part(droneBody, 2, PAL.cream[500], 0.5, 0.26, 0.5, 0, 0, 0);
-  part(droneBody, 2, GREY, 0.36, 0.16, 0.36, 0, 0.09, 0);
-  part(droneBody, 3, PAL.berry[500], 0.255, 0.255, 0.3, 0, 0, 0, Math.PI / 2, 0, 0);
-  for (const a of [Math.PI / 4, -Math.PI / 4]) part(droneBody, 1, PAL.cream[700], 0.08, 0.95, 0.08, 0, 0.02, 0, Math.PI / 2, a, 0);
-  const rotorPos: [number, number][] = [[0.33, 0.33], [-0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]];
-  for (const [x, z] of rotorPos) {
-    part(droneBody, 2, PAL.cream[700], 0.1, 0.1, 0.1, x, 0.05, z);
-    // vòng bảo vệ rotor: vòng mảnh riêng (kind 4) ôm sát mép đĩa cánh quạt nhoè — vòng mập dùng chung (ống 0,42) bị "béo"
-    part(droneBody, 4, PAL.soda[500], 0.19, 0.19, 0.19, x, 0.09, z, Math.PI / 2, 0, 0);
-    part(droneBody, 1, PAL.soda[100], 0.34, 0.008, 0.34, x, 0.09, z); // cánh quạt nhoè
-  }
-  const ledR = glow(droneBody, PAL.berry[500], -0.33, -0.03, -0.33, 0.6);
-  const ledG = glow(droneBody, PAL.mint[500], 0.33, -0.03, -0.33, 0.6);
-  const ledB1 = glow(droneBody, PAL.honey[500], -0.33, -0.03, 0.33, 0.45);
-  const ledB2 = glow(droneBody, PAL.soda[500], 0.33, -0.03, 0.33, 0.45);
+  const droneLights = look.drone(kit, droneBody);
   const gimbal = node(world);
-  part(gimbal, 1, DARK, 0.07, 0.2, 0.07, 0, 0.1, 0);
   const gimbalAim = node(gimbal, 0, -0.02, 0);
-  part(gimbalAim, 2, DARK, 0.26, 0.24, 0.26, 0, 0, 0); // bi gimbal tròn
-  part(gimbalAim, 3, GREY, 0.08, 0.08, 0.1, 0, 0, -0.11); // vành mắt
-  part(gimbalAim, 2, LENS, 0.13, 0.13, 0.06, 0, 0, -0.12); // mắt kính
-  part(gimbalAim, 2, PAL.soda[300], 0.035, 0.035, 0.02, -0.025, 0.025, -0.15); // ánh kính
+  look.gimbal(kit, gimbal, gimbalAim);
   const droneLens = node(gimbalAim, 0, 0, -0.18);
   const droneAim = new THREE.Vector3(0, 1.3, 0);
   let droneS = 0;
@@ -278,14 +360,14 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
 
   // ── Mesh instanced ──
   const disposables: { dispose(): void }[] = [];
-  const geos = [
+  const geos = look.geometries?.() ?? [
     new RoundedBoxGeometry(1, 1, 1, 2, 0.2),
     roundedCylinder(14),
     new THREE.SphereGeometry(0.5, 16, 12),
     new THREE.TorusGeometry(1, 0.42, 8, 18), // vòng mập (bánh xe, sọc quấn)
     new THREE.TorusGeometry(1, 0.1, 6, 28), // vòng mảnh (vòng bảo vệ rotor drone)
   ];
-  const mat = createToonMaterial();
+  const mat = look.material?.() ?? createToonMaterial();
   disposables.push(mat, ...geos);
   const meshes = geos.map((g, k) => {
     const m = new THREE.InstancedMesh(g, mat, Math.max(1, counts[k]));
@@ -326,6 +408,7 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   glowPts.frustumCulled = false;
   scene.add(glowPts);
   disposables.push(glowTex, glowGeo, glowMat);
+  look.build?.(scene);
 
   // ── Trạng thái góc nhìn ──
   const views: Record<Exclude<ViewMode, 'singer'>, ViewPose> = {
@@ -504,19 +587,14 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
           const [yy, pp] = aimAngles(gimbal.position, droneAim);
           gimbalAim.rotation.set(pp, yy, 0, 'YXZ');
         }
-        const blink = Math.floor(t * 2) % 2 === 0;
-        const strobe = (t * 1.1) % 1 < 0.08;
-        // LED kẹo nhấp nháy mềm (không trắng): berry/mint xen kẽ, honey/soda chớp
-        ledR.color.setHex(PAL.berry[500]).multiplyScalar(blink ? 1 : 0.15);
-        ledG.color.setHex(PAL.mint[500]).multiplyScalar(!blink ? 1 : 0.15);
-        ledB1.color.setHex(PAL.honey[300]).multiplyScalar(strobe ? 1 : 0.15);
-        ledB2.color.setHex(PAL.soda[300]).multiplyScalar(strobe ? 1 : 0.15);
+        droneLights(t);
       }
 
       // Ghi ma trận
       world.updateMatrixWorld(true);
       for (const p of parts) meshes[p.kind].setMatrixAt(p.idx, p.obj.matrixWorld);
       for (const m of meshes) m.instanceMatrix.needsUpdate = true;
+      look.update?.(dt, t);
       const tally = 0.75 + 0.25 * Math.sin(t * 6);
       glows.forEach((g, i) => {
         g.obj.getWorldPosition(tmp);
@@ -546,11 +624,12 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
       views.flycam.fov = fovFor(views.flycam.position.distanceTo(droneAim), 5.2 - 1.2 * hype, 10, 50);
 
       {
-        tmp.set(singerPos.x * 0.6, floorY + 1.0, THREE.MathUtils.clamp(singerPos.z * 0.7 - 3.5, -32, -2));
+        const ah = getAerialHint(); // mặc định { -3,5; 29; 16 }; phong cách có mái khác gợi ý pose riêng
+        tmp.set(singerPos.x * 0.6, floorY + 1.0, THREE.MathUtils.clamp(singerPos.z * 0.7 + ah.targetZ, -32, -2));
         damp(aerialTgt, tmp, 0.8 * k, ddt);
         const sway = THREE.MathUtils.degToRad(10) * Math.sin(t * 0.09);
-        const R = 16; // camera trước vòm mái (z ≤ -18) → giàn mái không che tâm sân khấu
-        tmp.set(aerialTgt.x + Math.sin(sway) * R, aerialTgt.y + 29 + Math.sin(t * 0.13) * 0.8, Math.min(-18, aerialTgt.z - Math.cos(sway) * R));
+        const R = ah.back; // camera trước vòm mái (z ≤ -18) → giàn mái không che tâm sân khấu
+        tmp.set(aerialTgt.x + Math.sin(sway) * R, aerialTgt.y + ah.height + Math.sin(t * 0.13) * 0.8, Math.min(-18, aerialTgt.z - Math.cos(sway) * R));
         damp(aerialPos, tmp, 1.2 * k, ddt);
         views.aerial.position.copy(aerialPos);
         views.aerial.target.copy(aerialTgt);
@@ -567,6 +646,7 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
       for (const m of meshes) scene.remove(m);
       scene.remove(glowPts);
       for (const d of disposables) d.dispose();
+      look.dispose?.();
     },
   };
 }

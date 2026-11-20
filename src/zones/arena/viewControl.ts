@@ -17,6 +17,15 @@ export const SINGER_FOV_MAX = 85;
 /** Độ cao camera 'aerial' (m so với mặt sân khấu). */
 export const AERIAL_H_MIN = 6;
 export const AERIAL_H_MAX = 70;
+/**
+ * Gợi ý pose 'aerial' theo phong cách (mái/khe stageDeco đặt khi dựng, xoá khi huỷ): đích nhìn ở z = z ca sĩ·0,7 + targetZ,
+ * camera cao hơn đích `height` m, lùi `back` m về phía khán giả. Mặc định (chibi): { -3,5; 29; 16 }.
+ */
+export interface AerialHint { targetZ: number; height: number; back: number }
+export const AERIAL_DEFAULT_HINT: AerialHint = { targetZ: -3.5, height: 29, back: 16 };
+let aerialHint: AerialHint | null = null;
+export function setAerialHint(h: AerialHint | null): void { aerialHint = h; }
+export function getAerialHint(): AerialHint { return aerialHint ?? AERIAL_DEFAULT_HINT; }
 /** Tháp FOH (cameraCrew đặt ở đây). */
 export const FOH_TOWER = { x: 7, z: -40 } as const;
 /** Lề an toàn quanh khối mái giàn (m). */
