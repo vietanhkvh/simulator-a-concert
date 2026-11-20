@@ -46,6 +46,8 @@ Ba chế độ sau không có nốt nên không chấm điểm cao độ: Hype t
 | Nút **Thu nhỏ** / **Mở rộng** hoặc `T` | Thu khung lời thành một dòng nhỏ (video thành ô nhỏ góc dưới phải) để nhìn sân khấu; được ghi nhớ |
 | `W` `A` `S` `D` hoặc phím mũi tên | Đi lại trên sân khấu và đường runway |
 | Kéo chuột (hoặc `Q` / `E`) | Xoay góc nhìn 360° |
+| `M` hoặc nhấp đúp | Bật / tắt chế độ khóa chuột: di chuột là xoay, không cần giữ nút |
+| `V` | Đổi góc máy: ca sĩ → flycam → hố sân khấu → cần cẩu → toàn cảnh |
 | Giữ `C` | Đưa micro cho khán giả hát thay (tối đa 10 giây, chỉ bài có nốt) |
 | `1` hoặc `Space` | Kêu gọi khán giả hò reo |
 | `2` | Sóng lightstick quét ngang khán đài |
@@ -65,7 +67,7 @@ Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi 
 |---|---|
 | `?latency=120` | Bù độ trễ micro (ms). Tăng nếu hát đúng mà bị chấm trễ. |
 | `?fakeMic=perfect` | Micro giả hát đúng giai điệu (xem thử không cần micro). Còn có `off`, `octave`. |
-| `?crowd=2500` | Số khán giả (100–10000). |
+| `?crowd=8000` | Số khán giả (100–10000). Game tự giảm số người được vẽ nếu máy chậm. |
 
 ## Lệnh khác
 

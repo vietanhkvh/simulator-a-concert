@@ -116,20 +116,22 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
     const root = node(world, side * 4, PIT_FLOOR, PIT_Z);
     part(root, 0, DARK, 1.0, 0.14, 0.8, 0, 0.18, 0);
     for (const wx of [-0.42, 0.42]) for (const wz of [-0.32, 0.32]) part(root, 1, BLACK, 0.18, 0.08, 0.18, wx, 0.09, wz, 0, 0, Math.PI / 2);
-    part(root, 1, METAL, 0.14, 1.45, 0.14, 0, 0.95, 0);
-    part(root, 0, GREY, 0.7, 0.03, 0.03, 0, 1.55, 0.35); // tay đẩy
-    const head = node(root, 0, 1.85, 0);
+    part(root, 1, METAL, 0.14, 2.1, 0.14, 0, 1.25, 0);
+    part(root, 0, GREY, 0.7, 0.03, 0.03, 0, 1.6, 0.35); // tay đẩy
+    part(root, 0, DARK, 0.6, 0.5, 0.06, 0, 0.5, 0.75); // bậc đứng cho người quay
+    const head = node(root, 0, 2.45, 0);
     const lens = broadcastCam(head);
-    const op = node(root, 0, 0, 0.75);
+    const op = node(root, 0, 0.75, 0.85);
     operator(op);
     dollies.push({ root, head, lens, x: side * 4, side, aim: new THREE.Vector3(0, 1.3, 0) });
   }
 
   // ── Tháp FOH giữa khán giả ──
   const towerZ = -40;
+  const towerX = 7;
   const towerFloor = audienceFloor(towerZ);
-  const tower = node(world, 0, towerFloor, towerZ);
-  const TH = 3;
+  const tower = node(world, towerX, towerFloor, towerZ);
+  const TH = 4;
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) part(tower, 0, DARK, 0.12, TH, 0.12, sx * 1.1, TH / 2, sz * 1.1);
   for (const sz of [-1, 1]) part(tower, 0, GREY, 2.2, 0.06, 0.06, 0, TH * 0.5, sz * 1.1, 0, 0, 0.9);
   for (const sx of [-1, 1]) part(tower, 0, GREY, 0.06, 0.06, 2.2, sx * 1.1, TH * 0.5, 0, 0.9, 0, 0);
@@ -154,7 +156,7 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   const shoulderAim = new THREE.Vector3();
 
   // ── Cần cẩu jib ở cánh trái hố ──
-  const craneBase = new THREE.Vector3(-11, PIT_FLOOR, -6.2);
+  const craneBase = new THREE.Vector3(-9.6, PIT_FLOOR, -5.8);
   const crane = node(world, craneBase.x, craneBase.y, craneBase.z);
   for (const a of [0, 2.1, 4.2]) part(crane, 0, DARK, 0.1, 0.1, 1.6, Math.sin(a) * 0.55, 0.08, Math.cos(a) * 0.55, 0, a, 0);
   part(crane, 1, METAL, 0.2, 1.9, 0.2, 0, 1.0, 0);
@@ -174,7 +176,7 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   let craneYawSm = 0.3;
   let cranePitchSm = 0.3;
   const craneAim = new THREE.Vector3(0, 1.3, 0);
-  const craneOp = node(world, craneBase.x + 0.9, PIT_FLOOR, craneBase.z + 0.6);
+  const craneOp = node(world, craneBase.x - 0.6, PIT_FLOOR, craneBase.z - 0.3);
   operator(craneOp);
 
   // ── Drone (fly cam) ──
@@ -295,7 +297,7 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
 
       // Dolly: chạy dọc hố theo ca sĩ, tránh lối runway
       for (const d of dollies) {
-        const want = d.side < 0 ? THREE.MathUtils.clamp(singerPos.x - 2.8, -12, -2.6) : THREE.MathUtils.clamp(singerPos.x + 2.8, 2.6, 12);
+        const want = d.side < 0 ? THREE.MathUtils.clamp(singerPos.x - 2.8, -10.8, -2.6) : THREE.MathUtils.clamp(singerPos.x + 2.8, 2.6, 10.8);
         const step = THREE.MathUtils.clamp((want - d.x) * (1 - Math.exp(-1.5 * ddt * k)), -2.5 * ddt * k, 2.5 * ddt * k);
         d.x += step;
         d.root.position.x = d.x;
@@ -372,12 +374,13 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
         droneS += dt * (0.13 + 0.06 * hype);
         const s = droneS;
         const swoop = hype > 0.6 ? ((hype - 0.6) / 0.4) * Math.max(0, Math.sin(s * 3)) : 0;
-        tmp.set(
-          15 * Math.sin(s) + singerPos.x * 0.3,
-          10 + 3.5 * Math.sin(s * 0.7 + 1) - swoop * 4,
-          -13 + 9 * Math.sin(2 * s) + singerPos.z * 0.3,
-        );
-        tmp.y = Math.max(6, Math.min(14, tmp.y));
+        // Cung phía trước sân khấu (luôn z ≤ -9, ngoài khối mái), quét trái↔phải, sà vào runway
+        const sx = 13 * Math.sin(s) + singerPos.x * 0.3;
+        const baseZ = Math.min(-11, singerPos.z - 11);
+        const sz = Math.min(-9, baseZ - 2.5 + 2.5 * Math.cos(2 * s) + swoop * 1.5);
+        let sy = 8 + 2 * Math.sin(s * 0.7 + 1) - swoop * 2.5;
+        if (Math.abs(sx) < 4) sy = Math.max(sy, 6); // trên các cổng đèn runway (cao 5 m)
+        tmp.set(sx, Math.max(4, Math.min(11, sy)), sz);
         if (dt > 0) {
           tmp2.subVectors(tmp, dronePrev);
           if (tmp2.lengthSq() > 1e-6) {
@@ -432,11 +435,11 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
 
       droneLens.getWorldPosition(views.flycam.position);
       views.flycam.target.copy(droneAim);
-      views.flycam.fov = fovFor(views.flycam.position.distanceTo(droneAim), 9 - 3 * hype, 22, 65);
+      views.flycam.fov = fovFor(views.flycam.position.distanceTo(droneAim), 5.2 - 1.2 * hype, 10, 50);
 
       towerLens.getWorldPosition(views.wide.position);
       views.wide.target.copy(towerAim);
-      views.wide.fov = fovFor(views.wide.position.distanceTo(towerAim), 15, 14, 50);
+      views.wide.fov = fovFor(views.wide.position.distanceTo(towerAim), 13, 12, 50);
     },
     getView(mode) {
       return mode === 'singer' ? null : views[mode];
