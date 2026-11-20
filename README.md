@@ -24,6 +24,19 @@ cd dist && python3 -m http.server 5173
 
 Micro chỉ hoạt động trên `localhost` hoặc HTTPS, không chạy khi mở file trực tiếp.
 
+## Nhập bài từ máy
+
+Ở màn bắt đầu, dưới nút **Bắt đầu**, chọn (hoặc kéo-thả) một hay nhiều file. **File của bạn không rời khỏi thiết bị**: game đọc file ngay trong trình duyệt (File API, object URL, `decodeAudioData`), không upload.
+
+| Chọn | Chế độ |
+|---|---|
+| Nhạc (mp3/ogg/wav/m4a…) + UltraStar `.txt` | Lời + chấm cao độ như bài có sẵn (bỏ qua `#MP3`, tên bài/ca sĩ lấy từ header) |
+| Nhạc + `.lrc` | Lời theo câu, không có dải nốt |
+| Video karaoke (mp4/webm) | Nhạc lấy từ video, video hiện ở giữa-dưới để đọc lời in sẵn |
+| Chỉ file nhạc | Hát tự do, không lời |
+
+Ba chế độ sau không có nốt nên không chấm điểm cao độ: Hype tăng khi micro bắt được giọng hát (chế độ `.lrc` chỉ tính trong lúc có câu lời) và giảm khi im lặng. Nhịp cho khán giả/đèn mặc định 120 BPM.
+
 ## Tham số URL
 
 | Tham số | Ý nghĩa |

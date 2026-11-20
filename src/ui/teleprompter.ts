@@ -2,7 +2,7 @@
  * Màn nhắc lời HUD (P5): câu hiện tại tô theo âm tiết, câu kế tiếp mờ, dải cao độ và đếm ngược khi nghỉ dài.
  * DOM chỉ dựng lại khi đổi câu; mỗi frame chỉ đổi CSS variable / transform.
  */
-import type { FrameState, Line, Note, Song, Teleprompter } from '../core/types';
+import type { FrameState, Line, LyricLine, Note, Song, Teleprompter } from '../core/types';
 import './style.css';
 
 const REST_COUNTDOWN_SEC = 3; // nghỉ dài hơn mức này thì hiện thanh đếm ngược
@@ -31,6 +31,11 @@ interface SylView {
 }
 
 export function createTeleprompter(root: HTMLElement, song: Song): Teleprompter {
+  if (song.lyrics) return createLrcTeleprompter(root, song.lyrics);
+  if (song.lines.length === 0) {
+    // Hát tự do: không có lời.
+    return { update() {}, setVisible() {}, dispose() {} };
+  }
   const wrap = el('div', 'cs-tp');
   root.appendChild(wrap);
 
@@ -211,5 +216,86 @@ export function createTeleprompter(root: HTMLElement, song: Song): Teleprompter 
       wrap.style.display = v ? '' : 'none';
     },
     dispose: () => wrap.remove(),
+  };
+}
+
+/**
+ * Nhắc lời theo câu (.lrc): câu hiện tại tô dần từ mốc của nó tới mốc câu kế tiếp, câu kế tiếp mờ.
+ * Không có dải cao độ.
+ */
+export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[]): Teleprompter {
+  const wrap = el('div', 'cs-tp cs-tp-lrc');
+  root.appendChild(wrap);
+  const countdown = el('div', 'cs-tp-count', wrap);
+  const countFill = el('div', 'cs-tp-count-fill', countdown);
+  const curEl = el('div', 'cs-tp-cur', wrap);
+  const cur = el('span', 'cs-syl', curEl);
+  const nextEl = el('div', 'cs-tp-next', wrap);
+  let shown = -2;
+  let lastP = -1;
+  let countVisible = false;
+
+  /** Câu hiển thị: câu cuối cùng đã bắt đầu; trước câu đầu thì -1 (chỉ hiện câu sắp tới). */
+  function pick(t: number): number {
+    let i = -1;
+    while (i + 1 < lyrics.length && lyrics[i + 1].startSec <= t) i++;
+    return i;
+  }
+
+  return {
+    update(f: FrameState) {
+      const t = f.songTime;
+      const idx = pick(t);
+      const line = idx >= 0 ? lyrics[idx] : undefined;
+      const active = !!line && t < line.endSec;
+      const curIdx = active ? idx : -1;
+      if (curIdx !== shown) {
+        shown = curIdx;
+        cur.textContent = active && line ? line.text : '';
+        nextEl.textContent = lyrics[idx + 1]?.text ?? '';
+        lastP = -1;
+      }
+      if (active && line) {
+        const p = Math.max(0, Math.min(1, (t - line.startSec) / Math.max(0.05, line.endSec - line.startSec)));
+        if (Math.abs(p - lastP) > 0.003) {
+          lastP = p;
+          cur.style.setProperty('--p', `${(p * 100).toFixed(1)}%`);
+        }
+      }
+      // Đếm ngược khi sắp tới câu kế tiếp sau một quãng nghỉ.
+      const next = lyrics[idx + 1];
+      const wait = next ? next.startSec - t : Infinity;
+      const showCount = !active && wait > 0 && wait < 6;
+      if (showCount !== countVisible) {
+        countVisible = showCount;
+        countdown.style.opacity = showCount ? '1' : '0';
+      }
+      if (showCount) countFill.style.transform = `scaleX(${Math.min(1, wait / 6).toFixed(3)})`;
+    },
+    setVisible(v) {
+      wrap.style.display = v ? '' : 'none';
+    },
+    dispose: () => wrap.remove(),
+  };
+}
+
+/**
+ * Khung video karaoke ở giữa-dưới (chỗ teleprompter) để người chơi đọc lời in sẵn trong video.
+ * Phần tử video do main.ts tạo; khung chỉ gắn vào DOM, không điều khiển phát.
+ */
+export function createVideoPanel(root: HTMLElement, video: HTMLVideoElement): Teleprompter {
+  const wrap = el('div', 'cs-video-panel');
+  video.classList.add('cs-video');
+  wrap.appendChild(video);
+  root.appendChild(wrap);
+  return {
+    update() {},
+    setVisible(v) {
+      wrap.style.display = v ? '' : 'none';
+    },
+    dispose: () => {
+      if (video.parentElement === wrap) wrap.removeChild(video);
+      wrap.remove();
+    },
   };
 }

@@ -84,7 +84,21 @@ function layout(opts: CrowdOptions, rand: () => number): Person[] {
   return people;
 }
 
-export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Updatable {
+/**
+ * "Biển đèn flash điện thoại" (đoạn nhạc lắng). Một phần khán giả (tối đa ~60%) giơ đèn flash
+ * điện thoại trắng/trắng ấm thay cho lightstick; lightstick những người còn lại mờ đi.
+ * Điều khiển: crowd.setFlash(0..1) (làm mượt ~1,5 s). Nếu chưa từng gọi setFlash, update(f) tự
+ * suy ra: level làm mượt ~3 s < FLASH_AUTO.levelOn và hype < FLASH_AUTO.hypeMax → 1, ngược lại → 0
+ * (tắt lại khi level > levelOff, có trễ để không chập chờn). Không thêm draw call, không cập nhật buffer.
+ */
+export const FLASH_AUTO = { levelOn: 0.35, levelOff: 0.42, hypeMax: 0.7, levelTauSec: 3, flashTauSec: 0.5 };
+
+export interface Crowd extends Updatable {
+  /** 0..1, làm mượt ~1,5 s. Gọi một lần là tắt chế độ tự động. */
+  setFlash(amount: number): void;
+}
+
+export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
   const rand = mulberry32(0xc0ffee);
   const people = layout(opts, rand);
   const n = people.length;
@@ -122,7 +136,11 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Updatable {
     uWaveMix: { value: 0 },
     uColorA: { value: COLOR_A.clone() },
     uColorB: { value: COLOR_B.clone() },
+    uFlash: { value: 0 },
   };
+  let flashManual: number | null = null;
+  let levelSmooth = 0.5;
+  let autoOn = false;
   const makeMat = (part: 'BODY' | 'STICK') =>
     new THREE.ShaderMaterial({
       vertexShader: vert,
@@ -161,6 +179,20 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Updatable {
       const target = f.waveMode === 1 ? 1 : 0;
       const k = 1 - Math.exp(-f.dt * 2.5); // ~0,4 s chuyển mượt giữa đồng màu và sóng
       shared.uWaveMix.value += (target - shared.uWaveMix.value) * k;
+
+      let flashTarget: number;
+      if (flashManual !== null) {
+        flashTarget = flashManual;
+      } else {
+        levelSmooth += (f.level - levelSmooth) * (1 - Math.exp(-f.dt / FLASH_AUTO.levelTauSec));
+        if (autoOn) autoOn = levelSmooth < FLASH_AUTO.levelOff && f.hype < FLASH_AUTO.hypeMax + 0.05;
+        else autoOn = levelSmooth < FLASH_AUTO.levelOn && f.hype < FLASH_AUTO.hypeMax;
+        flashTarget = autoOn ? 1 : 0;
+      }
+      shared.uFlash.value += (flashTarget - shared.uFlash.value) * (1 - Math.exp(-f.dt / FLASH_AUTO.flashTauSec));
+    },
+    setFlash(amount: number) {
+      flashManual = THREE.MathUtils.clamp(Number.isFinite(amount) ? amount : 0, 0, 1);
     },
     dispose() {
       scene.remove(body, sticks);

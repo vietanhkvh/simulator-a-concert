@@ -34,10 +34,18 @@ export function createHud(root: HTMLElement): Hud {
   let lastCombo = -1;
   let lastHype = -1;
   let hot = false;
+  let pitchScore = true;
 
   return {
     update(f) {
       const s = f.score;
+      if (!pitchScore) {
+        if (lastScore !== -2) {
+          lastScore = -2;
+          scoreVal.textContent = '—';
+          scoreSub.textContent = 'Không chấm cao độ';
+        }
+      } else {
       const sc = Math.round(s.score);
       if (sc !== lastScore) {
         lastScore = sc;
@@ -48,6 +56,7 @@ export function createHud(root: HTMLElement): Hud {
         lastPct = pct;
         lastCombo = s.combo;
         scoreSub.textContent = `${pct}%` + (s.combo >= 3 ? ` · x${s.combo}` : '');
+      }
       }
       const h = Math.max(0, Math.min(1, f.hype));
       if (Math.abs(h - lastHype) > 0.002) {
@@ -70,6 +79,12 @@ export function createHud(root: HTMLElement): Hud {
         micText.textContent = text;
         mic.className = /xem|không có/i.test(text) ? 'cs-hud-mic none' : 'cs-hud-mic fake';
       }
+    },
+    setPitchScore(on) {
+      pitchScore = on;
+      lastScore = -1;
+      lastPct = -1;
+      lastCombo = -1;
     },
     setVisible(v) {
       wrap.style.display = v ? '' : 'none';

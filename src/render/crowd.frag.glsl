@@ -25,6 +25,7 @@ varying vec3 vGlow;
 varying vec3 vColor;
 varying vec2 vMetric;
 varying float vGlowScale;
+varying float vPhone;
 #endif
 
 float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
@@ -77,6 +78,19 @@ void main() {
 #ifdef STICK
   vec2 q = vMetric;
   float s = vGlowScale;
+  if (vPhone > 0.5) {
+    // Đèn flash điện thoại: lõi trắng nhỏ + quầng mềm.
+    float ss = 0.6 + 0.4 * s;
+    float r = length(q) / ss;
+    float pcore = 1.0 - smoothstep(0.022, 0.042, r);
+    float halo = exp(-r * 16.0) * 0.55 + exp(-r * 6.0) * 0.12;
+    vec2 pe = abs(vUv - vec2(0.5)) * 2.0;
+    float pedge = 1.0 - smoothstep(0.75, 1.0, max(pe.x, pe.y));
+    vec3 pc = vColor * (pcore * 1.6 + halo) * pedge;
+    pc *= 1.0 - 0.7 * fogAmount();
+    gl_FragColor = vec4(pc, 1.0);
+    return;
+  }
   float core = sdCapsule(q, vec2(0.0, 0.07 * s), vec2(0.0, 0.07 * s + 0.3), 0.022);
   float coreMask = 1.0 - smoothstep(0.0, 0.012 + 0.01 * s, core);
   float glow = exp(-max(core, 0.0) * 22.0 / s) * 0.55;

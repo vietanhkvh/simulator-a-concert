@@ -66,6 +66,24 @@ export interface Song {
   lines: Line[];
   /** Thời điểm kết thúc nốt cuối (giây). Độ dài audio lấy từ AudioEngine.durationSec. */
   durationSec: number;
+  /**
+   * Nguồn/kiểu bài (bổ sung khi nhập file từ máy). Không có = 'ultrastar' (bài có sẵn).
+   * 'ultrastar' có nốt; 'lrc' chỉ có lời theo câu; 'video' / 'audio' không có lời.
+   */
+  mode?: SongMode;
+  /** false = không có nốt → không chấm cao độ (Hype theo giọng). Không có = true. */
+  hasNotes?: boolean;
+  /** Lời theo câu (chế độ 'lrc'). */
+  lyrics?: LyricLine[];
+}
+
+export type SongMode = 'ultrastar' | 'lrc' | 'video' | 'audio';
+
+/** Một câu lời từ file .lrc (đã cộng offset). endSec = mốc của câu kế tiếp. */
+export interface LyricLine {
+  startSec: number;
+  endSec: number;
+  text: string;
 }
 
 // ───────────────────────── Micro ─────────────────────────
@@ -111,6 +129,12 @@ export interface AudioEngine {
   /** Gọi trong cú bấm của người dùng để mở khóa AudioContext. */
   resume(): Promise<void>;
   load(buf: ArrayBuffer): Promise<void>;
+  /**
+   * (Bổ sung) Dùng <video>/<audio> làm nguồn nhạc thay cho buffer: âm thanh đi qua
+   * createMediaElementSource → cùng analyser (level()), đồng hồ now() lấy từ el.currentTime.
+   * Gọi load() sau đó sẽ quay lại chế độ buffer.
+   */
+  loadMedia?(el: HTMLMediaElement): Promise<void>;
   /** Phát sau leadInSec giây; trong lúc chờ now() âm. */
   play(leadInSec: number): void;
   stop(): void;
@@ -207,6 +231,8 @@ export interface Hud extends Updatable {
   /** Nhãn nhỏ góc màn hình, ví dụ "Chế độ xem"; null để ẩn. */
   setNotice(text: string | null): void;
   setVisible(v: boolean): void;
+  /** false = chế độ không có nốt: ẩn %/điểm, hiện "—". Tùy chọn (bổ sung). */
+  setPitchScore?(on: boolean): void;
 }
 
 export interface Teleprompter extends Updatable {
@@ -216,6 +242,8 @@ export interface Teleprompter extends Updatable {
 export interface ScreensOptions {
   /** Người dùng bấm "Bắt đầu" (hoặc "Hát lại"). Gọi trong chính sự kiện click. */
   onStart: () => void;
+  /** Người chơi chọn/thả file từ máy (xử lý cục bộ, không upload). Tùy chọn (bổ sung). */
+  onImport?: (files: File[]) => void;
 }
 
 export interface Screens {
@@ -223,7 +251,7 @@ export interface Screens {
   showStart(entry: SongManifestEntry): void;
   showLoading(text: string): void;
   /** Màn kết quả: điểm %, dòng ghi công, nút hát lại. */
-  showResult(score: ScoreState, entry: SongManifestEntry, micMode: MicMode): void;
+  showResult(score: ScoreState, entry: SongManifestEntry, micMode: MicMode, opts?: { pitchScore?: boolean }): void;
   showError(text: string): void;
   hide(): void;
   dispose(): void;

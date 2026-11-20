@@ -14,6 +14,22 @@ export function createAudioEngine(): AudioEngine {
   let startAt: number | null = null;
   let hasEnded = false;
   let smoothed = 0;
+  // Chế độ media element (video karaoke): đồng hồ = el.currentTime.
+  let media: HTMLMediaElement | null = null;
+  let mediaNode: MediaElementAudioSourceNode | null = null;
+  let mediaTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const releaseMedia = () => {
+    if (mediaTimer !== null) clearTimeout(mediaTimer);
+    mediaTimer = null;
+    if (media) {
+      media.onended = null;
+      media.pause();
+    }
+    mediaNode?.disconnect();
+    mediaNode = null;
+    media = null;
+  };
 
   const latency = () => {
     const c = ctx as AudioContext & { outputLatency?: number };
@@ -38,11 +54,43 @@ export function createAudioEngine(): AudioEngine {
     resume: async () => {
       if (ctx.state !== 'running') await ctx.resume();
     },
+    async loadMedia(el) {
+      killSource();
+      releaseMedia();
+      buffer = null;
+      if (!(el.readyState >= 1)) {
+        await new Promise<void>((resolve, reject) => {
+          el.addEventListener('loadedmetadata', () => resolve(), { once: true });
+          el.addEventListener('error', () => reject(new Error('Trình duyệt không mở được file video này')), { once: true });
+          el.load();
+        });
+      }
+      mediaNode = ctx.createMediaElementSource(el);
+      mediaNode.connect(gain);
+      media = el;
+    },
     async load(buf) {
+      releaseMedia();
       // decodeAudioData có thể detach buffer; truyền bản sao để gọi lại được.
       buffer = await ctx.decodeAudioData(buf.slice(0));
     },
     play(leadInSec) {
+      if (media) {
+        const el = media;
+        if (mediaTimer !== null) clearTimeout(mediaTimer);
+        el.pause();
+        el.currentTime = 0;
+        hasEnded = false;
+        el.onended = () => {
+          if (media === el) hasEnded = true;
+        };
+        startAt = ctx.currentTime + Math.max(0, leadInSec);
+        mediaTimer = setTimeout(() => {
+          mediaTimer = null;
+          el.play().catch((err) => console.warn('[audio] video.play() bị chặn:', err));
+        }, Math.max(0, leadInSec) * 1000);
+        return;
+      }
       if (!buffer) throw new Error('AudioEngine.play: chưa load audio');
       killSource();
       hasEnded = false;
@@ -58,11 +106,21 @@ export function createAudioEngine(): AudioEngine {
       startAt = when;
     },
     stop() {
+      if (mediaTimer !== null) clearTimeout(mediaTimer);
+      mediaTimer = null;
+      media?.pause();
       killSource();
       startAt = null;
       hasEnded = false;
     },
-    now: () => (startAt === null ? 0 : ctx.currentTime - startAt - latency()),
+    now: () => {
+      if (startAt === null) return 0;
+      if (media) {
+        const pre = ctx.currentTime - startAt;
+        return pre < 0 || (media.paused && media.currentTime === 0) ? Math.min(0, pre) : media.currentTime;
+      }
+      return ctx.currentTime - startAt - latency();
+    },
     level() {
       analyser.getFloatTimeDomainData(levelBuf);
       let s = 0;
@@ -76,6 +134,7 @@ export function createAudioEngine(): AudioEngine {
       return hasEnded;
     },
     get durationSec() {
+      if (media) return Number.isFinite(media.duration) ? media.duration : 0;
       return buffer ? buffer.duration : 0;
     },
   };
