@@ -35,6 +35,10 @@ import { createHud } from './ui/hud';
 import { createHudMicMeter, createMicPanel } from './ui/micPanel';
 import { createScreens } from './ui/screens';
 import { createTeleprompter, createVideoPanel } from './ui/teleprompter';
+import { createControlsGuide } from './ui/controlsGuide';
+import {
+  createPauseMenu, loadSettings, saveSettings, type SecretKind, type TestKind, type ViewName,
+} from './ui/pauseMenu';
 
 const LEAD_IN_SEC = 3;
 const TAIL_SEC = 2;
@@ -44,8 +48,10 @@ const fakeMicParam = params.get('fakeMic');
 const requestedMic: MicMode =
   fakeMicParam === 'perfect' || fakeMicParam === 'off' || fakeMicParam === 'octave' ? fakeMicParam : 'real';
 // Micro giả trễ ~50 ms (cửa sổ phân tích), micro thật mặc định bù 120 ms.
-const latencySec =
-  Math.max(0, Number(params.get('latency') ?? (requestedMic === 'real' ? 120 : 50)) || 0) / 1000;
+// Chỉnh được trong menu tạm dừng (lưu localStorage); ?latency= vẫn được ưu tiên khi mở trang.
+const settings = loadSettings();
+let latencySec =
+  Math.max(0, Math.min(400, Number(params.get('latency') ?? settings.latencyMs ?? (requestedMic === 'real' ? 120 : 50)) || 0)) / 1000;
 const crowdCount = Math.max(100, Math.min(10000, Number(params.get('crowd') ?? 8000) || 8000));
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
@@ -77,12 +83,15 @@ let hypeBoost = 0; // cộng tạm vào Hype hiển thị, tự tắt dần
 let waveUntil = 0; // performance.now() ms
 let flashOn = false;
 let lastInteract = -Infinity;
-const hint = document.createElement('div');
-hint.className = 'cs-keys-hint';
-hint.textContent =
-  'WASD / mũi tên: đi lại  ·  Kéo chuột hoặc M: xoay  ·  V: đổi góc máy  ·  Giữ C: đưa micro cho khán giả  ·  1: hò reo  ·  2: sóng  ·  3: tim  ·  4: flash  ·  5: pháo hoa';
-hint.hidden = true;
-uiRoot.appendChild(hint);
+/** Phím game bị bỏ qua khi đang gõ trong ô nhập (menu tạm dừng, băng rôn…). */
+function isTypingTarget(e: Event): boolean {
+  const t = (e.target ?? document.activeElement) as HTMLElement | null;
+  if (!t || !(t instanceof HTMLElement)) return false;
+  const tag = t.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+}
+// Bảng hướng dẫn phím kiểu game (ui/controlsGuide.ts), H hoặc nút "?" để ẩn/hiện.
+const controlsGuide = createControlsGuide(uiRoot);
 // --- Micro: bảng chọn/thử micro (ui/micPanel.ts), ví dụ nghe bằng tai nghe nhưng thu bằng micro của máy ---
 const micPanel = createMicPanel(uiRoot);
 const hudMicMeter = createHudMicMeter(uiRoot);
@@ -98,79 +107,276 @@ const singBanner = document.createElement('div');
 singBanner.className = 'cs-sing-banner';
 singBanner.hidden = true;
 uiRoot.appendChild(singBanner);
-window.addEventListener('keydown', (e) => { if (e.code === 'KeyC' && state === 'playing') handoverHeld = true; });
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyC' && state === 'playing' && !paused && !isTypingTarget(e)) handoverHeld = true;
+});
 window.addEventListener('keyup', (e) => { if (e.code === 'KeyC') handoverHeld = false; });
 window.addEventListener('blur', () => { handoverHeld = false; });
 
-// --- Tạm dừng (nút góc trên phải, hoặc phím Esc) ---
-let paused = false;
-const pauseBtn = document.createElement('button');
-pauseBtn.id = 'cs-pause';
-pauseBtn.className = 'cs-pause-btn';
-pauseBtn.type = 'button';
-pauseBtn.hidden = true;
-const pauseVeil = document.createElement('div');
-pauseVeil.className = 'cs-pause-veil';
-pauseVeil.textContent = 'Tạm dừng';
-pauseVeil.hidden = true;
-uiRoot.append(pauseVeil, pauseBtn);
-function setPaused(on: boolean): void {
-  if (on === paused || (on && state !== 'playing')) return;
-  paused = on;
-  pauseBtn.textContent = paused ? '▶ Tiếp tục' : '❚❚ Tạm dừng';
-  pauseVeil.hidden = !paused;
-  // Treo AudioContext: nhạc, đồng hồ bài hát, micro và tiếng đám đông cùng dừng.
-  if (paused) {
-    currentVideo?.pause();
-    void audio?.ctx.suspend();
-  } else {
-    void audio?.ctx.resume().then(() => currentVideo?.play());
-  }
-}
-pauseBtn.textContent = '❚❚ Tạm dừng';
-pauseBtn.addEventListener('click', () => { setPaused(!paused); pauseBtn.blur(); });
-window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && !e.repeat) setPaused(!paused); });
-// Chuyển tab khác thì tự tạm dừng để không mất điểm.
-document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
-
-window.addEventListener('keydown', (e) => {
-  if (paused || state !== 'playing' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+/** Kích hoạt một tương tác; `test` = bấm thử trong menu tạm dừng (bỏ qua thời gian chờ). */
+function interact(kind: TestKind, test = false): boolean {
   const now = performance.now() / 1000;
-  const ready = now - lastInteract >= INTERACT_COOLDOWN_SEC;
-  switch (e.code) {
-    case 'Digit1':
-    case 'Space': // "Make some noise!"
-      e.preventDefault();
-      if (!ready) return;
+  const ready = test || now - lastInteract >= INTERACT_COOLDOWN_SEC;
+  switch (kind) {
+    case 'cheer':
+      if (!ready) return false;
       crowdAudio?.cheer(1);
       emotes.burst(50);
       hypeBoost = 0.35;
       break;
-    case 'Digit2':
+    case 'wave':
       waveUntil = performance.now() + 6000;
-      return;
-    case 'Digit3':
-      if (!ready) return;
+      return true;
+    case 'heart':
+      if (!ready) return false;
       emotes.burst(70, 'heart');
       crowdAudio?.cheer(0.5);
       hypeBoost = Math.max(hypeBoost, 0.15);
       break;
-    case 'Digit4':
+    case 'flash':
       flashOn = !flashOn;
       crowd.setFlash(flashOn ? 1 : 0);
-      return;
-    case 'Digit5':
-      if (!ready) return;
+      pauseMenu.setFlashState(flashOn);
+      return true;
+    case 'fireworks':
+      if (!ready) return false;
       stageFx.pyro();
       confetti.burst();
       crowdAudio?.cheer(0.8);
       hypeBoost = Math.max(hypeBoost, 0.25);
       break;
-    default:
-      return;
+    case 'sing':
+      singTestUntil = performance.now() + 4000;
+      return true;
   }
-  lastInteract = now;
+  if (!test) lastInteract = now;
+  return true;
+}
+const KEY_INTERACT: Record<string, TestKind> = {
+  Digit1: 'cheer', Space: 'cheer', Digit2: 'wave', Digit3: 'heart', Digit4: 'flash', Digit5: 'fireworks',
+};
+window.addEventListener('keydown', (e) => {
+  if (paused || state !== 'playing' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e)) return;
+  const kind = KEY_INTERACT[e.code];
+  if (!kind) return;
+  if (e.code === 'Space') e.preventDefault();
+  interact(kind);
 });
+
+// --- Âm lượng: nhạc (AudioEngine.setVolume), tiếng đám đông (setVolume), khán giả hát theo (GainNode riêng) ---
+let singVol: GainNode | null = null;
+function applyVolumes(): void {
+  audio?.setVolume?.(settings.volume.music);
+  crowdAudio?.setVolume(settings.volume.crowd);
+  if (singVol && audio) singVol.gain.setTargetAtTime(settings.volume.sing, audio.ctx.currentTime, 0.03);
+}
+/** Thử "khán giả hát theo" trong menu: hát một đoạn giai điệu ngắn tới thời điểm này (performance.now ms). */
+let singTestUntil = 0;
+const SING_TEST_NOTES = [262, 294, 330, 392, 330, 294];
+
+// --- Module tùy chọn do agent khác thêm (băng rôn, sự kiện bí mật, máy bay): nạp có điều kiện ---
+// import.meta.glob trả {} nếu file chưa có → build/tsc chạy được cả khi module/export chưa tồn tại.
+type OptionalApi = {
+  setCheerBanners?: (lines: string[]) => void;
+  triggerSecret?: (kind?: SecretKind, force?: boolean) => void;
+  setSecretChances?: (c: Partial<Record<SecretKind, number>>) => void;
+  SECRET_CHANCES?: Record<SecretKind, number>;
+  triggerFlyby?: () => void;
+};
+const optionalModules = import.meta.glob([
+  './render/backdropBalloons.ts', './render/secretEvents.ts', './render/backdropFlyby.ts',
+]);
+const optional: OptionalApi = {};
+const optionalReady = Promise.all(Object.values(optionalModules).map((load) => load().then(
+  (m) => {
+    const mod = m as OptionalApi;
+    for (const k of ['setCheerBanners', 'triggerSecret', 'setSecretChances', 'triggerFlyby'] as const) {
+      if (typeof mod[k] === 'function' && !optional[k]) (optional as Record<string, unknown>)[k] = mod[k];
+    }
+    if (mod.SECRET_CHANCES && typeof mod.SECRET_CHANCES === 'object') optional.SECRET_CHANCES = mod.SECRET_CHANCES;
+  },
+  (err) => console.warn('[workshop] không nạp được module tùy chọn', err),
+))).then(() => {
+  if (settings.banners.length) optional.setCheerBanners?.(settings.banners);
+  if (settings.chances) optional.setSecretChances?.(settings.chances);
+  pauseMenu.setSecretAvailable(
+    !!optional.triggerSecret, !!optional.triggerFlyby,
+    settings.chances ?? optional.SECRET_CHANCES ?? { ufo: 0.25, rocket: 0.2, dragon: 0.1 },
+  );
+});
+
+// --- Tạm dừng = "xưởng chỉnh" (nút góc trên phải, hoặc phím Esc) ---
+// Khi dừng: đồng hồ bài, chấm điểm, micro chấm điểm đứng yên; cảnh 3D vẫn chạy bằng "frame xem trước"
+// (beat nội bộ theo BPM bài, Hype chọn trong menu) để thử tương tác. Chỉ nhạc dừng (AudioEngine.pauseMusic),
+// AudioContext vẫn chạy để nghe thử tiếng đám đông / hát theo / thử micro.
+let paused = false;
+let previewHype = 0.5;
+let previewTime = 0;
+let pausedMicKey = '';
+const micKey = () => { const m = micPanel.selection(); return `${m.deviceId ?? ''}|${m.deviceLabel ?? ''}`; };
+const topBar = document.createElement('div');
+topBar.className = 'cs-topbar';
+topBar.dataset.nodrag = '';
+const pill = (id: string, text: string, title: string) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.id = id;
+  b.className = 'cs-pill';
+  b.textContent = text;
+  b.title = title;
+  return b;
+};
+const viewBtn = pill('cs-view-btn', 'Góc máy (V)', 'Đổi góc máy: ca sĩ → flycam → hố → cần cẩu → toàn cảnh');
+const lookBtn = pill('cs-look-btn', 'Chuột tự do (M)', 'Di chuột để xoay, bấm M hoặc Esc để thoát');
+const endBtn = pill('cs-end-btn', 'Kết thúc', 'Kết thúc buổi diễn và xem kết quả');
+const pauseBtn = pill('cs-pause', '❚❚ Tạm dừng', 'Tạm dừng / xưởng chỉnh (Esc)');
+pauseBtn.classList.add('cs-pause-btn');
+topBar.append(viewBtn, lookBtn, endBtn, pauseBtn);
+topBar.hidden = true;
+const lookHint = document.createElement('div');
+lookHint.className = 'cs-look-hint';
+lookHint.textContent = 'Chuột tự do — bấm M hoặc Esc để thoát';
+lookHint.hidden = true;
+uiRoot.append(topBar, lookHint);
+const VIEW_LABEL: Record<string, string> = { singer: 'Ca sĩ', flycam: 'Flycam', pit: 'Hố', crane: 'Cần cẩu', wide: 'Toàn cảnh' };
+function showView(mode: string): void {
+  viewBtn.textContent = `Góc máy: ${VIEW_LABEL[mode] ?? mode} (V)`;
+  pauseMenu.setViewState(mode);
+}
+let lookOffAt = -Infinity; // performance.now() lúc vừa thoát chuột tự do (Esc thoát pointer lock)
+function showLook(on: boolean): void {
+  lookBtn.classList.toggle('on', on);
+  lookHint.hidden = !on || state !== 'playing';
+  pauseMenu.setMouseLookState(on);
+  if (!on) lookOffAt = performance.now();
+}
+window.addEventListener('cs-view', (e) => showView(String((e as CustomEvent<{ mode: string }>).detail?.mode ?? '')));
+window.addEventListener('cs-mouselook', (e) => showLook(!!(e as CustomEvent<{ on: boolean }>).detail?.on));
+document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) lookOffAt = performance.now(); });
+viewBtn.addEventListener('click', () => { controls?.cycleView(1); viewBtn.blur(); });
+lookBtn.addEventListener('click', () => { controls?.setMouseLook(!controls.isMouseLook()); lookBtn.blur(); });
+// Kết thúc có bước xác nhận: bấm lần 1 → "Bấm lần nữa để kết thúc" trong 3 s.
+let endArmedUntil = 0;
+endBtn.addEventListener('click', () => {
+  endBtn.blur();
+  if (performance.now() < endArmedUntil) { endConcert(); return; }
+  endArmedUntil = performance.now() + 3000;
+  endBtn.textContent = 'Bấm lần nữa để kết thúc';
+  endBtn.classList.add('armed');
+});
+
+const pauseMenu = createPauseMenu(uiRoot, {
+  settings,
+  latencyMs: Math.round(latencySec * 1000),
+  onResume: () => setPaused(false),
+  onRestart: () => restartSong(),
+  onEnd: () => endConcert(),
+  onLatency: (ms) => {
+    latencySec = ms / 1000;
+    settings.latencyMs = ms;
+    saveSettings(settings);
+  },
+  onVolume: (kind, v) => {
+    settings.volume[kind] = v;
+    saveSettings(settings);
+    applyVolumes();
+  },
+  onPreviewHype: (h) => { previewHype = h; },
+  getQuality: () => crowd.getQuality?.() ?? null,
+  setQuality: (q) => crowd.setQuality?.(q),
+  onTest: (k) => { interact(k, true); },
+  setView: (v: ViewName) => controls?.setView(v),
+  setMouseLook: (on) => controls?.setMouseLook(on),
+  onBanners: (lines) => {
+    settings.banners = lines;
+    saveSettings(settings);
+    void optionalReady.then(() => optional.setCheerBanners?.(lines));
+  },
+  onSecret: (k) => optional.triggerSecret?.(k, true),
+  onFlyby: () => optional.triggerFlyby?.(),
+  onChance: (k, v) => {
+    const cur = settings.chances ?? { ...(optional.SECRET_CHANCES ?? { ufo: 0.25, rocket: 0.2, dragon: 0.1 }) };
+    cur[k] = v;
+    settings.chances = cur;
+    saveSettings(settings);
+    optional.setSecretChances?.({ [k]: v });
+  },
+  seekBy: (d) => panelControls.seekBy(d),
+  seekTo: (sec) => panelControls.seekTo(sec),
+  songTime: () => audio?.now() ?? 0,
+  duration: () => songDuration(),
+});
+showView(controls?.getViewMode() ?? 'singer');
+showLook(controls?.isMouseLook() ?? false);
+
+/**
+ * on=false, resumeAudio=false: rời chế độ tạm dừng mà không phát nhạc tiếp (hát lại / kết thúc).
+ */
+function setPaused(on: boolean, resumeAudio = true): void {
+  if (on === paused || (on && state !== 'playing')) return;
+  paused = on;
+  pauseBtn.textContent = paused ? '▶ Tiếp tục' : '❚❚ Tạm dừng';
+  if (paused) {
+    previewHype = lastFrame?.hype ?? 0.5;
+    previewTime = lastFrame?.songTime ?? 0;
+    pausedMicKey = micKey();
+    handoverHeld = false;
+    crowdSinging = false;
+    crowdSing?.update(null, 0);
+    singBanner.hidden = true;
+    pauseMenu.open(previewHype, micPanel.el);
+    micPanel.setVisible(true);
+    if (audio?.pauseMusic) {
+      audio.pauseMusic(); // video (nếu có) cũng dừng trong pauseMusic
+    } else {
+      currentVideo?.pause();
+      void audio?.ctx.suspend();
+    }
+  } else {
+    micPanel.setVisible(false); // đóng luồng "Thử micro"
+    pauseMenu.close();
+    if (!resumeAudio) return;
+    // Đổi micro trong lúc dừng → mở lại micro của game với thiết bị mới; độ nhạy áp dụng ngay.
+    if (requestedMic === 'real' && mic && micKey() !== pausedMicKey && audio) void reopenMic();
+    else mic?.setGain?.(micPanel.selection().gain);
+    if (audio?.resumeMusic && audio.musicPaused) {
+      void audio.resume().then(() => audio?.resumeMusic?.());
+    } else {
+      void audio?.ctx.resume().then(() => currentVideo?.play());
+    }
+  }
+}
+pauseBtn.addEventListener('click', () => { setPaused(!paused); pauseBtn.blur(); });
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Escape' || e.repeat) return;
+  // Esc khi đang ở chuột tự do: chỉ thoát chuột tự do. Ngay sau khi trình duyệt tự thoát pointer lock
+  // bằng Esc (~300 ms) thì bỏ qua, để cùng một lần bấm không mở luôn menu tạm dừng.
+  if (controls?.isMouseLook()) { controls.setMouseLook(false); return; }
+  if (performance.now() - lookOffAt < 300) return;
+  if (isTypingTarget(e) && !paused) return;
+  setPaused(!paused);
+});
+// Chuyển tab khác thì tự tạm dừng để không mất điểm.
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
+
+/** Hát lại bài hiện tại từ đầu (từ menu tạm dừng). */
+function restartSong(): void {
+  if (state !== 'playing' && state !== 'countdown') return;
+  setPaused(false, false);
+  audio?.stop();
+  mic?.stop();
+  crowdSing?.update(null, 0);
+  singBanner.hidden = true;
+  setState('menu');
+  void start();
+}
+/** Kết thúc buổi diễn ngay: màn kết quả với điểm hiện có (như hết bài). */
+function endConcert(): void {
+  if (state !== 'playing' && state !== 'countdown') return;
+  setPaused(false, false);
+  finish({ ...(lastFrame?.score ?? idleScore) });
+}
+
 let crowdAudio: CrowdAudio | null = null;
 let ledVideo: HTMLVideoElement | null = null;
 const hud = createHud(uiRoot);
@@ -223,7 +429,12 @@ async function start(): Promise<void> {
     // Tạo/mở khóa AudioContext ngay trong cú bấm của người dùng.
     audio ??= createAudioEngine();
     crowdAudio ??= createCrowdAudio(audio.ctx);
-    crowdSing ??= createCrowdSing(audio.ctx);
+    if (!crowdSing) {
+      singVol = audio.ctx.createGain();
+      singVol.connect(audio.ctx.destination);
+      crowdSing = createCrowdSing(audio.ctx, singVol);
+    }
+    applyVolumes();
     const resumed = audio.resume();
     // Video mới mỗi lần chơi (createMediaElementSource chỉ gọi được 1 lần / phần tử).
     releaseVideo();
@@ -269,32 +480,7 @@ async function start(): Promise<void> {
     chorusLines = hasNotes ? findChorusLines(song) : new Set();
     handoverEnergy = HANDOVER_MAX_SEC;
 
-    mic?.stop();
-    micPanel.stopTest(); // đóng luồng "Thử micro" trước khi mở micro cho game
-    mic = createMic({
-      mode: requestedMic,
-      voiceProcessing: !hasNotes,
-      ...(requestedMic === 'real' ? micPanel.selection() : {}),
-      targetHz: () => {
-        if (!song || !audio) return null;
-        const t = audio.now();
-        if (!hasNotes) {
-          // Micro giả trong chế độ không có nốt: "hát" một cao độ cố định trong câu lời (hoặc suốt bài).
-          // Không có micro thật (chế độ xem) thì không tự "hát": Hype giữ mức nền.
-          if (t < 0 || requestedMic === 'real') return null;
-          if (song.lyrics) return lyricIndexAt(song.lyrics, t) >= 0 ? 220 : null;
-          return 220;
-        }
-        const n = noteAt(song, t);
-        return n && n.type !== 'freestyle' ? pitchToHz(n.pitch) : null;
-      },
-    });
-    const micMode = await mic.start(audio.ctx);
-    hud.setNotice(
-      micMode === 'real' ? null
-        : requestedMic === 'real' ? `Chế độ xem — ${mic.status?.message ?? 'không có micro'}` : `Micro giả: ${micMode}`,
-    );
-    micPanel.showStatus(mic.status ?? null);
+    await openMic();
 
     teleprompter?.dispose();
     teleprompter = video ? createVideoPanel(uiRoot, video, panelControls) : createTeleprompter(uiRoot, song, panelControls);
@@ -312,6 +498,42 @@ async function start(): Promise<void> {
     screens.showError(`Không bắt đầu được: ${err instanceof Error ? err.message : String(err)}`);
     setState('menu');
   }
+}
+
+/** Mở (lại) micro của game theo lựa chọn trong bảng micro. */
+async function openMic(): Promise<void> {
+  if (!audio) return;
+  mic?.stop();
+  micPanel.stopTest(); // đóng luồng "Thử micro" trước khi mở micro cho game
+  const m = createMic({
+    mode: requestedMic,
+    voiceProcessing: !hasNotes,
+    ...(requestedMic === 'real' ? micPanel.selection() : {}),
+    targetHz: () => {
+      if (!song || !audio) return null;
+      const t = audio.now();
+      if (!hasNotes) {
+        // Micro giả trong chế độ không có nốt: "hát" một cao độ cố định trong câu lời (hoặc suốt bài).
+        // Không có micro thật (chế độ xem) thì không tự "hát": Hype giữ mức nền.
+        if (t < 0 || requestedMic === 'real') return null;
+        if (song.lyrics) return lyricIndexAt(song.lyrics, t) >= 0 ? 220 : null;
+        return 220;
+      }
+      const n = noteAt(song, t);
+      return n && n.type !== 'freestyle' ? pitchToHz(n.pitch) : null;
+    },
+  });
+  mic = m;
+  const micMode = await m.start(audio.ctx);
+  if (mic !== m) return;
+  hud.setNotice(
+    micMode === 'real' ? null
+      : requestedMic === 'real' ? `Chế độ xem — ${m.status?.message ?? 'không có micro'}` : `Micro giả: ${micMode}`,
+  );
+  micPanel.showStatus(m.status ?? null);
+}
+async function reopenMic(): Promise<void> {
+  try { await openMic(); } catch (err) { console.error(err); }
 }
 
 // --- Tua bài (nút ⏪/⏩, thanh tiến độ, phím [ ]) và thu nhỏ khung lời (phím T) ---
@@ -360,6 +582,7 @@ function releaseVideo(): void {
 }
 
 function finish(score: ScoreState): void {
+  setPaused(false, false);
   audio?.stop();
   mic?.stop();
   teleprompter?.setVisible(false);
@@ -374,20 +597,32 @@ function finish(score: ScoreState): void {
 }
 
 function tick(dt: number): void {
-  pauseBtn.hidden = state !== 'playing';
-  micPanel.setVisible(state === 'menu' || state === 'result');
+  topBar.hidden = state !== 'playing';
+  if (paused && (state !== 'playing' || !lastFrame)) setPaused(false); // trạng thái đổi (hết bài, chơi lại)
+  micPanel.setVisible(state === 'menu' || state === 'result' || paused);
   if (state === 'countdown' || state === 'playing') hudMicMeter.update(mic);
-  if (paused) {
-    if (state === 'playing' && lastFrame) {
-      // Đứng hình: vẫn vẽ lại (đổi kích thước cửa sổ, camera theo chuột) nhưng không chạy game.
-      stage.update({ ...lastFrame, dt: 0 });
-      stage.render();
-      return;
-    }
-    setPaused(false); // trạng thái đổi (hết bài, chơi lại) thì bỏ tạm dừng
+  controlsGuide.setActive(state === 'playing' && !paused);
+  lookHint.hidden = !(controls?.isMouseLook() ?? false) || state !== 'playing';
+  if (endArmedUntil && performance.now() > endArmedUntil) {
+    endArmedUntil = 0;
+    endBtn.textContent = 'Kết thúc';
+    endBtn.classList.remove('armed');
   }
   let f: FrameState;
-  if ((state === 'countdown' || state === 'playing') && song && audio && mic) {
+  if (paused && lastFrame && song) {
+    // Xưởng chỉnh: frame xem trước — không đụng đồng hồ bài, điểm hay khung lời.
+    previewTime += dt;
+    const beat = visualBeat(previewTime, song);
+    f = {
+      ...lastFrame, dt, beat, beatPulse: beatPulse(beat), level: 0.25 + 0.35 * previewHype * beatPulse(beat),
+      hype: previewHype, waveMode: previewHype > 0.7 ? 1 : 0, pitch: null,
+    };
+    pauseMenu.update();
+    // Thử "khán giả hát theo": vài nốt giai điệu.
+    const singing = performance.now() < singTestUntil;
+    const hz = SING_TEST_NOTES[Math.floor(previewTime * 2) % SING_TEST_NOTES.length];
+    crowdSing?.update(singing ? hz : null, singing ? 0.8 : 0);
+  } else if ((state === 'countdown' || state === 'playing') && song && audio && mic) {
     const songTime = audio.now();
     if (state === 'countdown' && songTime >= 0) setState('playing');
     let pitch = mic.read();
@@ -446,7 +681,6 @@ function tick(dt: number): void {
   hypeBoost = Math.max(0, hypeBoost - dt * 0.12);
   if (state !== 'playing') crowdSinging = false;
   if (crowdSinging) hypeBoost = Math.max(hypeBoost, 0.2);
-  hint.hidden = state !== 'playing';
   if (state === 'playing') {
     const waving = performance.now() < waveUntil;
     if (hypeBoost > 0 || waving) {
@@ -464,7 +698,8 @@ function tick(dt: number): void {
   stage.update(f);
   updateCrew(f);
   stage.render();
-  lastFrame = f;
+  // Frame xem trước không ghi đè lastFrame: đồng hồ/điểm/Hype thật giữ nguyên khi tiếp tục.
+  if (!paused) lastFrame = f;
 }
 
 // Hook cho kiểm thử tự động (Playwright) và debug.
@@ -480,6 +715,10 @@ declare global {
       readonly video: HTMLVideoElement | null;
       /** false khi bài không có nốt (không chấm cao độ). */
       readonly hasNotes: boolean;
+      /** Đang tạm dừng (xưởng chỉnh). */
+      readonly paused: boolean;
+      /** Đồng hồ bài đọc trực tiếp từ AudioEngine (không chờ frame). */
+      readonly songClock: number;
       /** Nhập bài từ máy bằng code (giống chọn file). */
       importFiles(files: File[]): Promise<void>;
       bus: EventBus;
@@ -499,6 +738,8 @@ window.__game = {
   get drawCalls() { return stage.renderer.info.render.calls; },
   get video() { return currentVideo; },
   get hasNotes() { return hasNotes; },
+  get paused() { return paused; },
+  get songClock() { return audio?.now() ?? 0; },
   importFiles: (files) => { localFiles = files; return start(); },
   bus,
   start,

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import type { CrowdOptions, FrameState, Updatable } from '../core/types';
 import vert from './crowd.vert.glsl?raw';
 import frag from './crowd.frag.glsl?raw';
+import { distanceToWalkway, pushOutOfWalkways } from './walkLayout';
 
 /** Bán kính hàng đầu (m) tính từ ca sĩ. */
 const R0 = 6.5;
@@ -71,46 +72,19 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** Lối catwalk giữa khán giả (sàn y = 0): nửa rộng 1,6 m, z từ -5 tới -24, bục tròn R 3,5 m tại (0, -26). */
-const RUNWAY = { halfWidth: 1.6, endZ: -24, platformZ: -26, platformR: 3.5 };
-/** Khoảng trống quanh catwalk (m): không ai đứng trong |x| < CLEAR_X khi z > CLEAR_Z, hay trong CLEAR_R quanh bục. */
-const CLEAR_X = 2.6;
-const CLEAR_Z = -24.5;
-const CLEAR_R = 4.6;
+/** Khoảng trống (m) giữa khán giả và mép mọi runway/bục (walkLayout): ~2,3–2,6 m từ tim lối. */
+const WALK_CLEAR = 1.0;
 
 /**
- * Đẩy người khỏi lối catwalk & bục tròn sang chỗ trống gần nhất (giữ tổng số người).
- * Lặp vài lần vì đẩy khỏi lối có thể rơi vào vùng bục và ngược lại.
+ * An toàn: đẩy người còn dính vào lối đi/bục (sau jitter) ra ngoài theo pháp tuyến, giữ tổng số người.
+ * Lưới đã tránh lối (validSpot) nên thường không đẩy ai; không đẩy vào lối đi chia khu khác thì cũng ổn.
  */
 function clearRunway(people: Person[], rand: () => number): void {
   for (const p of people) {
-    for (let it = 0; it < 6; it++) {
-      let moved = false;
-      const dx = p.x;
-      const dz = p.z - RUNWAY.platformZ;
-      const r = Math.hypot(dx, dz);
-      if (r < CLEAR_R) {
-        // Đẩy theo hướng tâm bục; người đứng gần như đúng tâm → chọn hướng ngẫu nhiên phía sau.
-        let ux = dx / Math.max(r, 1e-3);
-        let uz = dz / Math.max(r, 1e-3);
-        if (r < 1e-3) {
-          const a = Math.PI * (0.25 + rand() * 0.5);
-          ux = Math.cos(a);
-          uz = -Math.sin(a);
-        }
-        const nr = CLEAR_R + 0.05 + rand() * 0.9;
-        p.x = ux * nr;
-        p.z = RUNWAY.platformZ + uz * nr;
-        moved = true;
-      }
-      if (p.z > CLEAR_Z && Math.abs(p.x) < CLEAR_X) {
-        const s = p.x === 0 ? (rand() < 0.5 ? -1 : 1) : Math.sign(p.x);
-        // Dồn vào sát hàng rào hai bên lối (đám đông chen lên mép catwalk).
-        p.x = s * (CLEAR_X + 0.05 + rand() * 1.1);
-        moved = true;
-      }
-      if (!moved) break;
-    }
+    if (distanceToWalkway(p.x, p.z) >= WALK_CLEAR) continue;
+    const q = pushOutOfWalkways(p.x, p.z, WALK_CLEAR, rand() * 0.9);
+    p.x = q.x;
+    p.z = q.z;
     p.dist = Math.hypot(p.x, p.z);
   }
 }
@@ -129,8 +103,7 @@ const DEG = Math.PI / 180;
 /** Vị trí (x, z) có nằm trong khu đứng hợp lệ không (trước hàng rào, ngoài catwalk/bục, ngoài lối đi). */
 function validSpot(x: number, z: number, r: number, rMax: number): boolean {
   if (z > -BARRIER_Z) return false;
-  if (z > CLEAR_Z && Math.abs(x) < CLEAR_X) return false;
-  if (Math.hypot(x, z - RUNWAY.platformZ) < CLEAR_R) return false;
+  if (distanceToWalkway(x, z) < WALK_CLEAR) return false;
   const hw = AISLES.width / 2;
   if (rMax > AISLES.ringR + 4 && Math.abs(r - AISLES.ringR) < hw) return false;
   const f = -z; // khoảng cách về phía trước (trục -Z)
@@ -313,11 +286,18 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
     uHype: { value: 0.3 },
     uWaveMode: { value: 0 },
     uWaveMix: { value: 0 },
+    /** "Sóng biển": pha tích lũy theo phách (2π mỗi ô nhịp 4 phách), chu kỳ 8π để mọi đoàn sóng khớp pha. */
+    uWavePhase: { value: 0 },
+    /** 0 = sóng lan ra từ sân khấu, 1 = sóng sân vận động trái → phải; đổi luân phiên mỗi lần bật lại. */
+    uWaveDir: { value: 0 },
     uColorA: { value: COLOR_A.clone() },
     uColorB: { value: COLOR_B.clone() },
     uFlash: { value: 0 },
     uLodDist: { value: CROWD_QUALITY.lodDist },
   };
+  let waveWasOn = false;
+  let waveCount = 0;
+  let lastBeat = 0;
   let flashManual: number | null = null;
   let levelSmooth = 0.5;
   let autoOn = false;
@@ -389,8 +369,20 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
       shared.uHype.value = THREE.MathUtils.clamp(f.hype, 0, 1);
       shared.uWaveMode.value = f.waveMode;
       const target = f.waveMode === 1 ? 1 : 0;
-      const k = 1 - Math.exp(-f.dt * 2.5); // ~0,4 s chuyển mượt giữa đồng màu và sóng
-      shared.uWaveMix.value += (target - shared.uWaveMix.value) * k;
+      // Bật lại khi sóng cũ đã tắt hẳn → đổi kiểu sóng (không đổi giữa chừng nên không giật).
+      if (target === 1 && !waveWasOn && shared.uWaveMix.value < 0.02) {
+        shared.uWaveDir.value = waveCount++ % 2;
+      }
+      waveWasOn = target === 1;
+      // Tuyến tính ~1 s (shader làm mượt thêm bằng smoothstep).
+      const wv = shared.uWaveMix.value;
+      shared.uWaveMix.value = target > wv ? Math.min(1, wv + f.dt) : Math.max(0, wv - f.dt);
+      // Pha sóng theo phách: 1 đỉnh chính đi qua mỗi ô nhịp; hype rất cao → nhanh hơn tới 1,5×.
+      let dBeat = f.beat - lastBeat;
+      if (!(dBeat >= 0 && dBeat < 2)) dBeat = f.dt * 2; // tua / đổi bài: giả định 120 BPM cho frame này
+      lastBeat = f.beat;
+      const fast = 1 + 0.5 * THREE.MathUtils.smoothstep(f.hype, 0.8, 1);
+      shared.uWavePhase.value = (shared.uWavePhase.value + dBeat * (Math.PI / 2) * fast) % (Math.PI * 8);
 
       let flashTarget: number;
       if (flashManual !== null) {

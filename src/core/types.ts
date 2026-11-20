@@ -188,6 +188,15 @@ export interface AudioEngine {
    */
   seek?(sec: number): void;
   /**
+   * (Bổ sung) Dừng riêng nhạc ở vị trí hiện tại (AudioContext vẫn chạy cho tiếng đám đông / thử micro).
+   * Trong lúc dừng now() đứng yên; seek() chỉ dời vị trí. resumeMusic() phát tiếp đúng vị trí đó.
+   */
+  pauseMusic?(): void;
+  resumeMusic?(): void;
+  readonly musicPaused?: boolean;
+  /** (Bổ sung) Âm lượng nhạc 0..2 (1 = gốc). Không ảnh hưởng level(). */
+  setVolume?(v: number): void;
+  /**
    * Đồng hồ bài hát (giây) = ctx.currentTime - startAt - outputLatency.
    * Nguồn thời gian DUY NHẤT cho lời, nốt, beat, shader. Trả 0 khi chưa play.
    */

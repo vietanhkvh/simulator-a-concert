@@ -3,6 +3,7 @@
  * DOM chỉ dựng lại khi đổi câu; mỗi frame chỉ đổi CSS variable / transform.
  */
 import type { FrameState, Line, LyricLine, Note, PanelControls, Song, Teleprompter } from '../core/types';
+import { createFloatWindow, type FloatLayout, type FloatWindow } from './floatWindow';
 import './style.css';
 
 const REST_COUNTDOWN_SEC = 3; // nghỉ dài hơn mức này thì hiện thanh đếm ngược
@@ -36,11 +37,11 @@ function fmtTime(sec: number): string {
 }
 
 /**
- * Thanh nhỏ gắn mép trên khung lời / video: tua ±10 s, giờ hiện tại / độ dài, thanh tiến độ bấm để tua,
+ * Thanh tiêu đề của cửa sổ nổi khung lời / video (kéo để di chuyển): tua ±10 s, giờ hiện tại / độ dài, thanh tiến độ bấm để tua,
  * nút Thu nhỏ / Mở rộng (lớp `cs-min` trên khung, nhớ trong localStorage).
  */
-function attachPanelBar(wrap: HTMLElement, controls: PanelControls | undefined) {
-  const bar = el('div', 'cs-panel-bar', wrap);
+function attachPanelBar(fw: FloatWindow, controls: PanelControls | undefined) {
+  const bar = el('div', 'cs-panel-bar');
   const mkBtn = (cls: string, text: string, title: string) => {
     const b = el('button', `cs-panel-btn ${cls}`, bar);
     b.type = 'button';
@@ -63,7 +64,7 @@ function attachPanelBar(wrap: HTMLElement, controls: PanelControls | undefined) 
   let lastFrac = -1;
   const setMinimized = (on: boolean) => {
     minimized = on;
-    wrap.classList.toggle('cs-min', on);
+    fw.setMinimized(on);
     toggle.textContent = on ? '⤢ Mở rộng' : '⤡ Thu nhỏ';
     try {
       localStorage.setItem(MIN_KEY, on ? '1' : '0');
@@ -71,6 +72,7 @@ function attachPanelBar(wrap: HTMLElement, controls: PanelControls | undefined) 
       /* không có localStorage */
     }
   };
+  fw.attachBar(bar);
   setMinimized(loadMinimized());
   const click = (b: HTMLButtonElement, fn: () => void) =>
     b.addEventListener('click', (e) => {
@@ -109,6 +111,34 @@ function attachPanelBar(wrap: HTMLElement, controls: PanelControls | undefined) 
   };
 }
 
+const vw = () => window.innerWidth;
+const vh = () => window.innerHeight;
+/** Bề rộng tự nhiên của bố cục lời (như trước: min(1080px, 92vw)). */
+const tpBaseWidth = () => Math.min(1080, 0.92 * vw());
+
+/** Cửa sổ nổi cho khung lời: nội dung `.cs-tp` giữ bề rộng tự nhiên, cửa sổ chỉ cắt. */
+function createTpWindow(root: HTMLElement, extraCls: string): { fw: FloatWindow; wrap: HTMLElement } {
+  const fw = createFloatWindow(root, {
+    storageKey: 'cs-fw-lyrics',
+    className: 'cs-fw-tp',
+    baseWidth: tpBaseWidth,
+    defaultLayout(contentH, barH): FloatLayout {
+      const w = tpBaseWidth();
+      const h = Math.max(60, barH + contentH);
+      return { x: (vw() - w) / 2, y: vh() - h - 0.035 * vh(), w, h, px: 0, py: 0, z: 1 };
+    },
+    minimizedLayout(contentH, barH): FloatLayout {
+      const w = Math.min(640, 0.8 * vw());
+      const h = barH + contentH;
+      return { x: (vw() - w) / 2, y: vh() - h - 0.015 * vh(), w, h, px: 0, py: 0, z: 1 };
+    },
+  });
+  const wrap = fw.content;
+  wrap.classList.add('cs-tp');
+  if (extraCls) wrap.classList.add(extraCls);
+  return { fw, wrap };
+}
+
 interface NoteView {
   note: Note;
   fill: HTMLElement | null;
@@ -124,24 +154,22 @@ export function createTeleprompter(root: HTMLElement, song: Song, controls?: Pan
   if (song.lyrics) return createLrcTeleprompter(root, song.lyrics, controls);
   if (song.lines.length === 0) {
     // Hát tự do: không có lời, chỉ có thanh tua.
-    const wrap = el('div', 'cs-tp cs-tp-free');
-    root.appendChild(wrap);
-    const bar = attachPanelBar(wrap, controls);
+    const { fw } = createTpWindow(root, 'cs-tp-free');
+    const bar = attachPanelBar(fw, controls);
     return {
       update: (f: FrameState) => bar.update(f.songTime),
       setVisible(v) {
-        wrap.style.display = v ? '' : 'none';
+        fw.el.style.display = v ? '' : 'none';
       },
       setMinimized: bar.setMinimized,
       get minimized() {
         return bar.minimized;
       },
-      dispose: () => wrap.remove(),
+      dispose: () => fw.dispose(),
     };
   }
-  const wrap = el('div', 'cs-tp');
-  root.appendChild(wrap);
-  const bar = attachPanelBar(wrap, controls);
+  const { fw, wrap } = createTpWindow(root, '');
+  const bar = attachPanelBar(fw, controls);
 
   const countdown = el('div', 'cs-tp-count', wrap);
   const countFill = el('div', 'cs-tp-count-fill', countdown);
@@ -318,13 +346,13 @@ export function createTeleprompter(root: HTMLElement, song: Song, controls?: Pan
       }
     },
     setVisible(v) {
-      wrap.style.display = v ? '' : 'none';
+      fw.el.style.display = v ? '' : 'none';
     },
     setMinimized: bar.setMinimized,
     get minimized() {
       return bar.minimized;
     },
-    dispose: () => wrap.remove(),
+    dispose: () => fw.dispose(),
   };
 }
 
@@ -333,9 +361,8 @@ export function createTeleprompter(root: HTMLElement, song: Song, controls?: Pan
  * Không có dải cao độ.
  */
 export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[], controls?: PanelControls): Teleprompter {
-  const wrap = el('div', 'cs-tp cs-tp-lrc');
-  root.appendChild(wrap);
-  const bar = attachPanelBar(wrap, controls);
+  const { fw, wrap } = createTpWindow(root, 'cs-tp-lrc');
+  const bar = attachPanelBar(fw, controls);
   const countdown = el('div', 'cs-tp-count', wrap);
   const countFill = el('div', 'cs-tp-count-fill', countdown);
   const curEl = el('div', 'cs-tp-cur', wrap);
@@ -384,26 +411,45 @@ export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[], co
       if (showCount) countFill.style.transform = `scaleX(${Math.min(1, wait / 6).toFixed(3)})`;
     },
     setVisible(v) {
-      wrap.style.display = v ? '' : 'none';
+      fw.el.style.display = v ? '' : 'none';
     },
     setMinimized: bar.setMinimized,
     get minimized() {
       return bar.minimized;
     },
-    dispose: () => wrap.remove(),
+    dispose: () => fw.dispose(),
   };
 }
 
 /**
- * Khung video karaoke ở giữa-dưới (chỗ teleprompter) để người chơi đọc lời in sẵn trong video.
+ * Khung video karaoke (cửa sổ nổi, mặc định giữa-dưới) để người chơi đọc lời in sẵn trong video.
+ * Video giữ cỡ tự nhiên 720 px × tỉ lệ; cửa sổ chỉ cắt, nút −/+ đổi tỉ lệ.
  * Phần tử video do main.ts tạo; khung chỉ gắn vào DOM, không điều khiển phát.
  */
 export function createVideoPanel(root: HTMLElement, video: HTMLVideoElement, controls?: PanelControls): Teleprompter {
-  const wrap = el('div', 'cs-video-panel');
-  const bar = attachPanelBar(wrap, controls);
+  const BASE_W = 720; // bề rộng "đầy đủ" của video (px, tỉ lệ 100%)
+  const fw = createFloatWindow(root, {
+    storageKey: 'cs-fw-video',
+    className: 'cs-video-panel',
+    baseWidth: () => BASE_W,
+    defaultLayout(contentH, barH): FloatLayout {
+      const ch = contentH || BASE_W * (9 / 16);
+      // Như trước: rộng tối đa 60vw, video cao tối đa 42vh — thu tỉ lệ cho vừa nhưng vẫn thấy cả video.
+      const z = Math.max(0.5, Math.min(1, (0.6 * vw()) / BASE_W, (0.42 * vh()) / ch));
+      const w = BASE_W * z;
+      const h = barH + ch * z;
+      return { x: (vw() - w) / 2, y: vh() - h - 0.025 * vh(), w, h, px: 0, py: 0, z };
+    },
+    minimizedLayout(contentH, barH): FloatLayout {
+      const w = 220;
+      const z = w / BASE_W;
+      const h = barH + (contentH || BASE_W * (9 / 16)) * z;
+      return { x: vw() - w - 16, y: vh() - h - 16, w, h, px: 0, py: 0, z };
+    },
+  });
+  const bar = attachPanelBar(fw, controls);
   video.classList.add('cs-video');
-  wrap.appendChild(video);
-  root.appendChild(wrap);
+  fw.content.appendChild(video);
   return {
     update: (f: FrameState) => bar.update(f.songTime),
     setMinimized: bar.setMinimized,
@@ -411,11 +457,11 @@ export function createVideoPanel(root: HTMLElement, video: HTMLVideoElement, con
       return bar.minimized;
     },
     setVisible(v) {
-      wrap.style.display = v ? '' : 'none';
+      fw.el.style.display = v ? '' : 'none';
     },
     dispose: () => {
-      if (video.parentElement === wrap) wrap.removeChild(video);
-      wrap.remove();
+      if (video.parentElement === fw.content) fw.content.removeChild(video);
+      fw.dispose();
     },
   };
 }

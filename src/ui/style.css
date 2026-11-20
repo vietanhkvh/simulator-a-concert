@@ -283,3 +283,121 @@
   border-radius: 3px; background: rgba(255, 255, 255, 0.2); overflow: hidden;
 }
 .cs-hud-mic-level[hidden] { display: none; }
+
+/* ───── Cửa sổ nổi cho khung lời / video (ui/floatWindow.ts): kéo thanh để di chuyển, kéo mép/góc để đổi cỡ.
+   Đổi cỡ chỉ CẮT: nội dung giữ cỡ tự nhiên, neo góc trên-trái trong .cs-fw-view (overflow hidden). ───── */
+.cs-fw, .cs-fw.cs-video-panel, .cs-fw.cs-video-panel.cs-min { position: fixed; right: auto; bottom: auto; transform: none;
+  display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; pointer-events: auto; z-index: 10;
+  border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(6, 4, 16, 0.22);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); font-family: var(--cs-font); }
+.cs-fw.cs-video-panel { background: #000; }
+.cs-fw > .cs-panel-bar.cs-fw-bar { position: relative; left: auto; right: auto; bottom: auto; transform: none; margin: 0;
+  flex: none; border-radius: 0; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.18); gap: 6px; padding: 3px 6px;
+  overflow: hidden; cursor: move; touch-action: none; user-select: none; -webkit-user-select: none; }
+.cs-fw-bar .cs-panel-btn { padding: 2px 8px; flex: none; }
+.cs-fw-bar .cs-panel-prog { flex: 0 1 140px; min-width: 40px; }
+.cs-fw-zoom { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.cs-fw-zoom .cs-panel-btn { padding: 2px 7px; }
+.cs-fw-zoom-val { min-width: 36px; text-align: center; font-variant-numeric: tabular-nums; color: #e8e4ff; }
+.cs-fw-view { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; cursor: grab; touch-action: none;
+  user-select: none; -webkit-user-select: none; }
+.cs-fw.cs-fw-active .cs-fw-view { cursor: grabbing; }
+.cs-fw-content { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.cs-fw .cs-fw-content.cs-tp { position: absolute; left: 0; top: 0; bottom: auto; padding: 6px 0 8px; box-sizing: border-box; }
+.cs-fw .cs-fw-content.cs-tp.cs-min { bottom: auto; padding: 4px 0; }
+.cs-fw .cs-fw-content .cs-video, .cs-fw.cs-video-panel.cs-min .cs-video { display: block; width: 100%; height: auto;
+  max-height: none; border-radius: 0; pointer-events: none; }
+.cs-fw-h { position: absolute; z-index: 6; touch-action: none; }
+.cs-fw-h-n, .cs-fw-h-s { left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.cs-fw-h-n { top: 0; }
+.cs-fw-h-s { bottom: 0; }
+.cs-fw-h-e, .cs-fw-h-w { top: 12px; bottom: 12px; width: 6px; cursor: ew-resize; }
+.cs-fw-h-e { right: 0; }
+.cs-fw-h-w { left: 0; }
+.cs-fw-h-ne, .cs-fw-h-nw, .cs-fw-h-se, .cs-fw-h-sw { width: 14px; height: 14px; }
+.cs-fw-h-nw { left: 0; top: 0; cursor: nwse-resize; }
+.cs-fw-h-se { right: 0; bottom: 0; cursor: nwse-resize; }
+.cs-fw-h-ne { right: 0; top: 0; cursor: nesw-resize; }
+.cs-fw-h-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+.cs-fw-h-se::after { content: ''; position: absolute; right: 2px; bottom: 2px; width: 7px; height: 7px; pointer-events: none;
+  border-right: 2px solid rgba(255, 255, 255, 0.55); border-bottom: 2px solid rgba(255, 255, 255, 0.55); }
+.cs-fw:hover { border-color: rgba(160, 140, 255, 0.6); }
+/* Thu nhỏ (phím T): khung gọn cố định, không kéo / đổi cỡ; thanh chỉ còn giờ + nút mở rộng. */
+.cs-fw.cs-min .cs-fw-h, .cs-fw.cs-min .cs-seek-back, .cs-fw.cs-min .cs-seek-fwd, .cs-fw.cs-min .cs-panel-prog,
+.cs-fw.cs-min .cs-fw-zoom, .cs-fw.cs-min .cs-fw-reset { display: none; }
+.cs-fw.cs-min > .cs-fw-bar, .cs-fw.cs-min .cs-fw-view { cursor: default; }
+
+/* ───── Thanh nút góc trên phải khi đang diễn (góc máy, chuột tự do, kết thúc, tạm dừng) ───── */
+.cs-topbar { position: fixed; right: 16px; top: 50px; z-index: 30; display: flex; gap: 6px; flex-wrap: wrap;
+  justify-content: flex-end; max-width: calc(100vw - 32px); pointer-events: none; font-family: var(--cs-font); }
+.cs-topbar[hidden] { display: none; }
+.cs-pill { font: 600 12px var(--cs-font); color: #fff; background: rgba(8, 6, 20, 0.7); pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.cs-pill:hover { background: rgba(106, 76, 255, 0.6); }
+.cs-pill.on { background: rgba(61, 220, 132, 0.35); border-color: #3ddc84; }
+.cs-pill.armed { background: rgba(194, 24, 91, 0.85); border-color: #ff6fa5; }
+.cs-topbar .cs-pause-btn { position: static; font-size: 13px; padding: 6px 14px; }
+.cs-keys-hint { display: none; }
+.cs-look-hint { position: fixed; left: 50%; top: 104px; transform: translateX(-50%); z-index: 25; pointer-events: none;
+  font: 600 13px var(--cs-font); color: #fff; background: rgba(8, 6, 20, 0.7); border: 1px solid rgba(124, 255, 176, 0.6);
+  border-radius: 999px; padding: 5px 14px; }
+.cs-look-hint[hidden] { display: none; }
+
+/* ───── Menu tạm dừng / xưởng chỉnh (ui/pauseMenu.ts): dock phải, sân khấu vẫn thấy bên trái ───── */
+.cs-pm { position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 100vw); z-index: 40; overflow-y: auto;
+  overscroll-behavior: contain; background: rgba(10, 8, 24, 0.82); backdrop-filter: blur(6px);
+  border-left: 1px solid rgba(255, 255, 255, 0.2); color: #fff; font: 13px var(--cs-font); pointer-events: auto;
+  padding: 14px 16px 24px; box-sizing: border-box; }
+.cs-pm[hidden] { display: none; }
+.cs-pm-head { font-size: 22px; font-weight: 800; letter-spacing: 0.03em; margin-bottom: 8px; }
+.cs-pm-sub { font-size: 13px; font-weight: 400; opacity: 0.7; letter-spacing: 0; }
+.cs-pm-sec { border-top: 1px solid rgba(255, 255, 255, 0.12); padding: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.cs-pm-sec[hidden], .cs-pm [hidden] { display: none; }
+.cs-pm-sec h3 { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: #b9a8ff; }
+.cs-pm-main { border-top: 0; }
+.cs-pm-btn { font: 600 12px var(--cs-font); color: #fff; background: rgba(255, 255, 255, 0.08); cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 999px; padding: 5px 12px; }
+.cs-pm-btn:hover { background: rgba(124, 92, 255, 0.55); }
+.cs-pm-btn.on { background: rgba(61, 220, 132, 0.3); border-color: #3ddc84; }
+.cs-pm-main .cs-pm-btn { font-size: 14px; padding: 8px 14px; border-radius: 10px; text-align: left; }
+.cs-pm-primary { background: rgba(124, 92, 255, 0.6); }
+.cs-pm-danger { border-color: #ff6fa5; }
+.cs-pm-danger:hover { background: rgba(194, 24, 91, 0.7); }
+.cs-pm-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-pm-row { display: flex; align-items: center; gap: 8px; }
+.cs-pm-row input[type='range'] { flex: 1; min-width: 0; }
+.cs-pm-val { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.cs-pm-note { font-size: 12px; opacity: 0.7; }
+.cs-pm-chances { display: flex; gap: 10px; flex-wrap: wrap; }
+.cs-pm-chances input { width: 52px; font: inherit; color: #fff; background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; padding: 2px 4px; }
+.cs-pm-banners { width: 100%; box-sizing: border-box; resize: vertical; font: 14px var(--cs-font); color: #fff;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 8px; padding: 6px 8px; }
+.cs-pm-scrub { width: 100%; }
+.cs-pm-time { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+.cs-pm-mic .cs-mic-panel { position: static; width: auto; max-width: none; margin: 0; box-shadow: none;
+  background: rgba(255, 255, 255, 0.05); }
+.cs-pm .cs-cg-group { margin: 0; }
+
+/* ───── Hướng dẫn phím kiểu game (ui/controlsGuide.ts): dock trái, giữa màn ───── */
+.cs-cg { position: fixed; left: 16px; top: 120px; z-index: 20; width: 248px; max-height: calc(100vh - 360px);
+  min-height: 120px; overflow-y: auto; background: rgba(8, 6, 20, 0.62); border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px; padding: 8px 12px 10px; color: #fff; font: 12px var(--cs-font); pointer-events: auto; }
+.cs-cg[hidden], .cs-cg-toggle[hidden] { display: none; }
+.cs-cg-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 13px;
+  letter-spacing: 0.06em; margin-bottom: 2px; }
+.cs-cg-close { font: 700 16px var(--cs-font); color: #fff; background: none; border: 0; cursor: pointer; opacity: 0.7; line-height: 1; }
+.cs-cg-close:hover { opacity: 1; }
+.cs-cg-group { margin-top: 6px; }
+.cs-cg-title { font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #b9a8ff; margin: 4px 0 2px; }
+.cs-cg-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.cs-cg-label { white-space: nowrap; color: #e8e4ff; }
+.cs-cg-dots { flex: 1; min-width: 8px; border-bottom: 1px dotted rgba(255, 255, 255, 0.3); transform: translateY(3px); }
+.cs-cg-keys { white-space: nowrap; color: #c9c3e6; font-size: 11px; }
+.cs-kc { display: inline-block; min-width: 18px; padding: 1px 5px; margin: 0 1px; text-align: center; box-sizing: border-box;
+  font: 700 11px ui-monospace, monospace; color: #fff; background: linear-gradient(#3a3458, #241f3a);
+  border: 1px solid rgba(255, 255, 255, 0.35); border-bottom-width: 2px; border-radius: 4px; }
+.cs-cg-toggle { position: fixed; left: 16px; top: 120px; z-index: 20; width: 30px; height: 30px; border-radius: 50%;
+  font: 800 15px var(--cs-font); color: #fff; background: rgba(8, 6, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer; pointer-events: auto; }
+.cs-cg-toggle:hover { background: rgba(106, 76, 255, 0.6); }

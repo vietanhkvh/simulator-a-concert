@@ -1,5 +1,6 @@
 // Đèn sân khấu giả (additive, không Light thật, không bóng). 5 draw call (3 + 2 đèn trang trí): chùm sáng, flare/chấm, vệt màu sàn.
 import * as THREE from 'three';
+import { WALK_SHAPES, edgeRuns, shapeSignedDist, chaseDistance } from './walkLayout';
 import type { FrameState, Updatable } from '../core/types';
 import { PALETTES, COOL, palColor, livePal } from './stageDecoPal';
 import { createDecoFixtures } from './stageDecoFixtures';
@@ -143,17 +144,39 @@ export function createLights(scene: THREE.Scene): Updatable {
   order.forEach((fi, r) => (rank[fi] = r));
 
   // chấm runway + vòng sân
+  // (theo walkLayout: mọi runway/lối ngang có chấm hai mép, mọi bục có vòng chấm)
   const dotPos: THREE.Vector3[] = [];
-  const RUN = 14;
-  for (let k = 0; k < RUN; k++) {
-    const z = -5.5 - k * 1.35;
-    dotPos.push(new THREE.Vector3(-1.6, 0.12, z), new THREE.Vector3(1.6, 0.12, z));
-  }
-  for (let k = 0; k < 10; k++) {
-    const a = (k / 10) * Math.PI * 2;
-    dotPos.push(new THREE.Vector3(PLAT.x + Math.cos(a) * 3.1, 0.12, PLAT.z + Math.sin(a) * 3.1));
+  /** ≥ 0: hàng chase (tăng dần ra xa sân khấu); < 0: chấm vòng bục (-1 - chỉ số trên vòng). */
+  const dotRow: number[] = [];
+  const DOT_STEP = 1.35;
+  for (const sh of WALK_SHAPES) {
+    if (!sh.mesh) continue;
+    if (sh.kind === 'disc') {
+      const r = sh.r - 0.4;
+      const n = Math.max(8, Math.round((2 * Math.PI * r) / 2));
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2;
+        const x = sh.x + Math.cos(a) * r, z = sh.z + Math.sin(a) * r;
+        if (WALK_SHAPES.some((o) => o !== sh && o.mesh && shapeSignedDist(o, x, z) < 0.25)) continue;
+        dotPos.push(new THREE.Vector3(x, 0.12, z));
+        dotRow.push(-1 - k);
+      }
+    } else {
+      for (const run of edgeRuns(sh, 0.1, 0)) {
+        const [ax, az] = run.pts[0]!, [bx, bz] = run.pts[run.pts.length - 1]!;
+        const L = Math.hypot(bx - ax, bz - az);
+        const n = Math.max(1, Math.round(L / DOT_STEP));
+        for (let k = 0; k <= n; k++) {
+          const t = n ? (k + 0.5) / (n + 1) : 0.5;
+          const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+          dotPos.push(new THREE.Vector3(x, 0.12, z));
+          dotRow.push(Math.round(chaseDistance(x, z) / DOT_STEP));
+        }
+      }
+    }
   }
   const ND = dotPos.length;
+  const RUN = dotRow.reduce((m, r) => Math.max(m, r), 0) + 1;
 
   // vệt màu khán giả
   const washBase: [number, number][] = [
@@ -291,19 +314,20 @@ export function createLights(scene: THREE.Scene): Updatable {
       }
 
       // chấm runway chase về phía sân cuối (chỉ số tăng = xa dần)
-      const head = (beat * (1 + hype)) % (RUN + 4);
+      const CHASE = Math.min(RUN + 4, 18); // nhiều đợt chase cùng lúc trên lối dài
+      const head = (beat * (1 + hype)) % CHASE;
       for (let k = 0; k < ND; k++) {
         const j = NBT + k;
         let b: number;
         let col: THREE.Color;
-        if (k < RUN * 2) {
-          const row = k >> 1;
-          let d = head - row;
-          if (d < 0) d += RUN + 4;
+        if (dotRow[k]! >= 0) {
+          const row = dotRow[k]!;
+          let d = (head - row) % CHASE;
+          if (d < 0) d += CHASE;
           b = 0.18 + 0.82 * Math.max(0, 1 - d / 4.5);
           col = palColor(pCur, row, beat, cA);
         } else {
-          const kk = k - RUN * 2;
+          const kk = -1 - dotRow[k]!;
           b = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(p * 2 - kk * 0.63));
           col = palColor(pCur, kk, beat, cA);
         }

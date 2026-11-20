@@ -1,16 +1,42 @@
 // Đi lại (phím mũi tên) + nhìn 360° (kéo chuột/chạm, Q/E). Giới hạn trong sân khấu ∪ runway ∪ bục tròn.
 import * as THREE from 'three';
+import { isWalkable, clampToWalkable, nearestWalkable, WALK_MARGIN } from './walkLayout';
 
 const PITCH_MIN = THREE.MathUtils.degToRad(-35);
 const PITCH_MAX = THREE.MathUtils.degToRad(45);
 const SPEED = 4;
 const EYE = 1.65;
 
+/** Đứng được (sân khấu ∪ mọi runway/bục trong walkLayout, lề WALK_MARGIN). */
 export function walkable(x: number, z: number): boolean {
-  if (Math.abs(x) <= 12.3 && z >= -4.7 && z <= 2.5) return true;
-  if (Math.abs(x) <= 1.3 && z >= -24 && z <= -4.7) return true;
-  const dz = z + 26;
-  return x * x + dz * dz <= 3.2 * 3.2;
+  return isWalkable(x, z, WALK_MARGIN);
+}
+
+/** Độ nhạy mouse-look (rad/px), lưu localStorage. */
+const SENS_KEY = 'cs-look-sens';
+const SENS_DEFAULT = 0.0022;
+let lookSens = SENS_DEFAULT;
+try {
+  const v = parseFloat(localStorage.getItem(SENS_KEY) ?? '');
+  if (Number.isFinite(v) && v > 0) lookSens = THREE.MathUtils.clamp(v, 0.0003, 0.02);
+} catch { /* ignore */ }
+export function setLookSensitivity(v: number): void {
+  if (!Number.isFinite(v) || v <= 0) return;
+  lookSens = THREE.MathUtils.clamp(v, 0.0003, 0.02);
+  try { localStorage.setItem(SENS_KEY, String(lookSens)); } catch { /* ignore */ }
+}
+export function getLookSensitivity(): number {
+  return lookSens;
+}
+
+/** Ẩn con trỏ bằng CSS khi mouse-look (cả pointer lock lẫn chế độ "sticky"). */
+const HIDE_CLASS = 'cs-mouselook';
+function ensureCursorStyle() {
+  if (typeof document === 'undefined' || document.getElementById('cs-mouselook-style')) return;
+  const st = document.createElement('style');
+  st.id = 'cs-mouselook-style';
+  st.textContent = `body.${HIDE_CLASS}, body.${HIDE_CLASS} canvas { cursor: none !important; }`;
+  document.head.appendChild(st);
 }
 
 /** Góc nhìn: 'singer' = ngôi thứ nhất; còn lại lấy pose từ provider (cameraCrew.getView). */
@@ -54,6 +80,7 @@ export function createControls() {
   const lookM = new THREE.Matrix4();
   const UP = new THREE.Vector3(0, 1, 0);
   const singerPose = { position: new THREE.Vector3(0, EYE, 0), yaw: 0 };
+  let debugPose: ViewPose | null = null;
 
   /** Gọi trong scene.onBeforeRender: ghi đè transform camera (stage.ts đã đặt góc ngôi thứ nhất). */
   const applyCamera = (camera: THREE.Camera) => {
@@ -62,7 +89,7 @@ export function createControls() {
     const now = performance.now();
     const dt = hasLast ? Math.min(0.25, Math.max(0, (now - lastMs) / 1000)) : 0;
     lastMs = now;
-    const pose = viewMode !== 'singer' && provider ? provider(viewMode) : null;
+    const pose = debugPose ?? (viewMode !== 'singer' && provider ? provider(viewMode) : null);
     let tFov: number;
     if (pose) {
       tPos.copy(pose.position);
@@ -108,52 +135,76 @@ export function createControls() {
   };
   const handled = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE']);
 
-  // Mouse-look: pointer lock, hoặc "sticky" (không có/ lỗi pointer lock) dùng pointermove delta.
+  // Mouse-look: pointer lock (ẩn con trỏ), hoặc "sticky" (không có/lỗi pointer lock) dùng pointermove
+  // movementX/Y + CSS cursor:none. Mọi đường bật/tắt đều đi qua applyState → luôn phát 'cs-mouselook'.
   let mouseLook = false;
   let sticky = false;
   const NOLOOK = 'button,input,textarea,select,a,label,[data-nodrag]';
   const canvasEl = () => document.querySelector('canvas') as HTMLCanvasElement | null;
-  const emit = () => window.dispatchEvent(new CustomEvent('cs-mouselook', { detail: { on: mouseLook } }));
+  ensureCursorStyle();
+  const applyState = (on: boolean) => {
+    const changed = on !== mouseLook;
+    mouseLook = on;
+    if (!on) sticky = false;
+    document.body?.classList.toggle(HIDE_CLASS, on);
+    if (changed) window.dispatchEvent(new CustomEvent('cs-mouselook', { detail: { on } }));
+  };
+  /** Bật/tắt mouse-look. Gọi đồng bộ trong handler click/phím (pointer lock cần user gesture). */
   const setMouseLook = (on: boolean) => {
     if (on === mouseLook) return;
-    mouseLook = on;
     if (on) {
       sticky = false;
+      dragId = null;
       const c = canvasEl();
       try {
         if (c && typeof c.requestPointerLock === 'function') {
           const r = c.requestPointerLock() as unknown as Promise<void> | undefined;
-          if (r && typeof r.catch === 'function') r.catch(() => { if (mouseLook && !document.pointerLockElement) sticky = true; });
+          if (r && typeof r.catch === 'function') r.catch(() => { if (mouseLook && document.pointerLockElement !== c) sticky = true; });
         } else sticky = true;
       } catch { sticky = true; }
+      applyState(true);
     } else {
-      sticky = false;
+      applyState(false);
       try { if (document.pointerLockElement) document.exitPointerLock(); } catch { /* ignore */ }
     }
-    emit();
   };
+  let wasLocked = false;
   const onLockChange = () => {
-    if (!document.pointerLockElement && mouseLook && !sticky) { mouseLook = false; emit(); }
+    const locked = !!document.pointerLockElement;
+    if (locked) {
+      sticky = false;
+      if (!mouseLook) applyState(true); // khoá do nơi khác yêu cầu → đồng bộ trạng thái
+    } else if (wasLocked && mouseLook) {
+      applyState(false); // Esc / trình duyệt tự nhả khoá
+    }
+    wasLocked = locked;
   };
   const onLockError = () => { if (mouseLook) sticky = true; };
   const onDblClick = (e: MouseEvent) => {
     const t = e.target as HTMLElement | null;
     if (!t || (t.closest && t.closest(NOLOOK))) return;
-    if (!(t instanceof HTMLCanvasElement)) return;
+    if (!(t instanceof HTMLCanvasElement) && !document.pointerLockElement) return;
     setMouseLook(!mouseLook);
   };
   const lookDelta = (dx: number, dy: number) => {
     if (viewMode !== 'singer') return;
-    yaw -= dx * 0.0045;
-    pitch = THREE.MathUtils.clamp(pitch - dy * 0.0045, PITCH_MIN, PITCH_MAX);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    // chặn bước nhảy bất thường (một số trình duyệt gửi delta khổng lồ ngay khi khoá)
+    if (Math.abs(dx) > 400 || Math.abs(dy) > 400) return;
+    yaw -= dx * lookSens;
+    pitch = THREE.MathUtils.clamp(pitch - dy * lookSens, PITCH_MIN, PITCH_MAX);
   };
-  const onMouseMoveLocked = (e: MouseEvent) => {
-    if (mouseLook && document.pointerLockElement) lookDelta(e.movementX, e.movementY);
+  /** Một nguồn duy nhất cho delta chuột khi mouse-look (pointermove; mousemove chỉ khi không có PointerEvent). */
+  const onLookMove = (e: MouseEvent) => {
+    if (!mouseLook) return;
+    if ((e as PointerEvent).pointerType && (e as PointerEvent).pointerType !== 'mouse') return;
+    if (document.pointerLockElement || sticky) lookDelta(e.movementX, e.movementY);
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey || isTyping()) return;
     if (e.code === 'KeyM') { if (!e.repeat) setMouseLook(!mouseLook); return; }
+    if (e.code === 'Escape' && mouseLook) { setMouseLook(false); return; }
     if (e.code === 'KeyV') { if (!e.repeat) cycleView(e.shiftKey ? -1 : 1); return; }
     if (!handled.has(e.code)) return;
     keys.add(e.code);
@@ -175,10 +226,7 @@ export function createControls() {
     ly = e.clientY;
   };
   const onMove = (e: PointerEvent) => {
-    if (mouseLook) {
-      if (sticky && e.pointerType === 'mouse') lookDelta(e.movementX, e.movementY);
-      return;
-    }
+    if (mouseLook) { onLookMove(e); return; }
     if (dragId !== e.pointerId) return;
     if (viewMode !== 'singer') { lx = e.clientX; ly = e.clientY; return; }
     const dx = e.clientX - lx;
@@ -201,7 +249,8 @@ export function createControls() {
   window.addEventListener('dblclick', onDblClick);
   document.addEventListener('pointerlockchange', onLockChange);
   document.addEventListener('pointerlockerror', onLockError);
-  document.addEventListener('mousemove', onMouseMoveLocked);
+  const usePointer = typeof window.PointerEvent === 'function';
+  if (!usePointer) document.addEventListener('mousemove', onLookMove);
 
   const api = {
     isMouseLook: () => mouseLook,
@@ -236,6 +285,19 @@ export function createControls() {
       return singerPose;
     },
     setMouseLook,
+    setLookSensitivity,
+    getLookSensitivity,
+    /** Debug/kiểm thử: đặt vị trí (chiếu vào lối đi gần nhất) và hướng nhìn. */
+    teleport(x: number, z: number, yawRad?: number, pitchRad?: number) {
+      const p = nearestWalkable(x, z);
+      pos.x = p.x; pos.z = p.z; vel.set(0, 0);
+      if (yawRad !== undefined) yaw = yawRad;
+      if (pitchRad !== undefined) pitch = THREE.MathUtils.clamp(pitchRad, PITCH_MIN, PITCH_MAX);
+    },
+    /** Debug: camera ở vị trí tuỳ ý (vd. nhìn từ trên cao); null = về lại ngôi thứ nhất. */
+    setDebugCamera(p: { x: number; y: number; z: number; tx: number; ty: number; tz: number; fov?: number } | null) {
+      debugPose = p ? { position: new THREE.Vector3(p.x, p.y, p.z), target: new THREE.Vector3(p.tx, p.ty, p.tz), fov: p.fov ?? 60 } : null;
+    },
     pos,
     get yaw() { return yaw; },
     get pitch() { return pitch; },
@@ -259,18 +321,11 @@ export function createControls() {
       if (Math.abs(vel.x) < 1e-4 && Math.abs(vel.y) < 1e-4) return;
       const nx = pos.x + vel.x * dt;
       const nz = pos.z + vel.y * dt;
-      if (walkable(nx, nz)) { pos.x = nx; pos.z = nz; }
-      else if (walkable(nx, pos.z)) { pos.x = nx; vel.y = 0; }
-      else if (walkable(pos.x, nz)) { pos.z = nz; vel.x = 0; }
-      else {
-        // trượt theo cung tròn bục: chiếu về biên
-        const dz = nz + 26;
-        const d = Math.hypot(nx, dz);
-        if (nz < -22 && d > 0) {
-          const px = (nx / d) * 3.19, pz = (dz / d) * 3.19 - 26;
-          if (walkable(px, pz)) { pos.x = px; pos.z = pz; }
-        } else vel.set(0, 0);
-      }
+      const p = clampToWalkable(pos, { x: nx, z: nz });
+      // trượt dọc mép: vận tốc = chuyển động thực (bỏ thành phần đâm vào tường)
+      if (p.x !== nx || p.z !== nz) { vel.x = (p.x - pos.x) / dt; vel.y = (p.z - pos.z) / dt; }
+      pos.x = p.x;
+      pos.z = p.z;
     },
     reset() {
       pos.set(0, EYE, 0);
@@ -285,7 +340,8 @@ export function createControls() {
       window.removeEventListener('dblclick', onDblClick);
       document.removeEventListener('pointerlockchange', onLockChange);
       document.removeEventListener('pointerlockerror', onLockError);
-      document.removeEventListener('mousemove', onMouseMoveLocked);
+      document.removeEventListener('mousemove', onLookMove);
+      document.body?.classList.remove(HIDE_CLASS);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);

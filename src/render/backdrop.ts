@@ -1,11 +1,13 @@
 // Phông nền: tường LED sau ca sĩ (shader), cánh gà hai bên + sân vận động ngoài trời ban đêm
-// (trời sao, cực quang, khán đài, khinh khí cầu băng rôn khu vực, máy bay). ~11 draw call.
+// (trời sao, cực quang, khán đài, khinh khí cầu băng rôn cổ vũ, máy bay). ~11 draw call
+// (+3 khi màn bay chào mừng Hype MAX đang chạy, xem backdropFlyby.ts).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../core/types';
 import { createSky, type GlowBuf, type Uniforms } from './backdropSky';
 import { createStadium } from './backdropStadium';
 import { createBalloons } from './backdropBalloons';
+import { createFlyby } from './backdropFlyby';
 
 const LED_FRAG = /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uLevel; uniform float uPhase;
@@ -108,7 +110,8 @@ export function createBackdrop(scene: THREE.Scene) {
   const stadium = createStadium(scene, uniforms, glow);
   const balloons = createBalloons(scene, uniforms);
   sky.finishGlow();
-  disposables.push(sky, stadium, balloons);
+  const flyby = createFlyby(scene, uniforms);
+  disposables.push(sky, stadium, balloons, flyby);
 
   const c = new THREE.Color();
   return {
@@ -120,6 +123,7 @@ export function createBackdrop(scene: THREE.Scene) {
       uniforms.uPhase.value = f.beat;
       accMat.color.copy(c.setHSL((0.6 + f.hype * 0.35 + t * 0.03) % 1, 0.9, 0.45 + 0.2 * f.beatPulse));
       sky.update(t);
+      flyby.update(f, t);
     },
     dispose() { disposables.forEach((d) => d.dispose()); },
   };

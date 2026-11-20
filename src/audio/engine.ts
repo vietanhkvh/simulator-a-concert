@@ -5,8 +5,11 @@ export function createAudioEngine(): AudioEngine {
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
   const gain = ctx.createGain();
+  // Âm lượng nhạc (setVolume) nằm SAU analyser để level() (hình ảnh) không đổi theo âm lượng.
+  const outGain = ctx.createGain();
   gain.connect(analyser);
-  analyser.connect(ctx.destination);
+  analyser.connect(outGain);
+  outGain.connect(ctx.destination);
   const levelBuf = new Float32Array(analyser.fftSize);
 
   let buffer: AudioBuffer | null = null;
@@ -18,6 +21,8 @@ export function createAudioEngine(): AudioEngine {
   let media: HTMLMediaElement | null = null;
   let mediaNode: MediaElementAudioSourceNode | null = null;
   let mediaTimer: ReturnType<typeof setTimeout> | null = null;
+  // Tạm dừng riêng phần nhạc (AudioContext vẫn chạy cho tiếng đám đông / thử micro): now() = pausedAt.
+  let pausedAt: number | null = null;
 
   const releaseMedia = () => {
     if (mediaTimer !== null) clearTimeout(mediaTimer);
@@ -75,6 +80,7 @@ export function createAudioEngine(): AudioEngine {
       buffer = await ctx.decodeAudioData(buf.slice(0));
     },
     play(leadInSec) {
+      pausedAt = null;
       if (media) {
         const el = media;
         if (mediaTimer !== null) clearTimeout(mediaTimer);
@@ -110,6 +116,12 @@ export function createAudioEngine(): AudioEngine {
       const dur = media ? (Number.isFinite(media.duration) ? media.duration : 0) : buffer ? buffer.duration : 0;
       const target = Math.max(0, Math.min(sec, Math.max(0, dur - 1)));
       hasEnded = false;
+      if (pausedAt !== null) {
+        // Nhạc đang dừng: chỉ dời vị trí, resumeMusic() phát tiếp từ đây.
+        if (media) media.currentTime = target;
+        pausedAt = target;
+        return;
+      }
       if (media) {
         const el = media;
         if (mediaTimer !== null) {
@@ -141,6 +153,7 @@ export function createAudioEngine(): AudioEngine {
       startAt = c - offset;
     },
     stop() {
+      pausedAt = null;
       if (mediaTimer !== null) clearTimeout(mediaTimer);
       mediaTimer = null;
       media?.pause();
@@ -148,8 +161,51 @@ export function createAudioEngine(): AudioEngine {
       startAt = null;
       hasEnded = false;
     },
+    pauseMusic() {
+      if (startAt === null || pausedAt !== null) return;
+      if (media) {
+        if (mediaTimer !== null) return; // còn đang đếm ngược: không hỗ trợ
+        pausedAt = media.currentTime;
+        media.pause();
+        return;
+      }
+      pausedAt = ctx.currentTime - startAt - latency();
+      killSource();
+    },
+    resumeMusic() {
+      if (pausedAt === null) return;
+      const at = pausedAt;
+      pausedAt = null;
+      if (media) {
+        media.currentTime = at;
+        media.play().catch((err) => console.warn('[audio] video.play() bị chặn:', err));
+        return;
+      }
+      if (!buffer || startAt === null) return;
+      // Như seek(): now() = at ngay sau khi phát lại.
+      const L = latency();
+      const offset = Math.max(0, Math.min(buffer.duration, at + L));
+      const c = ctx.currentTime;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(gain);
+      src.onended = () => {
+        if (source === src) hasEnded = true;
+      };
+      src.start(c, offset);
+      source = src;
+      startAt = c - offset;
+    },
+    get musicPaused() {
+      return pausedAt !== null;
+    },
+    setVolume(v) {
+      const vol = Math.max(0, Math.min(2, Number.isFinite(v) ? v : 1));
+      outGain.gain.setTargetAtTime(vol, ctx.currentTime, 0.03);
+    },
     now: () => {
       if (startAt === null) return 0;
+      if (pausedAt !== null) return pausedAt;
       if (media) {
         const pre = ctx.currentTime - startAt;
         return pre < 0 || (media.paused && media.currentTime === 0) ? Math.min(0, pre) : media.currentTime;

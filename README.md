@@ -39,21 +39,30 @@ Ba chế độ sau không có nốt nên không chấm điểm cao độ: Hype t
 
 ## Điều khiển khi đang diễn
 
-| Phím / nút | Tác dụng |
+Bảng hướng dẫn phím hiện ở cạnh trái trong ~15 giây đầu của bài đầu tiên rồi thu về nút **?**; bấm `H` hoặc **?** để ẩn/hiện (được ghi nhớ). Danh sách dưới đây giống hệt bảng trong game (`src/ui/controlsGuide.ts`, có test kiểm tra đồng bộ).
+
+| Chức năng | Phím |
 |---|---|
-| Nút **Tạm dừng** (góc trên phải) hoặc `Esc` | Tạm dừng / tiếp tục. Chuyển sang tab khác cũng tự tạm dừng |
-| Nút **⏪ 10s** / **10s ⏩** (trên khung lời) hoặc `[` / `]` | Tua lùi / tới 10 giây; bấm thanh tiến độ để tua tới vị trí bất kỳ (nốt bị bỏ qua không tính là trượt) |
-| Nút **Thu nhỏ** / **Mở rộng** hoặc `T` | Thu khung lời thành một dòng nhỏ (video thành ô nhỏ góc dưới phải) để nhìn sân khấu; được ghi nhớ |
-| `W` `A` `S` `D` hoặc phím mũi tên | Đi lại trên sân khấu và đường runway |
-| Kéo chuột (hoặc `Q` / `E`) | Xoay góc nhìn 360° |
-| `M` hoặc nhấp đúp | Bật / tắt chế độ khóa chuột: di chuột là xoay, không cần giữ nút |
-| `V` | Đổi góc máy: ca sĩ → flycam → hố sân khấu → cần cẩu → toàn cảnh |
-| Giữ `C` | Đưa micro cho khán giả hát thay (tối đa 10 giây, chỉ bài có nốt) |
-| `1` hoặc `Space` | Kêu gọi khán giả hò reo |
-| `2` | Sóng lightstick quét ngang khán đài |
-| `3` | Khán giả thả tim |
-| `4` | Bật / tắt biển đèn flash điện thoại |
-| `5` | Bắn pháo hoa và pháo giấy |
+| Di chuyển | `W` `A` `S` `D` / mũi tên |
+| Xoay góc nhìn | Kéo chuột / `Q` `E` |
+| Chuột tự do | `M` / nhấp đúp (bấm `M` hoặc `Esc` để thoát) |
+| Đổi góc máy | `V` (ca sĩ → flycam → hố → cần cẩu → toàn cảnh) |
+| Đưa micro cho khán giả | Giữ `C` (tối đa 10 giây, chỉ bài có nốt) |
+| Hò reo | `1` / `Space` |
+| Sóng lightstick | `2` |
+| Thả tim | `3` |
+| Đèn flash | `4` (bật / tắt) |
+| Pháo hoa | `5` (pháo hoa + pháo giấy) |
+| Tua lùi / tới 10 s | `[` / `]` (hoặc nút ⏪/⏩, bấm thanh tiến độ để tua tới vị trí bất kỳ) |
+| Thu nhỏ khung lời | `T` |
+| Tạm dừng / xưởng chỉnh | `Esc` hoặc nút **Tạm dừng** (chuyển tab cũng tự tạm dừng) |
+| Ẩn/hiện hướng dẫn | `H` |
+
+Góc trên phải có các nút nhỏ **Góc máy (V)**, **Chuột tự do (M)**, **Kết thúc** (bấm 2 lần trong 3 giây để kết thúc buổi diễn và xem kết quả với điểm hiện có) và **Tạm dừng**. Khi đang gõ trong ô nhập (menu tạm dừng) các phím game không có tác dụng.
+
+### Tạm dừng = xưởng chỉnh
+
+Khi tạm dừng, đồng hồ bài, điểm và chấm micro đứng yên nhưng sân khấu vẫn chạy (đi lại, xoay, đổi góc máy vẫn được) để thử. Bảng bên phải có: **Tiếp tục**, **Hát lại từ đầu**, **Kết thúc buổi diễn**; micro (chọn thiết bị, thử micro, độ nhạy, bù trễ 0–400 ms); âm lượng nhạc / tiếng đám đông / khán giả hát theo (0–150 %, có nút nghe thử); Hype xem trước, chất lượng vẽ khán giả và nút thử từng tương tác; sự kiện bí mật (nếu có); góc máy và chuột tự do; băng rôn cổ vũ (mỗi dòng một khẩu hiệu, tối đa 6 dòng × 24 ký tự); tua ±10 s và thanh tua. Các chỉnh âm lượng, bù trễ, băng rôn được lưu trong trình duyệt. Chỉ nhạc dừng; tiếng đám đông vẫn nghe được khi thử.
 
 Ở điệp khúc (các câu lời lặp lại), khi Hype trên 0,45 khán giả tự hát theo giai điệu.
 
@@ -65,7 +74,7 @@ Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi 
 
 | Tham số | Ý nghĩa |
 |---|---|
-| `?latency=120` | Bù độ trễ micro (ms). Tăng nếu hát đúng mà bị chấm trễ. |
+| `?latency=120` | Bù độ trễ micro (ms). Tăng nếu hát đúng mà bị chấm trễ. Cũng chỉnh được trong menu tạm dừng. |
 | `?fakeMic=perfect` | Micro giả hát đúng giai điệu (xem thử không cần micro). Còn có `off`, `octave`. |
 | `?crowd=8000` | Số khán giả (100–10000). Game tự giảm số người được vẽ nếu máy chậm. |
 
