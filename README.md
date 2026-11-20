@@ -42,14 +42,14 @@ Ba chế độ sau không có nốt nên không chấm điểm cao độ: Hype t
 | Phím / nút | Tác dụng |
 |---|---|
 | Nút **Tạm dừng** (góc trên phải) hoặc `Esc` | Tạm dừng / tiếp tục. Chuyển sang tab khác cũng tự tạm dừng |
-| Phím mũi tên | Đi lại trên sân khấu và đường runway |
+| `W` `A` `S` `D` hoặc phím mũi tên | Đi lại trên sân khấu và đường runway |
 | Kéo chuột (hoặc `Q` / `E`) | Xoay góc nhìn 360° |
 | Giữ `C` | Đưa micro cho khán giả hát thay (tối đa 10 giây, chỉ bài có nốt) |
-| `Space` | Kêu gọi khán giả hò reo |
-| `W` | Sóng lightstick quét ngang khán đài |
-| `H` | Khán giả thả tim |
-| `F` | Bật / tắt biển đèn flash điện thoại |
-| `P` | Bắn pháo hoa và pháo giấy |
+| `1` hoặc `Space` | Kêu gọi khán giả hò reo |
+| `2` | Sóng lightstick quét ngang khán đài |
+| `3` | Khán giả thả tim |
+| `4` | Bật / tắt biển đèn flash điện thoại |
+| `5` | Bắn pháo hoa và pháo giấy |
 
 Ở điệp khúc (các câu lời lặp lại), khi Hype trên 0,45 khán giả tự hát theo giai điệu.
 

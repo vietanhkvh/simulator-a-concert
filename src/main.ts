@@ -65,7 +65,7 @@ let lastInteract = -Infinity;
 const hint = document.createElement('div');
 hint.className = 'cs-keys-hint';
 hint.textContent =
-  'Mũi tên: đi lại  ·  Kéo chuột: xoay  ·  Giữ C: đưa micro cho khán giả  ·  Space: hò reo  ·  W: sóng  ·  H: tim  ·  F: flash  ·  P: pháo hoa';
+  'WASD / mũi tên: đi lại  ·  Kéo chuột: xoay  ·  Giữ C: đưa micro cho khán giả  ·  1: hò reo  ·  2: sóng  ·  3: tim  ·  4: flash  ·  5: pháo hoa';
 hint.hidden = true;
 uiRoot.appendChild(hint);
 // --- Chọn micro (ví dụ: nghe bằng tai nghe nhưng thu bằng micro của máy) ---
@@ -155,6 +155,7 @@ window.addEventListener('keydown', (e) => {
   const now = performance.now() / 1000;
   const ready = now - lastInteract >= INTERACT_COOLDOWN_SEC;
   switch (e.code) {
+    case 'Digit1':
     case 'Space': // "Make some noise!"
       e.preventDefault();
       if (!ready) return;
@@ -162,20 +163,20 @@ window.addEventListener('keydown', (e) => {
       emotes.burst(50);
       hypeBoost = 0.35;
       break;
-    case 'KeyW':
+    case 'Digit2':
       waveUntil = performance.now() + 6000;
       return;
-    case 'KeyH':
+    case 'Digit3':
       if (!ready) return;
       emotes.burst(70, 'heart');
       crowdAudio?.cheer(0.5);
       hypeBoost = Math.max(hypeBoost, 0.15);
       break;
-    case 'KeyF':
+    case 'Digit4':
       flashOn = !flashOn;
       crowd.setFlash(flashOn ? 1 : 0);
       return;
-    case 'KeyP':
+    case 'Digit5':
       if (!ready) return;
       stageFx.pyro();
       confetti.burst();
