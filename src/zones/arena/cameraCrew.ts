@@ -1,7 +1,7 @@
 // Đội quay phim (trang trí) + các "rig" camera cho góc nhìn bên ngoài.
 // 2 dolly dưới hố, 1 tháp FOH giữa khán giả, 1 người vác máy trên sân khấu, 1 cần cẩu jib, 1 drone.
 // Toàn bộ vẽ bằng 3 InstancedMesh (hộp / trụ / cầu) + 1 Points phát sáng (đèn tally, LED) = 4 draw call.
-import { EYE_HEIGHT, FIELD_Y, GROUND_RISE, GROUND_RUN, GROUND_Y0, GROUND_Z0 } from '../../world/layout';
+import { EYE_HEIGHT, FIELD_Y, GROUND_RISE, GROUND_RUN, GROUND_Y0, GROUND_Z0, STAGE_HEIGHT } from '../../world/layout';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import { walkable, type ViewMode, type ViewPose } from './stageControls';
@@ -19,7 +19,7 @@ export interface CameraCrew {
 const EYE = EYE_HEIGHT;
 const PIT_Z = -6.0;
 const PIT_FLOOR = FIELD_Y;
-/** Sàn khán giả: -1,6 tại z=-6, lên +4 tại z=-80. */
+/** Mặt đất nền dưới khán giả (GROUND_Y0 tại z=-6, dốc lên phía sau). */
 const audienceFloor = (z: number) => (z > GROUND_Z0 ? PIT_FLOOR : GROUND_Y0 + ((GROUND_Z0 - z) * GROUND_RISE) / GROUND_RUN);
 
 type Kind = 0 | 1 | 2; // hộp, trụ, cầu
@@ -117,12 +117,15 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
     const root = node(world, side * 4, PIT_FLOOR, PIT_Z);
     part(root, 0, DARK, 1.0, 0.14, 0.8, 0, 0.18, 0);
     for (const wx of [-0.42, 0.42]) for (const wz of [-0.32, 0.32]) part(root, 1, BLACK, 0.18, 0.08, 0.18, wx, 0.09, wz, 0, 0, Math.PI / 2);
-    part(root, 1, METAL, 0.14, 2.1, 0.14, 0, 1.25, 0);
-    part(root, 0, GREY, 0.7, 0.03, 0.03, 0, 1.6, 0.35); // tay đẩy
-    part(root, 0, DARK, 0.6, 0.5, 0.06, 0, 0.5, 0.75); // bậc đứng cho người quay
-    const head = node(root, 0, 2.45, 0);
+    // Cột nâng: ống kính cao hơn mặt sân khấu ~0,95 m để nhìn qua mép sàn diễn.
+    const HEAD_Y = STAGE_HEIGHT + 0.95;
+    const OP_Y = HEAD_Y - 1.7;
+    part(root, 1, METAL, 0.14, HEAD_Y - 0.3, 0.14, 0, (HEAD_Y - 0.3) / 2 + 0.2, 0);
+    part(root, 0, GREY, 0.7, 0.03, 0.03, 0, OP_Y + 0.85, 0.35); // tay đẩy
+    part(root, 0, DARK, 0.6, OP_Y, 0.5, 0, OP_Y / 2, 0.85); // bục đứng cho người quay
+    const head = node(root, 0, HEAD_Y, 0);
     const lens = broadcastCam(head);
-    const op = node(root, 0, 0.75, 0.85);
+    const op = node(root, 0, OP_Y, 0.85);
     operator(op);
     dollies.push({ root, head, lens, x: side * 4, side, aim: new THREE.Vector3(0, 1.3, 0) });
   }
@@ -132,7 +135,7 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   const towerX = 7;
   const towerFloor = audienceFloor(towerZ);
   const tower = node(world, towerX, towerFloor, towerZ);
-  const TH = 4;
+  const TH = Math.max(4, 5 - towerFloor); // sàn tháp ở y ≈ 5 để góc 'wide' nhìn qua đầu khán giả
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) part(tower, 0, DARK, 0.12, TH, 0.12, sx * 1.1, TH / 2, sz * 1.1);
   for (const sz of [-1, 1]) part(tower, 0, GREY, 2.2, 0.06, 0.06, 0, TH * 0.5, sz * 1.1, 0, 0, 0.9);
   for (const sx of [-1, 1]) part(tower, 0, GREY, 0.06, 0.06, 2.2, sx * 1.1, TH * 0.5, 0, 0.9, 0, 0);
@@ -160,8 +163,8 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   const craneBase = new THREE.Vector3(-9.6, PIT_FLOOR, -5.8);
   const crane = node(world, craneBase.x, craneBase.y, craneBase.z);
   for (const a of [0, 2.1, 4.2]) part(crane, 0, DARK, 0.1, 0.1, 1.6, Math.sin(a) * 0.55, 0.08, Math.cos(a) * 0.55, 0, a, 0);
-  part(crane, 1, METAL, 0.2, 1.9, 0.2, 0, 1.0, 0);
-  const CRANE_PIVOT_Y = 2.0;
+  const CRANE_PIVOT_Y = STAGE_HEIGHT + 2.0;
+  part(crane, 1, METAL, 0.2, CRANE_PIVOT_Y - 0.1, 0.2, 0, (CRANE_PIVOT_Y - 0.1) / 2, 0);
   const craneYaw = node(crane, 0, CRANE_PIVOT_Y, 0);
   part(craneYaw, 0, DARK, 0.35, 0.25, 0.35, 0, 0, 0);
   const cranePitch = node(craneYaw, 0, 0, 0);
@@ -259,7 +262,11 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
     pit: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 30 },
     crane: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 35 },
     wide: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 30 },
+    aerial: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 50 },
   };
+  // Góc 'aerial': trên không trước vòm mái, chúc xuống tâm sân khấu/ca sĩ (bám lỏng), lắc ±10°.
+  const aerialTgt = new THREE.Vector3(0, 1, -3.5);
+  const aerialPos = new THREE.Vector3(0, 30, -19.5);
   let pitIdx = 0;
   const chest = new THREE.Vector3();
   const lead = new THREE.Vector3();
@@ -438,6 +445,17 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
       views.flycam.target.copy(droneAim);
       views.flycam.fov = fovFor(views.flycam.position.distanceTo(droneAim), 5.2 - 1.2 * hype, 10, 50);
 
+      {
+        tmp.set(singerPos.x * 0.6, floorY + 1.0, THREE.MathUtils.clamp(singerPos.z * 0.7 - 3.5, -32, -2));
+        damp(aerialTgt, tmp, 0.8 * k, ddt);
+        const sway = THREE.MathUtils.degToRad(10) * Math.sin(t * 0.09);
+        const R = 16; // camera trước vòm mái (z ≤ -18) → giàn mái không che tâm sân khấu
+        tmp.set(aerialTgt.x + Math.sin(sway) * R, aerialTgt.y + 29 + Math.sin(t * 0.13) * 0.8, Math.min(-18, aerialTgt.z - Math.cos(sway) * R));
+        damp(aerialPos, tmp, 1.2 * k, ddt);
+        views.aerial.position.copy(aerialPos);
+        views.aerial.target.copy(aerialTgt);
+        views.aerial.fov = 55 - 5 * hype - 1.5 * f.beatPulse * hype;
+      }
       towerLens.getWorldPosition(views.wide.position);
       views.wide.target.copy(towerAim);
       views.wide.fov = fovFor(views.wide.position.distanceTo(towerAim), 13, 12, 50);

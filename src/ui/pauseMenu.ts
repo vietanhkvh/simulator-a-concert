@@ -80,6 +80,8 @@ export interface PauseMenuOptions {
   seekTo(sec: number): void;
   songTime(): number;
   duration(): number;
+  /** Mở bảng developer (chế độ developer, ui/devPanel.ts). */
+  onDevPanel?(): void;
 }
 
 export interface PauseMenu {
@@ -121,6 +123,7 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
       <button type="button" class="cs-pm-btn cs-pm-primary" data-act="resume">▶ Tiếp tục</button>
       <button type="button" class="cs-pm-btn" data-act="restart">↺ Hát lại từ đầu</button>
       <button type="button" class="cs-pm-btn cs-pm-danger" data-act="end">■ Kết thúc buổi diễn</button>
+      <button type="button" class="cs-pm-btn" data-act="dev">⚙ Mở bảng developer</button>
     </section>
     <section class="cs-pm-sec"><h3>Micro</h3>
       <div class="cs-pm-mic"></div>
@@ -230,6 +233,7 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
     if (d.act === 'resume') o.onResume();
     else if (d.act === 'restart') o.onRestart();
     else if (d.act === 'end') o.onEnd();
+    else if (d.act === 'dev') o.onDevPanel?.();
     else if (d.test) o.onTest(d.test as TestKind);
     else if (d.view) o.setView(d.view as ViewName);
     else if (d.secret) o.onSecret(d.secret as SecretKind);

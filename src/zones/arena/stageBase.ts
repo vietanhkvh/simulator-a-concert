@@ -19,10 +19,12 @@ export function createStageBase(scene: THREE.Scene): { dispose(): void } {
   };
 
   // Sàn sân khấu (tối, hơi tím) + mép + vạch gaffer
-  addMesh(new THREE.BoxGeometry(26, 0.3, 8), mat(0x14122a), 0, -0.15, -1);
+  // Khối sàn diễn đặc từ mặt sân khấu xuống dưới mặt đất nền (không hở gầm ở hai bên/phía sau).
+  const deckH = STAGE_Y - (GROUND_Y0 - 0.2);
+  addMesh(new THREE.BoxGeometry(26, deckH, 8), mat(0x14122a), 0, STAGE_Y - deckH / 2, -1);
   addMesh(new THREE.BoxGeometry(26, 0.06, 0.12), mat(0x6a4cff), 0, 0.02, -4.9);
   // Mép trước rủ xuống hố
-  const lipH = STAGE_HEIGHT + 1.5; // phủ từ sát mặt sân khấu xuống quá sàn khán giả
+  const lipH = STAGE_HEIGHT + 0.5; // phủ từ sát mặt sân khấu xuống quá sàn khán giả
   addMesh(new THREE.BoxGeometry(STAGE_HALF_W * 2, lipH, 0.2), mat(0x07060f), 0, STAGE_Y - 0.1 - lipH / 2, STAGE_FRONT_Z - 0.05);
 
   // Màn hình monitor (wedge) ở sát mép dưới khung hình
@@ -53,12 +55,12 @@ export function createStageBase(scene: THREE.Scene): { dispose(): void } {
   addMesh(new THREE.BoxGeometry(22.6, 0.3, 0.3), trussMat, 0, 8.5, -5);
 
   // Sàn khu khán giả (dốc, tối). depthWrite=false, vẽ trước, để không bao giờ che khán giả.
-  const slope = new THREE.PlaneGeometry(120, 90, 1, 1);
+  const slope = new THREE.PlaneGeometry(200, 90, 1, 1);
   slope.rotateX(-Math.PI / 2);
   const slopeMat = mat(0x0a0914, { depthWrite: false });
   const slopeMesh = addMesh(slope, slopeMat, 0, 0, 0);
   slopeMesh.renderOrder = -10;
-  // Mặt phẳng nghiêng: y từ -1,6 tại z=-6 lên +4 tại z=-80
+  // Mặt phẳng nghiêng: y từ GROUND_Y0 tại z=-6 lên thêm GROUND_RISE sau GROUND_RUN m
   slopeMesh.position.set(0, GROUND_Y0, -50);
   slopeMesh.rotation.x = Math.atan2(GROUND_RISE, GROUND_RUN);
 

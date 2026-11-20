@@ -1,6 +1,6 @@
 // Trang trí sân khấu ngoài trời: khung mái/tháp truss, loa, màn LED bên, props, cầu thang, rào; sàn LED, cổng sáng, logo.
 // 3 draw call: cấu trúc tĩnh (vertex color), 2 màn LED tháp (shader), ~230 phần tử phát sáng (InstancedMesh).
-import { GROUND_Y0, PIT_FENCE_Z, STAGE_Y } from '../../world/layout';
+import { GROUND_Y0, PIT_FENCE_Z, STAGE_HEIGHT, STAGE_Y } from '../../world/layout';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
@@ -79,8 +79,8 @@ function buildStatic(): THREE.BufferGeometry {
   for (const sx of [-1, 1]) bx(7.2, 0.3, 8, sx * 16.5, -0.15, -1, 0x14122a);
   // tháp truss 4 góc + vòm trước/sau + xà dọc
   for (const sx of [-1, 1]) for (const z of [ZF, ZB]) {
-    trussBar(V(sx * TX, 0, z), V(sx * TX, TH, z), 1.1);
-    bx(1.8, 0.2, 1.8, sx * TX, 0.1, z, 0x1c1a38);
+    trussBar(V(sx * TX, GROUND_Y0, z), V(sx * TX, TH, z), 1.1);
+    bx(1.8, 0.2, 1.8, sx * TX, GROUND_Y0 + 0.1, z, 0x1c1a38);
     bx(1.4, 0.25, 1.4, sx * TX, TH + 0.12, z, 0x1c1a38);
   }
   const N = 26;
@@ -125,16 +125,22 @@ function buildStatic(): THREE.BufferGeometry {
     bx(1.0, 0.3, 0.03, x, 0.225, -4.71, 0x0b0a16);
     bx(1.15, 0.03, 0.8, x, 0.46, -4.3, 0x5a5890);
   }
-  // cầu thang xuống hố khán giả + tay vịn
-  for (const sx of [-1, 1]) {
-    const x = sx * 12.2;
-    for (let k = 0; k < 5; k++) {
-      const top = -(PIT_DEPTH / 5) * (k + 1);
-      bx(1.3, top + PIT_DEPTH, 0.5, x, (top - PIT_DEPTH) / 2, -5.4 - 0.5 * k, 0x3a3866);
-    }
-    for (const dx of [-0.68, 0.68]) {
-      rod(V(x + dx, 0.95, -5.15), V(x + dx, GROUND_Y0 + 0.95, -7.9), 0.06, 0x9a98c8);
-      rod(V(x + dx, 0, -5.15), V(x + dx, 0.95, -5.15), 0.06, 0x9a98c8);
+  // cầu thang xuống hố khán giả + tay vịn: chạy dọc hông sân khấu (|x| 13→14,3), đi xuống về phía khán giả,
+  // chân thang ở hố (z ≈ -5,6). Số bậc theo độ sâu hố (bậc ≈ 0,28 m).
+  {
+    const N = Math.max(5, Math.round(PIT_DEPTH / 0.28) - 1);
+    const rise = PIT_DEPTH / (N + 1), tread = 0.42, zBot = -5.4;
+    const zTop = zBot + tread * (N - 1);
+    for (const sx of [-1, 1]) {
+      const x = sx * 13.65;
+      for (let k = 0; k < N; k++) {
+        const top = -rise * (k + 1);
+        bx(1.3, top + PIT_DEPTH, tread + 0.02, x, (top - PIT_DEPTH) / 2, zTop - tread * k, 0x3a3866);
+      }
+      const xr = sx * 14.3;
+      rod(V(xr, 0.95, zTop + tread / 2), V(xr, -rise * N + 0.95, zBot - tread / 2), 0.06, 0x9a98c8);
+      rod(V(xr, 0, zTop + tread / 2), V(xr, 0.95, zTop + tread / 2), 0.06, 0x9a98c8);
+      rod(V(xr, -rise * N, zBot - tread / 2), V(xr, -rise * N + 0.95, zBot - tread / 2), 0.06, 0x9a98c8);
     }
   }
   // rào chắn hố khán giả
@@ -251,7 +257,7 @@ export function createStageDeco(scene: THREE.Scene) {
   // 1: footlight mép sân khấu
   for (let i = 0; i < 43; i++) add(1, i, 0, -12.6 + 0.6 * i, 0.03, -4.7, 0.3, 0.06, 0.15);
   // 2: panel LED riser mặt trước sân khấu
-  for (const sx of [-1, 1]) for (let i = 0; i < 6; i++) add(2, i, 0, sx * (2.9 + 2 * i), -0.75, -5.17, 1.8, 1.2, 0.03);
+  for (const sx of [-1, 1]) for (let i = 0; i < 6; i++) add(2, i, 0, sx * (2.9 + 2 * i), STAGE_Y - STAGE_HEIGHT / 2, -5.17, 1.8, STAGE_HEIGHT * 0.8, 0.03);
   // 3: chevron chỉ hướng runway
   for (let k = 0; k < 3; k++) for (const s of [-1, 1]) add(3, k, 0, s * 0.45, 0.03, -6.0 - 0.7 * k, 1.0, 0.03, 0.12, 0, s * 0.7, 0);
   // 4: cổng sáng trên runway
@@ -280,7 +286,7 @@ export function createStageDeco(scene: THREE.Scene) {
     flat(6, k, 0, (x0 + x1) / 2, 0.035, PZ + (z0 + z1) / 2, x1 - x0, z1 - z0, Math.hypot(x1 - x0, z1 - z0), 0.08);
   }
   // 7: tay vịn rào
-  for (const sx of [-1, 1]) add(7, 0, 0, sx * 7.75, -0.45, -6.3, 11.8, 0.05, 0.05);
+  for (const sx of [-1, 1]) add(7, 0, 0, sx * 7.75, GROUND_Y0 + 1.15, PIT_FENCE_Z, 11.8, 0.05, 0.05);
   const NI = items.length;
 
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);

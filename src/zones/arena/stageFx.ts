@@ -2,6 +2,7 @@
 // 4 draw call; mỗi frame chỉ đổi uniform.
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
+import { FIELD_Y } from '../../world/layout';
 
 export interface StageFx {
   update(f: FrameState): void;
@@ -219,9 +220,9 @@ export function createStageFx(scene: THREE.Scene): StageFx {
   // Khói: 3 mặt phẳng gộp thành 1 mesh, thấp hơn tầm mắt, trước mép sân khấu.
   const hazeParts: THREE.BufferGeometry[] = [];
   const layers = [
-    { z: -5.6, y: 0.2, w: 26, h: 2.2 },
-    { z: -7.5, y: -0.3, w: 34, h: 2.6 },
-    { z: -10, y: -0.6, w: 44, h: 3.0 },
+    { z: -5.6, y: FIELD_Y + 2.3, w: 26, h: 3.6 },
+    { z: -7.5, y: FIELD_Y + 1.2, w: 34, h: 2.6 },
+    { z: -10, y: FIELD_Y + 0.9, w: 44, h: 3.0 },
   ];
   layers.forEach((l, i) => {
     const g = new THREE.PlaneGeometry(l.w, l.h);

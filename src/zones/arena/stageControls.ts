@@ -6,6 +6,8 @@ import { isWalkable, clampToWalkable, nearestWalkable, WALK_MARGIN } from './wal
 const PITCH_MIN = THREE.MathUtils.degToRad(-35);
 const PITCH_MAX = THREE.MathUtils.degToRad(45);
 const SPEED = 4;
+/** Góc cúi mặc định (độ): sân khấu cao 3,5 m nên hơi cúi để thấy các hàng đầu. */
+const DEFAULT_PITCH_DEG = -4;
 const EYE = EYE_HEIGHT;
 
 /** Đứng được (sân khấu ∪ mọi runway/bục trong walkLayout, lề WALK_MARGIN). */
@@ -41,8 +43,17 @@ function ensureCursorStyle() {
 }
 
 /** Góc nhìn: 'singer' = ngôi thứ nhất; còn lại lấy pose từ provider (cameraCrew.getView). */
-export type ViewMode = 'singer' | 'flycam' | 'pit' | 'crane' | 'wide';
-export const VIEW_ORDER: ViewMode[] = ['singer', 'flycam', 'pit', 'crane', 'wide'];
+export type ViewMode = 'singer' | 'aerial' | 'flycam' | 'pit' | 'crane' | 'wide';
+/** Danh sách góc máy theo thứ tự phím V, kèm nhãn tiếng Việt (UI dựng nút từ đây). */
+export const VIEW_MODES: readonly { id: ViewMode; label: string }[] = [
+  { id: 'singer', label: 'Ca sĩ' },
+  { id: 'aerial', label: 'Trên không' },
+  { id: 'flycam', label: 'Flycam' },
+  { id: 'pit', label: 'Hố' },
+  { id: 'crane', label: 'Cần cẩu' },
+  { id: 'wide', label: 'Toàn cảnh' },
+];
+export const VIEW_ORDER: ViewMode[] = VIEW_MODES.map((v) => v.id);
 export interface ViewPose { position: THREE.Vector3; target: THREE.Vector3; fov: number }
 export type ViewProvider = (mode: ViewMode) => ViewPose | null;
 const BLEND_SEC = 0.6;
@@ -58,7 +69,7 @@ export function createControls() {
   const pos = new THREE.Vector3(0, EYE, 0);
   const vel = new THREE.Vector2(); // x, z
   let yaw = 0;
-  let pitch = THREE.MathUtils.degToRad(2);
+  let pitch = THREE.MathUtils.degToRad(DEFAULT_PITCH_DEG);
   const keys = new Set<string>();
 
   // ── Góc nhìn bên ngoài ──
@@ -332,7 +343,7 @@ export function createControls() {
       pos.set(0, EYE, 0);
       vel.set(0, 0);
       yaw = 0;
-      pitch = THREE.MathUtils.degToRad(2);
+      pitch = THREE.MathUtils.degToRad(DEFAULT_PITCH_DEG);
     },
     dispose() {
       setMouseLook(false);

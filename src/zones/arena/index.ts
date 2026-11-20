@@ -1,5 +1,6 @@
 // KHU 3 — SÂN TRUNG TÂM (gần nhất): sân khấu, runway, nơi người chơi và khán giả sân đứng.
 // Điểm vào duy nhất của khu: mã ngoài khu chỉ import từ file này.
+import { createDebugLayers } from '../../core/debugLayers';
 import type { FrameState, Song } from '../../core/types';
 import { EYE_HEIGHT } from '../../world/layout';
 import type { Zone, ZoneContext } from '../../world/zone';
@@ -14,12 +15,15 @@ import { createLedWall } from './ledWall';
 import { createLights } from './lights';
 import { createSinger } from './singer';
 import { createStageBase } from './stageBase';
-import { createControls, type StageControls, type ViewMode } from './stageControls';
+import { createControls, VIEW_MODES, VIEW_ORDER, type StageControls, type ViewMode } from './stageControls';
 import { createStageDeco } from './stageDeco';
 import { createStageFx, type StageFx } from './stageFx';
 import { createRunway } from './stageRunway';
+import { PLATFORMS } from './walkLayout';
 
 export { ENTRANCE_SEC };
+/** Debug/chế độ developer: thứ tự góc máy (phím V) và tâm các bục (để dịch chuyển nhanh). */
+export { VIEW_ORDER, VIEW_MODES, PLATFORMS };
 export type { EntranceKind, ViewMode, StageControls, Crowd, Emotes, Confetti, StageFx, LedScreens, Entrance, CameraCrew };
 
 export interface ArenaOptions {
@@ -41,26 +45,32 @@ export interface ArenaZone extends Zone {
   /** Bài đang diễn (để màn hình LED hiện lời); null = chỉ hiện hình sóng. */
   setSong(song: Song | null): void;
   resetView(): void;
+  /** Debug (chế độ developer): ẩn/hiện cả khu hoặc từng lớp (crowd, lights, stageFx, emotes…). */
+  setVisible?(on: boolean): void;
+  debugLayers?(): string[];
+  setLayerVisible?(name: string, on: boolean): boolean;
+  isLayerVisible?(name: string): boolean;
 }
 
 export function createArenaZone(ctx: ZoneContext, opts: ArenaOptions): ArenaZone {
   const { scene, camera, uniforms } = ctx;
   // Thứ tự tạo giữ nguyên như trước khi tách khu (ảnh hưởng thứ tự vẽ các vật trong suốt).
-  const base = createStageBase(scene); // sàn diễn, mép, loa monitor, sàn dốc khu khán giả
-  const runway = createRunway(scene); // các đường đi + bục
-  const ledWall = createLedWall(scene, uniforms); // tường LED sau lưng ca sĩ + cánh gà
-  const deco = createStageDeco(scene); // mái giàn, tháp, loa, nhạc cụ, cổng đèn
-  const band = createBand(scene); // nhạc công
+  const layers = createDebugLayers(scene); // chỉ dùng cho chế độ developer (ẩn/hiện từng lớp)
+  const base = layers.track('base', () => createStageBase(scene)); // sàn diễn, mép, loa monitor, sàn dốc khu khán giả
+  const runway = layers.track('runway', () => createRunway(scene)); // các đường đi + bục
+  const ledWall = layers.track('ledWall', () => createLedWall(scene, uniforms)); // tường LED sau lưng ca sĩ + cánh gà
+  const deco = layers.track('deco', () => createStageDeco(scene)); // mái giàn, tháp, loa, nhạc cụ, cổng đèn
+  const band = layers.track('band', () => createBand(scene)); // nhạc công
   const controls = createControls();
-  const crowd = createCrowd(scene, { count: opts.crowdCount, rows: 40, arcDeg: 120 }); // khán giả sân
-  const lights = createLights(scene); // đèn sân khấu
-  const led = createLedScreens(scene);
-  const confetti = createConfetti(scene);
-  const emotes = createEmotes(scene); // biểu tượng cảm xúc
-  const stageFx = createStageFx(scene); // laser, pháo hoa, đèn chớp, khói
-  const singer = createSinger(scene); // hình ca sĩ (chỉ hiện ở góc máy ngoài)
-  const crew = createCameraCrew(scene); // đội quay phim + flycam
-  const entrance = createEntrance(scene); // màn chào sân
+  const crowd = layers.track('crowd', () => createCrowd(scene, { count: opts.crowdCount, rows: 40, arcDeg: 120 })); // khán giả sân
+  const lights = layers.track('lights', () => createLights(scene)); // đèn sân khấu
+  const led = layers.track('led', () => createLedScreens(scene));
+  const confetti = layers.track('confetti', () => createConfetti(scene));
+  const emotes = layers.track('emotes', () => createEmotes(scene)); // biểu tượng cảm xúc
+  const stageFx = layers.track('stageFx', () => createStageFx(scene)); // laser, pháo hoa, đèn chớp, khói
+  const singer = layers.track('singer', () => createSinger(scene)); // hình ca sĩ (chỉ hiện ở góc máy ngoài)
+  const crew = layers.track('crew', () => createCameraCrew(scene)); // đội quay phim + flycam
+  const entrance = layers.track('entrance', () => createEntrance(scene)); // màn chào sân
 
   let t = 0;
   let song: Song | null = null;
@@ -69,6 +79,10 @@ export function createArenaZone(ctx: ZoneContext, opts: ArenaOptions): ArenaZone
     controls, crowd, emotes, confetti, stageFx, led, crew, entrance,
     setSong(s) { song = s; },
     resetView: () => controls.reset(),
+    setVisible: (on) => layers.setAll(on),
+    debugLayers: () => layers.names(),
+    setLayerVisible: (name, on) => layers.set(name, on),
+    isLayerVisible: (name) => layers.get(name),
     update(f: FrameState, animT: number) {
       crowd.update(f);
       lights.update(f);

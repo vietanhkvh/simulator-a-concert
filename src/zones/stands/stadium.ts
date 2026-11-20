@@ -1,193 +1,212 @@
-// Khán đài sân vận động ngoài trời: 3 tầng cong quanh khán giả, tháp đèn pha 4 góc,
-// "biển" lightstick khán đài xa (1 THREE.Points, hoạt ảnh hoàn toàn trong shader). 2 draw call
-// (+ đèn nhà hát / cụm đèn pha nằm trong Points điểm sáng chung, world/shared/glowPoints.ts).
+// Khán đài sân vận động "Kẹo đêm · chibi": 3 tầng bo tròn quanh khán giả, bảng khu A–H, bóng đèn dây, cờ,
+// tháp đèn pha "cây nấm" 4 góc, "biển" lightstick khán đài xa (1 THREE.Points, hoạt ảnh trong shader).
+// Draw call: kết cấu 1 + trang trí 1 + khán giả 1 (+ đèn pha/beacon nằm trong Points điểm sáng chung, world/shared/glowPoints.ts).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
 import { STADIUM_CENTRE, STANDS_ARC, STANDS_TIERS } from '../../world/layout';
 import { addGlow, type GlowBuf, type Uniforms } from '../../world/shared/glowPoints';
+import { PAL, ZONE_SAT, hexToRgb, hslToRgb, hypeColors, rgbToHsl, shade, shadowOf, type Rgb } from '../../world/style';
+import { CROWD_FRAG, CROWD_VERT, DECOR_FRAG, STRUCT_FRAG, STRUCT_VERT, decorVert } from './stadiumShaders';
+import { buildDecor, makeSignAtlas } from './stadiumDecor';
 
 const CX = STADIUM_CENTRE.x, CZ = STADIUM_CENTRE.z;
 const A0 = STANDS_ARC.from, A1 = STANDS_ARC.to;
 // tầng: mặt trước (r, y đáy → y đỉnh), khán đài dốc (r0→r1, y0→y1)
 const TIERS = STANDS_TIERS;
+const SECTIONS = 8; // khu A–H
+const ROOF_LIP_R = 126.9;
 
-const CROWD_VERT = /* glsl */ `
-uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uPhase; uniform float uRes;
-// hiệu ứng tương tác (JS nới mềm): bao 0..1 + tuổi (s)
-uniform float uCheer; uniform float uCheerAge; uniform float uWave; uniform float uWavePos;
-uniform float uHeart; uniform float uHeartAge; uniform float uFlash; uniform float uPyro; uniform float uPyroAge;
-attribute vec2 aSeed; // seed, góc chuẩn hoá 0..1
-varying vec3 vCol;
-vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h*6.0+vec3(0.,4.,2.),6.0)-3.0)-1.0,0.,1.); return v*mix(vec3(1.),k,s); }
-float h11(float x){ return fract(sin(x * 127.1) * 43758.5453); }
-float heartIn(vec2 q){ float a = q.x*q.x + q.y*q.y - 1.0; return step(a*a*a - q.x*q.x*q.y*q.y*q.y, 0.0); }
-float thump(float t){ float x = mod(t, 0.85); return exp(-x * 14.0) + 0.7 * exp(-max(x - 0.24, 0.0) * 14.0) * step(0.24, x); }
-void main(){
-  float sd = aSeed.x, ang = aSeed.y;
-  vec3 p = position;
-  float sway = sin(uPhase * 3.14159 + sd * 1.2 + ang * 6.0) * (0.15 + 0.45 * uHype);
-  p.x += sway * cos(ang * 4.5);
-  p.z += sway * sin(ang * 4.5) * 0.5;
-  p.y += uPulse * uHype * 0.35 * step(0.4, sd);
-  // màu: thấp hype = lẫn lộn, cao hype = sóng hồng/cyan đồng bộ
-  vec3 mixed = hsv(fract(sd * 7.13), 0.75, 1.0);
-  float w = 0.5 + 0.5 * sin(ang * 40.0 - uTime * 2.2 + uPhase * 0.5);
-  vec3 wave = mix(vec3(1.0, 0.25, 0.7), vec3(0.2, 0.9, 1.0), w);
-  float u = smoothstep(0.35, 0.85, uHype);
-  vec3 c = mix(mixed, wave, u);
-  float tw = 0.55 + 0.45 * sin(uTime * (2.0 + sd * 5.0) + sd * 40.0);
-  float b = mix(tw, 0.8 + 0.2 * w, u * 0.7) * (0.45 + 0.35 * uHype + 0.3 * uPulse);
-  float hold = step(0.08, fract(sd * 13.7)); // vài chỗ không giơ lightstick
-  vec3 col = c * b * hold;
-  float sz = 2.2;
-  float y = position.y;
-  float da = abs(ang - 0.5) * 2.0; // 0 giữa khán đài xa, 1 hai đầu (cạnh sân khấu)
-  // 4: đèn flash điện thoại — bầu trời sao trắng, lightstick màu tối đi
-  if (uFlash > 0.001) {
-    float ph = step(0.42, fract(sd * 31.7));
-    float tk = 0.5 + 0.5 * sin(uTime * (5.0 + sd * 9.0) + sd * 91.0);
-    vec3 pc = vec3(1.0, 0.97, 0.92) * (0.7 + 1.3 * tk * tk);
-    col = mix(col, mix(col * 0.22, pc, ph), uFlash);
-    sz += uFlash * ph * (1.0 + 1.2 * tk);
-  }
-  // 2: sóng sân vận động — dải sáng cao chạy vòng quanh (bảng màu sóng biển)
-  if (uWave > 0.001) {
-    float dd = ang - uWavePos;
-    float crest = exp(-dd * dd / 0.0012);
-    float swell = exp(-dd * dd / 0.012);
-    vec3 deep = vec3(0.06, 0.14, 0.85) * (0.35 + 0.15 * h11(sd * 9.0));
-    vec3 wc = mix(deep, vec3(0.0, 0.45, 0.85) * 1.2, swell);
-    wc = mix(wc, vec3(0.88, 1.0, 1.0) * 2.0, crest);
-    col = mix(col, wc * hold, uWave);
-    p.y += uWave * (crest * 3.5 + swell * 0.8);
-    sz += uWave * (crest * 3.2 + swell * 0.8);
-  }
-  // 3: thả tim — hồng/đỏ, nhịp tim đập đôi + 3 trái tim khổng lồ ghép bằng chấm sáng
-  if (uHeart > 0.001) {
-    float th = thump(uHeartAge);
-    float a = (ang - 0.5) * 2.0 * 2.2619; // rad
-    float hx = min(min(abs(a), abs(a - 1.15)), abs(a + 1.15)) * 100.0;
-    float hs = 0.85 + 0.15 * th;
-    float inH = heartIn(vec2(hx / (21.0 * hs), (y - 17.5) / (11.0 * hs)));
-    vec3 pink = mix(vec3(1.0, 0.08, 0.3), vec3(1.0, 0.35, 0.7), sd);
-    vec3 hc = mix(pink * (0.3 + 0.45 * th), vec3(1.0, 0.1, 0.25) * (2.2 + 1.6 * th), inH);
-    col = mix(col, hc, uHeart);
-    sz += uHeart * (inH * (2.2 + 1.5 * th) + 0.6 * th);
-    p.y += uHeart * th * 0.6;
-  }
-  // 5: pháo hoa — sóng cam/vàng lan từ phía sân khấu ra + chớp lấp lánh
-  if (uPyro > 0.001) {
-    float front = uPyroAge * 0.95;
-    float wash = smoothstep(0.0, 0.25, front - (1.0 - da));
-    float fl = 0.55 + 0.45 * sin(uTime * 23.0 + sd * 70.0);
-    vec3 warm = mix(vec3(1.0, 0.38, 0.05), vec3(1.0, 0.7, 0.2), fl) * (0.9 + 0.5 * fl);
-    float cell = floor(ang * 36.0) + floor(y / 8.0) * 50.0;
-    float bt = fract(uTime * 0.9 + h11(cell));
-    float burst = exp(-bt * 5.0) * step(0.55, h11(cell + 7.0)) * step(0.5, fract(sd * 17.3));
-    float edge = exp(-pow((front - (1.0 - da)) * 6.0, 2.0));
-    col = mix(col, warm, min(1.0, uPyro * wash * 1.5)) + vec3(1.0, 0.95, 0.75) * (burst * 3.5 * wash + edge * 1.2) * uPyro;
-    sz += uPyro * (wash * 0.8 + burst * 3.0 * wash + edge * 1.5);
-  }
-  // 1: hò reo — xung sáng chạy quanh bowl + cả khán đài nhảy, nhấp nháy trắng-vàng
-  if (uCheer > 0.001) {
-    float r = fract(uCheerAge * 0.85);
-    float race = exp(-pow((da - r) * 7.0, 2.0));
-    float fk = step(0.5, h11(floor(uTime * 12.0) + sd * 311.0));
-    vec3 gold = mix(vec3(1.0, 0.78, 0.35), vec3(1.0), fk);
-    col = mix(col, gold * (0.8 + 0.8 * fk), uCheer * 0.85) + vec3(1.0, 0.95, 0.8) * race * 2.0 * uCheer;
-    p.y += uCheer * (1.4 * abs(sin(uTime * 8.0 + sd * 20.0)) + race * 1.5);
-    sz += uCheer * (1.2 + 0.8 * fk + 2.5 * race);
-  }
-  vCol = col;
-  gl_PointSize = sz * uRes;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-}`;
-const CROWD_FRAG = /* glsl */ `
-varying vec3 vCol;
-void main(){
-  float d = length(gl_PointCoord - 0.5) * 2.0;
-  if (d > 1.0) discard;
-  gl_FragColor = vec4(vCol * (1.0 - d * 0.5), 1.0);
-}`;
+/** Màu token của khu khán đài (độ bão hoà 0.75) → [r,g,b] 0..1. */
+const S = (hex: number): number[] => hexToRgb(shade(hex, 'stands'));
+const satRgb = (c: Rgb): Rgb => { const [h, s, l] = rgbToHsl(c); return hslToRgb([h, s * ZONE_SAT.stands, l]); };
 
 export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf) {
   const disposables: { dispose(): void }[] = [];
-  const pos: number[] = [], col: number[] = [];
-  const quad = (a: number[], b: number[], c: number[], d: number[], ca: number[], cb: number[]) => {
+  const pos: number[] = [], col: number[] = [], kind: number[] = [];
+  const quad = (a: number[], b: number[], c: number[], d: number[], ca: number[], cb: number[] = ca, k = 0) => {
     pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     col.push(...ca, ...ca, ...cb, ...ca, ...cb, ...cb);
+    for (let i = 0; i < 6; i++) kind.push(k);
   };
   const P = (r: number, a: number, y: number) => [CX + Math.sin(a) * r, y, CZ - Math.cos(a) * r];
-  const N = 96;
-  const seat = [0.006, 0.006, 0.016], seatTop = [0.01, 0.009, 0.026], fasc = [0.03, 0.022, 0.06], fascDark = [0.004, 0.003, 0.01];
-  for (let i = 0; i < N; i++) {
-    const a = A0 + ((A1 - A0) * i) / N, b = A0 + ((A1 - A0) * (i + 1)) / N;
-    for (const T of TIERS) {
-      quad(P(T.rf, a, T.yf0), P(T.rf, b, T.yf0), P(T.rf, b, T.y0), P(T.rf, a, T.y0), fascDark, fasc); // mặt trước
-      quad(P(T.r0, a, T.y0), P(T.r0, b, T.y0), P(T.r1, b, T.y1), P(T.r1, a, T.y1), seat, seatTop); // ghế
+  const N = 192;
+  // đèn "mặt trời" giả: từ trên, hơi từ phía khán giả → bậc sáng / bậc bóng
+  const LR = -0.47, LY = 0.88;
+  type Seg = [number, number, number, number, number, number?]; // r1,y1,r2,y2,hex,(1=trim, 2=bóng ngược)
+  const sweep = (segs: Seg[]) => {
+    for (const [r1, y1, r2, y2, hex, f] of segs) {
+      let nr = -(y2 - y1), ny = r2 - r1;
+      const len = Math.hypot(nr, ny) || 1; nr /= len; ny /= len;
+      if (f === 2) { nr = -nr; ny = -ny; }
+      const lit = nr * LR + ny * LY > 0.28;
+      const cc = f === 1 ? [1, 1, 1] : lit ? S(hex) : hexToRgb(shadowOf(shade(hex, 'stands')));
+      for (let i = 0; i < N; i++) {
+        const a = A0 + ((A1 - A0) * i) / N, b = A0 + ((A1 - A0) * (i + 1)) / N;
+        quad(P(r1, a, y1), P(r1, b, y1), P(r2, b, y2), P(r2, a, y2), cc, cc, f === 1 ? 1 : 0);
+      }
     }
-    quad(P(120, a, 30), P(120, b, 30), P(120, b, 34), P(120, a, 34), fascDark, fasc); // tường sau
-    quad(P(120, a, 34), P(120, b, 34), P(126, b, 36), P(126, a, 36), fasc, fascDark); // mái hiên
-  }
+  };
+  const nightAt = (k: 700 | 500 | 300 | 100) => PAL.night[k];
+  const segs: Seg[] = [];
+  TIERS.forEach((T, ti) => {
+    const rf = T.rf, y0 = T.y0;
+    segs.push(
+      [rf, T.yf0, rf, y0 - 0.95, nightAt(500)],            // thân tầng
+      [rf, y0 - 0.95, rf - 0.1, y0 - 0.9, nightAt(300)],
+      [rf - 0.1, y0 - 0.9, rf - 0.12, y0 - 0.7, nightAt(300), 1], // dải trim phát sáng màu Hype
+      [rf - 0.12, y0 - 0.7, rf, y0 - 0.64, nightAt(300)],
+      [rf, y0 - 0.64, rf - 0.3, y0 - 0.5, PAL.grape[700]],  // gờ bo tròn (mép trước tầng)
+      [rf - 0.3, y0 - 0.5, rf - 0.5, y0 - 0.25, PAL.grape[500]],
+      [rf - 0.5, y0 - 0.25, rf - 0.38, y0 + 0.02, PAL.grape[500]],
+      [rf - 0.38, y0 + 0.02, rf - 0.1, y0 + 0.14, PAL.night[100]],
+      [rf - 0.1, y0 + 0.14, rf + 0.3, y0 + 0.14, PAL.night[100]],
+    );
+    // ghế dốc: 4 dải hàng xen kẽ 2 tông (2 bậc)
+    for (let s = 0; s < 4; s++) {
+      const f0 = s / 4, f1 = (s + 1) / 4;
+      segs.push([T.r0 + 0.3 + f0 * (T.r1 - T.r0 - 0.3), y0 + 0.14 + f0 * (T.y1 - y0 - 0.14), T.r0 + 0.3 + f1 * (T.r1 - T.r0 - 0.3), y0 + 0.14 + f1 * (T.y1 - y0 - 0.14), s % 2 ? PAL.night[700] : PAL.night[500]]);
+    }
+    const nx = TIERS[ti + 1];
+    if (nx) segs.push([T.r1, T.y1, nx.rf - 0.5, nx.yf0, PAL.night[700]]); // trần bậc nối tầng
+  });
+  // tường sau + mái hiên bo tròn
+  segs.push(
+    [120, 30, 120, 33.4, PAL.night[300]],
+    [120, 33.4, 126.0, 34.1, PAL.night[500], 2],           // mặt dưới mái
+    [126.0, 34.1, 126.6, 34.35, PAL.grape[700]],
+    [126.6, 34.35, ROOF_LIP_R, 34.9, PAL.grape[500]],
+    [ROOF_LIP_R, 34.9, 126.6, 35.5, PAL.grape[500]],
+    [126.6, 35.5, 126.0, 35.75, PAL.night[100]],
+    [126.0, 35.75, 120, 34.3, PAL.night[300], 2],
+  );
+  sweep(segs);
+
   // hai đầu khán đài (bịt mặt cắt)
+  const dark = S(PAL.night[700]);
   for (const a of [A0, A1]) {
-    for (const T of TIERS) quad(P(T.rf, a, T.yf0), P(T.r1 + 1, a, T.yf0), P(T.r1 + 1, a, T.y1), P(T.rf, a, T.y0), fascDark, fascDark);
+    for (const T of TIERS) quad(P(T.rf, a, T.yf0), P(T.r1 + 1, a, T.yf0), P(T.r1 + 1, a, T.y1), P(T.rf, a, T.y0), dark);
+    quad(P(120, a, 30), P(126, a, 30), P(126, a, 36), P(120, a, 36), dark);
   }
+
+  // lối vào (vomitory) hình vòm tối + lối đi dọc ghế, tại ranh giới giữa các khu
+  const secA = (A1 - A0) / SECTIONS;
+  const tangent = (a: number) => [Math.cos(a), 0, Math.sin(a)];
+  const archFan = (r: number, a: number, yb: number, h: number, w: number, c: number[]) => {
+    const t = tangent(a), base = P(r, a, 0);
+    const pt = (x: number, y: number) => [base[0] + t[0] * x, y, base[2] + t[2] * x];
+    const outline: number[][] = [pt(-w, yb), pt(w, yb)];
+    const yc = yb + h - w;
+    for (let k = 0; k <= 10; k++) { const th = (k / 10) * Math.PI; outline.push(pt(w * Math.cos(th), yc + w * Math.sin(th))); }
+    const cen = pt(0, yb + h / 2);
+    for (let i = 0; i < outline.length; i++) {
+      const p = outline[i], q = outline[(i + 1) % outline.length];
+      pos.push(...cen, ...p, ...q); col.push(...c, ...c, ...c); kind.push(0, 0, 0);
+    }
+  };
+  for (let k = 1; k < SECTIONS; k++) {
+    const a = A0 + secA * k;
+    TIERS.forEach((T, ti) => {
+      const h = ti === 0 ? 3.6 : T.y0 - 1.15 - T.yf0;
+      archFan(T.rf - 0.05, a, T.yf0, h, 1.9, S(PAL.night[300]));
+      archFan(T.rf - 0.07, a, T.yf0, h - 0.25, 1.55, S(PAL.night[700]));
+      // lối đi trên ghế
+      const t = tangent(a), w = 0.7, c = S(PAL.night[700]);
+      const A = P(T.r0 + 0.3, a, T.y0 + 0.24), B = P(T.r1, a, T.y1 + 0.1);
+      const off = (p: number[], s: number) => [p[0] + t[0] * w * s, p[1], p[2] + t[2] * w * s];
+      quad(off(A, -1), off(A, 1), off(B, 1), off(B, -1), c);
+    });
+  }
+
   const structGeo = new THREE.BufferGeometry();
   structGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   structGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  structGeo.setAttribute('aKind', new THREE.Float32BufferAttribute(kind, 1));
 
-  // Tháp đèn pha 4 góc: cột + khung đầu đèn (gộp vào cùng mesh)
+  // Tháp đèn pha 4 góc: cột bo + vành grape + đầu "nấm" + 6 bóng kem tròn + beacon nhấp nháy
   const parts: THREE.BufferGeometry[] = [structGeo];
   const towerA = [-0.62 * Math.PI, -0.3 * Math.PI, 0.3 * Math.PI, 0.62 * Math.PI];
-  const lampCol = new THREE.Color(1, 0.95, 0.85), halo = new THREE.Color(0.9, 0.85, 1.0);
-  const boxCol = (g: THREE.BufferGeometry, c: number[]) => {
-    const ng = g.toNonIndexed(); g.dispose();
-    ng.deleteAttribute('normal'); ng.deleteAttribute('uv');
-    const n = ng.attributes.position.count;
+  const lampHex = PAL.peach[100];
+  const part = (g: THREE.BufferGeometry, m: THREE.Matrix4, hex: number, L: THREE.Vector3, flat = false) => {
+    g.applyMatrix4(m);
+    const ng = g.index ? g.toNonIndexed() : g; if (ng !== g) g.dispose();
+    const nrm = ng.attributes.normal, n = ng.attributes.position.count;
+    const lit = S(hex), shd = hexToRgb(shadowOf(shade(hex, 'stands')));
     const arr = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) arr.set(c, i * 3);
+    for (let i = 0; i < n; i++) {
+      const d = flat ? 1 : nrm.getX(i) * L.x + nrm.getY(i) * L.y + nrm.getZ(i) * L.z;
+      arr.set(d > 0.15 ? lit : shd, i * 3);
+    }
+    ng.deleteAttribute('normal'); ng.deleteAttribute('uv');
     ng.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    ng.setAttribute('aKind', new THREE.BufferAttribute(new Float32Array(n), 1));
     parts.push(ng);
   };
+  const cream = S(PAL.peach[300]), halo = S(PAL.peach[500]), grape = S(PAL.grape[300]);
   for (const a of towerA) {
-    const R = 130, H = 52;
+    const R = 130, H = 52, HY = H + 3;
     const [x, , z] = P(R, a, 0);
     const ry = Math.atan2(-(x - CX), -(z - CZ)); // mặt đầu đèn hướng vào sân
-    const pole = new THREE.BoxGeometry(1.6, H, 1.6); pole.translate(x, H / 2, z); boxCol(pole, [0.008, 0.007, 0.016]);
-    const head = new THREE.BoxGeometry(14, 8, 0.8); head.rotateX(0.3); head.rotateY(ry); head.translate(x, H + 3, z); boxCol(head, [0.012, 0.01, 0.022]);
-    // cụm đèn 5×3 + quầng
     const fx = Math.cos(ry), fz = -Math.sin(ry); // trục ngang của đầu đèn
     const nx = Math.sin(ry), nz = Math.cos(ry); // pháp tuyến hướng vào sân
-    for (let i = 0; i < 5; i++) for (let j = 0; j < 3; j++) {
-      const ox = (i - 2) * 2.6, oy = (j - 1) * 2.3;
-      addGlow(glow, x + fx * ox + nx * 0.8, H + 3 + oy, z + fz * ox + nz * 0.8, lampCol, 1.3, 2.6, [2, 0, 0, 2]);
+    const L = new THREE.Vector3(nx * 0.45, 0.88, nz * 0.45).normalize();
+    const T4 = (px: number, py: number, pz: number, sx = 1, sy = 1, sz = 1) =>
+      new THREE.Matrix4().makeTranslation(px, py, pz).multiply(new THREE.Matrix4().makeScale(sx, sy, sz));
+    part(new THREE.CylinderGeometry(0.9, 1.5, H, 16), T4(x, H / 2, z), PAL.night[300], L);
+    for (const yy of [9, 21, 33]) { const rr = 1.5 - 0.6 * (yy / H) + 0.08; part(new THREE.CylinderGeometry(rr, rr + 0.04, 1.4, 16), T4(x, yy, z), PAL.grape[500], L); }
+    part(new THREE.SphereGeometry(2.3, 16, 10), T4(x, 0.6, z), PAL.night[300], L);
+    part(new THREE.SphereGeometry(5.5, 24, 14), T4(x, HY, z, 1, 0.75, 1), PAL.night[100], L); // đầu nấm
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
+      const ox = (i - 1) * 3.3, oy = (j - 0.5) * 3.2;
+      const dep = 5.5 * Math.sqrt(Math.max(0.1, 1 - (ox * ox) / 30.25 - (oy * oy) / 17)) + 0.35;
+      const lx = x + nx * dep + fx * ox, ly = HY + oy, lz = z + nz * dep + fz * ox;
+      const lamp = new THREE.SphereGeometry(1.4, 14, 10);
+      part(lamp, T4(lx, ly, lz), lampHex, L, true);
+      addGlow(glow, lx + nx * 0.5, ly, lz + nz * 0.5, new THREE.Color(...cream), 0.3, 5.2, [2, 0, 0, 2]); // quầng mềm quanh bóng
     }
-    addGlow(glow, x + nx * 1.5, H + 3, z + nz * 1.5, halo, 0.5, 46, [2, 0, 0, 2]);
+    addGlow(glow, x + nx * 2.5, HY, z + nz * 2.5, new THREE.Color(...halo), 0.2, 50, [2, 0, 0, 2]);
+    addGlow(glow, x + nx * 2.5, HY, z + nz * 2.5, new THREE.Color(...grape), 0.1, 90, [2, 0, 0, 2]);
+    // beacon nhỏ nhấp nháy trên đỉnh
+    part(new THREE.SphereGeometry(0.7, 10, 8), T4(x, HY + 5.2, z), PAL.berry[500], L, true);
+    addGlow(glow, x, HY + 5.2, z, new THREE.Color(...S(PAL.berry[500])), 1.5, 3.0, [2, 0.7 + 0.05 * a, a * 3, 1]);
   }
   const allGeo = mergeGeometries(parts)!;
   parts.forEach((g) => g.dispose());
-  const structMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide });
+
+  // màu Hype dùng chung (stands: độ bão hoà 0.75) — mọi vật liệu của khu này cùng đọc
+  const hypeU = { uHA: { value: new THREE.Vector3() }, uHB: { value: new THREE.Vector3() }, uHC: { value: new THREE.Vector3() } };
+  const structMat = new THREE.ShaderMaterial({
+    uniforms: { uTrim: hypeU.uHA, uTint: { value: new THREE.Vector3(1, 1, 1) }, uPulse: uniforms.uPulse ?? { value: 0 } },
+    vertexShader: STRUCT_VERT, fragmentShader: STRUCT_FRAG, side: THREE.DoubleSide, fog: false,
+  });
   const struct = new THREE.Mesh(allGeo, structMat);
   struct.renderOrder = -8;
   scene.add(struct);
   disposables.push(allGeo, structMat);
 
-  // Đèn nhà hát: hàng chấm màu dọc mép trước mỗi tầng + mép mái
-  const palette = [0xff4fa0, 0x4fd6ff, 0xffc24f, 0x9a6bff, 0x3dffb0].map((h) => new THREE.Color(h));
-  const rows = [...TIERS.map((T) => ({ r: T.rf - 0.3, y: T.y0 - 0.4 })), { r: 125.5, y: 35.6 }];
-  rows.forEach((row, ti) => {
-    const n = Math.round(row.r * (A1 - A0) / 1.6);
-    for (let i = 0; i < n; i++) {
-      const a = A0 + ((A1 - A0) * i) / (n - 1);
-      const [x, y, z] = P(row.r, a, row.y);
-      const c = palette[(i + ti * 2) % palette.length];
-      addGlow(glow, x, y, z, c, 0.55 + 0.45 * (((i * 7919) % 13) / 13), 0.9, [1, 0, 0, 2]);
-    }
+  // Trang trí (1 mesh): bóng đèn dây, bảng khu A–H, cờ
+  const decorGeo = buildDecor({
+    P, A0, A1, tiers: TIERS, signSections: SECTIONS, signR: (T) => T.rf - 0.06,
+    roofBulb: { r: ROOF_LIP_R - 0.14, y: 34.9 },
   });
+  const atlas = makeSignAtlas();
+  const decorU = { uChase: { value: 0 }, uCheerFx: { value: 0 }, uTex: { value: atlas } };
+  const decorMat = new THREE.ShaderMaterial({
+    uniforms: { ...uniforms, ...decorU }, vertexShader: decorVert(CX, CZ), fragmentShader: DECOR_FRAG,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+  });
+  const decor = new THREE.Mesh(decorGeo, decorMat);
+  decor.frustumCulled = false;
+  decor.renderOrder = -4;
+  scene.add(decor);
+  disposables.push(decorGeo, decorMat);
+  if (atlas) disposables.push(atlas);
 
-  // Khán giả khán đài xa: ~26k lightstick
+  // Đèn nhà/đèn pha trong Points điểm sáng chung (beacon, quầng); bóng đèn dây nằm trong mesh trang trí ở trên.
+
+  // Khán giả khán đài xa: ~26k chấm kẹo, tầng dưới có lightstick sao/tim
   const COUNT = 26000;
   const cp = new Float32Array(COUNT * 3), cs = new Float32Array(COUNT * 2);
   const areas = TIERS.map((T) => (T.r1 - T.r0) * (T.r0 + T.r1) / 2);
@@ -202,8 +221,12 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
     const row = Math.floor(rnd() * rows);
     const f = (row + 0.5) / rows;
     const r = T.r0 + 0.5 + f * (T.r1 - T.r0 - 1);
-    const y = T.y0 + f * (T.y1 - T.y0) + 1.1 + rnd() * 0.3;
-    const u = 0.01 + rnd() * 0.98;
+    const y = T.y0 + 0.14 + f * (T.y1 - T.y0) + 1.0 + rnd() * 0.3;
+    let u = 0.01 + rnd() * 0.98;
+    for (let k = 1; k < SECTIONS; k++) { // tránh lối đi
+      const du = u - k / SECTIONS, lim = 1.2 / (r * (A1 - A0));
+      if (Math.abs(du) < lim) u = k / SECTIONS + Math.sign(du || 1) * lim * (1 + rnd());
+    }
     const a = A0 + (A1 - A0) * u;
     cp.set(P(r, a, y), i * 3);
     cs[i * 2] = rnd(); cs[i * 2 + 1] = u;
@@ -216,7 +239,7 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
     uHeart: { value: 0 }, uHeartAge: { value: 99 }, uFlash: { value: 0 }, uPyro: { value: 0 }, uPyroAge: { value: 99 },
   };
   const crowdMat = new THREE.ShaderMaterial({
-    uniforms: { ...uniforms, ...fxU }, vertexShader: CROWD_VERT, fragmentShader: CROWD_FRAG,
+    uniforms: { ...uniforms, ...fxU, ...hypeU }, vertexShader: CROWD_VERT, fragmentShader: CROWD_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
   const crowd = new THREE.Points(crowdGeo, crowdMat);
@@ -227,7 +250,7 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
 
   // Tương tác khán giả (sự kiện 'cs-interact' từ main.ts) → bao hiệu ứng nới mềm trong JS
   const age = { cheer: 99, wave: 99, heart: 99, pyro: 99 };
-  let flashOn = false, waveModeOn = false, lastT = -1, lastReal = performance.now(), waveLap = 0;
+  let flashOn = false, waveModeOn = false, lastT = -1, lastReal = performance.now(), waveLap = 0, chase = 0;
   const onInteract = (e: Event) => {
     const d = (e as CustomEvent).detail as { kind?: string; on?: boolean } | undefined;
     if (!d) return;
@@ -240,13 +263,18 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
   window.addEventListener('cs-interact', onInteract);
   const env = (a: number, dur: number, fin: number, fout: number) => Math.max(0, Math.min(1, a / fin, (dur - a) / fout));
   const ease = (v: number, target: number, rate: number) => v + Math.max(-rate, Math.min(rate, target - v));
-  const baseStruct = new THREE.Color(1, 1, 1), tmpC = new THREE.Color();
+  const tint = structMat.uniforms.uTint.value as THREE.Vector3;
   crowd.onBeforeRender = () => {
     const now = performance.now();
     const t = uniforms.uTime?.value as number ?? now / 1000;
+    const hype = (uniforms.uHype?.value as number) ?? 0;
     let dt = t - lastT;
     if (lastT < 0 || dt <= 0 || dt > 0.5) dt = Math.min(0.1, (now - lastReal) / 1000); // tạm dừng: dùng đồng hồ thực
     lastT = t; lastReal = now;
+    const hc = hypeColors(hype);
+    hypeU.uHA.value.set(...satRgb(hc.primary));
+    hypeU.uHB.value.set(...satRgb(hc.secondary));
+    hypeU.uHC.value.set(...satRgb(hc.accent));
     age.cheer += dt; age.wave += dt; age.heart += dt; age.pyro += dt;
     const cheer = env(age.cheer, 2.6, 0.12, 0.9), heart = env(age.heart, 4.2, 0.3, 1.0), pyro = env(age.pyro, 3.4, 0.1, 1.0);
     fxU.uCheer.value = cheer; fxU.uCheerAge.value = age.cheer;
@@ -257,16 +285,21 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
     fxU.uWave.value = ease(fxU.uWave.value, waveOn ? 1 : 0, dt / 0.7);
     if (fxU.uWave.value > 0) waveLap += dt / 3; else waveLap = 0; // 1 vòng / 3 s
     fxU.uWavePos.value = (waveLap % 1) * 1.3 - 0.15;
-    // đèn nhà hát / mép khán đài loé theo hò reo, ấm lên khi pháo hoa
-    const fl = cheer * (0.5 + 0.5 * Math.sin(t * 30)) * 14 + pyro * 4;
-    tmpC.copy(baseStruct).multiplyScalar(1 + fl);
-    if (pyro > 0) tmpC.g *= 1 - 0.25 * pyro, tmpC.b *= 1 - 0.6 * pyro;
-    structMat.color.copy(tmpC);
+    // đèn dây chạy chậm, nhanh hơn khi Hype cao; loé theo hò reo; kết cấu ấm lên khi pháo hoa
+    chase += dt * (0.9 + 3.6 * hype);
+    decorU.uChase.value = chase;
+    decorU.uCheerFx.value = cheer * (0.5 + 0.5 * Math.sin(t * 30)) * 0.8 + pyro * 0.3;
+    const fl = cheer * (0.5 + 0.5 * Math.sin(t * 30)) * 0.4 + pyro * 0.2;
+    tint.set(1 + fl, 1 + fl * (1 - 0.25 * pyro), 1 + fl * (1 - 0.6 * pyro));
   };
 
   return {
     /** Tuỳ chọn: gọi mỗi khung để đồng bộ waveMode (1 = sóng) với khán đài xa. */
     update(f: FrameState, _t?: number) { waveModeOn = f.waveMode === 1; },
-    dispose() { window.removeEventListener('cs-interact', onInteract); disposables.forEach((d) => d.dispose()); },
+    dispose() {
+      window.removeEventListener('cs-interact', onInteract);
+      scene.remove(struct, decor, crowd);
+      disposables.forEach((d) => d.dispose());
+    },
   };
 }

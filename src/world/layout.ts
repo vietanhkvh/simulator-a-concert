@@ -7,13 +7,14 @@
 // Chưa chuyển (còn số cứng trong file, cần rà khi đổi cao độ hoặc dời vật thể):
 //   • Mặt sân khấu y = 0 được NGẦM ĐỊNH ở rất nhiều chỗ trong khu arena (stageDeco, band, singer, lights,
 //     stageFx, entrance, walkLayout…). Muốn sân khấu cao hơn khán giả thì HẠ FIELD_Y, giữ STAGE_Y = 0.
-//   • arena/lights.ts: độ cao vệt màu trên khán giả (y = 0,6), vị trí các cụm đèn, chấm đèn runway.
-//   • arena/stageFx.ts: dàn blinder (y 6,4, z -10), khói thấp, tia laser.   • arena/confetti.ts: vùng rơi (y 9–14).
-//   • arena/cameraCrew.ts: tháp quay giữa sân (7, -40) cao 4 m, độ cao drone 4–11 m, cần cẩu.
-//   • arena/entrance*.ts: điểm đáp (0, 0, -6,6), độ cao trực thăng, hố bục nâng sâu 3,4 m.
-//   • arena/ledScreens.ts: chân màn hình dài y + 2 (giả định mặt đất không thấp hơn -2).
-//   • arena/emotes.ts: vùng sinh biểu tượng (tới 62 m, tránh dải runway).   • arena/stageBase.ts: hộp sàn diễn 26×8.
-//   • stands/stadium.ts: cột đèn pha, hàng đèn trên cùng (r 125,5; y 35,6); đáy tầng 1 (yf0 = -1) là số tuyệt đối.
+//   • arena/lights.ts: vị trí các cụm đèn trên mái/bục, chấm đèn runway (y 0,12 = mặt sàn diễn).
+//   • arena/stageFx.ts: dàn blinder (y 6,4, z -10), tia laser.   • arena/confetti.ts: vùng rơi (y 9–14, so với sân khấu).
+//   • arena/cameraCrew.ts: độ cao drone 4–11 m (so với sân khấu), vị trí tháp quay (7, -40), cần cẩu (-9,6; -5,8).
+//   • arena/entrance*.ts: điểm đáp (0, 0, -6,6), độ cao trực thăng.   • arena/stageBase.ts: hộp sàn diễn 26×8.
+//   • arena/emotes.ts: vùng sinh biểu tượng (tới 62 m, tránh dải runway).
+//   • stands/stadium.ts: cột đèn pha (gốc y 0, khuất sau khán đài), hàng đèn trên cùng (r 125,5; y 35,6).
+//   (Đã chuyển theo FIELD_Y: sàn/chân váy runway, mép + panel trước sân khấu, cầu thang + rào hố, đội quay phim,
+//    vệt màu đèn, khói thấp, chân màn hình LED, biểu tượng cảm xúc, đáy tầng 1 khán đài.)
 //   • outside/balloons.ts: tọa độ 6 khinh khí cầu (BALLOONS).   • outside/sky.ts: đường bay máy bay chở khách.
 //   • outside/secretUfo.ts (0, 18, -40), secretDragon.ts (-4, 20, -62), secretJet.ts (0, 48, -34): tâm từng sự kiện.
 //   • main.ts: camera sự kiện bí mật (0, 62, -112).
@@ -31,11 +32,11 @@ export const FOG_DENSITY = 0.022;
 /** Cao độ mặt sân khấu chính, runway và các bục (m). Người chơi đi trên mặt này. */
 export const STAGE_Y = 0;
 /** Cao độ sàn khán giả đứng ở hàng đầu (m). Sân khấu cao hơn khán giả STAGE_Y - FIELD_Y. */
-export const FIELD_Y = -1.5;
+export const FIELD_Y = -3.5;
 /** Độ cao sân khấu so với sàn khán giả hàng đầu (m). */
 export const STAGE_HEIGHT = STAGE_Y - FIELD_Y;
 /** Bán kính hàng khán giả đầu tiên tính từ ca sĩ (m). */
-export const FIELD_R0 = 6.5;
+export const FIELD_R0 = 7.1;
 /** Bán kính tối đa của khu khán giả đứng (m); ngoài mức này là vành đai trống trước khán đài. */
 export const FIELD_R_MAX = 62;
 /** Sàn khán giả dốc lên phía sau (m cao / m xa) để hàng sau vẫn thấy sân khấu. */
@@ -59,9 +60,9 @@ export const STAGE_HALF_W = 13;
 export const STAGE_FRONT_Z = -5;
 export const STAGE_BACK_Z = 3;
 /** Hố sân khấu: khe giữa mép sân khấu và hàng rào khán giả. */
-export const PIT_FENCE_Z = -6.3;
+export const PIT_FENCE_Z = -6.9;
 /** Hàng rào khán giả: không ai đứng gần sân khấu hơn z này. */
-export const CROWD_BARRIER_Z = -7;
+export const CROWD_BARRIER_Z = -7.6;
 /** Mái giàn phía trên sân khấu chiếm vùng này — vật bay và camera phải tránh. */
 export const ROOF = { halfW: 20, zBack: 4, zFront: -6, yMin: 7, yMax: 14 } as const;
 /** Tường LED sau lưng ca sĩ. */
@@ -79,7 +80,7 @@ export const STANDS_ARC = { from: -0.72 * Math.PI, to: 0.72 * Math.PI } as const
  * r0→r1, y0→y1: mặt dốc nơi khán giả ngồi.
  */
 export const STANDS_TIERS = [
-  { rf: 84, yf0: -1, r0: 84, r1: 96, y0: 6, y1: 12 },
+  { rf: 84, yf0: FIELD_Y - 0.5, r0: 84, r1: 96, y0: 6, y1: 12 },
   { rf: 97, yf0: 12, r0: 97, r1: 108, y0: 15, y1: 21 },
   { rf: 109, yf0: 21, r0: 109, r1: 120, y0: 24, y1: 30 },
 ] as const;
@@ -91,8 +92,11 @@ export const STANDS_TOP_Y = 36;
 // ───────────── KHU 1: NGOÀI SÂN (outside) ─────────────
 /** Bán kính vòm trời (sao, cực quang bám theo camera). Phải nhỏ hơn CAMERA_FAR. */
 export const SKY_RADIUS = 185;
-/** Khinh khí cầu cổ vũ bay trong khoảng độ cao này (m). */
-export const BALLOON_Y = { min: 24, max: 33 } as const;
+/**
+ * Khinh khí cầu cổ vũ đứng sau khán đài xa nhất (r ≈ 138–158 m quanh STADIUM_CENTRE); tâm vỏ ở độ cao này (m),
+ * đủ để cả vỏ lẫn băng rôn treo dưới (~35 m) ló trên mép khán đài từ mắt ca sĩ.
+ */
+export const BALLOON_Y = { min: 70, max: 84 } as const;
 /** Máy bay kéo băng rôn bay ngang sân ở độ cao/độ sâu này. */
 export const FLYBY = { y: 36, z: -30 } as const;
 /** Tâm bầu trời phía trên sân nơi các sự kiện bí mật diễn ra (pháo hoa tên lửa, trái tim khói…). */

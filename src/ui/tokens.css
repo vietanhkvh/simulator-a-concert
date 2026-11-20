@@ -1,0 +1,34 @@
+/* Token CSS "Kẹo đêm" (STYLE_GUIDE mục 5). Nguồn hex: src/world/style/palette.ts. Không @import, không file font. */
+:root {
+  --cs-night-700: #0a0818; --cs-night-500: #14102b; --cs-night-300: #2a2350; --cs-night-100: #4a3f82;
+  --cs-berry-700: #b8326e; --cs-berry-500: #ff5fa8; --cs-berry-300: #ff94c4; --cs-berry-100: #ffd0e4;
+  --cs-grape-700: #5238b8; --cs-grape-500: #8b6bff; --cs-grape-300: #b5a0ff; --cs-grape-100: #ddd4ff;
+  --cs-soda-700: #1c8fc0; --cs-soda-500: #45d9ff; --cs-soda-300: #8fe9ff; --cs-soda-100: #d2f7ff;
+  --cs-mint-700: #1e9c84; --cs-mint-500: #4fe3c1; --cs-mint-300: #96f0da; --cs-mint-100: #d6faf1;
+  --cs-honey-700: #c48a12; --cs-honey-500: #ffd45a; --cs-honey-300: #ffe596; --cs-honey-100: #fff5d1;
+  --cs-peach-700: #c25a2e; --cs-peach-500: #ff9a6b; --cs-peach-300: #ffbe9e; --cs-peach-100: #ffe2d4;
+  --cs-cream-700: #c9b8a6; --cs-cream-500: #fff4e6; --cs-cream-300: #fffaf3; --cs-cream-100: #ffffff;
+  --cs-ink: #2b1d5c;
+
+  --cs-ok: var(--cs-mint-500);
+  --cs-warn: var(--cs-honey-500);
+  --cs-bad: var(--cs-peach-500);
+  --cs-note-hit: var(--cs-honey-500);
+  --cs-note-miss: var(--cs-night-100);
+
+  --cs-surface: rgba(20, 16, 43, 0.78);
+  --cs-stroke: rgba(139, 107, 255, 0.45);
+  --cs-r-sm: 10px;
+  --cs-r-md: 18px;
+  --cs-r-pill: 999px;
+
+  /* Sticker: viền 2 px + bóng dưới đặc 4 px; nút chính nền berry-500, chữ night-700. */
+  --cs-sticker-border: 2px solid var(--cs-ink);
+  --cs-sticker-shadow: 0 4px 0 var(--cs-berry-700);
+  --cs-sticker-shadow-panel: 0 4px 0 var(--cs-ink);
+  --cs-btn-bg: var(--cs-berry-500);
+  --cs-btn-fg: var(--cs-night-700);
+
+  --cs-font-display: 'Baloo 2', system-ui, sans-serif;
+  --cs-font-body: system-ui, 'Segoe UI', Roboto, sans-serif;
+}

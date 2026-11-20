@@ -1,6 +1,7 @@
 // Confetti: 1 THREE.Points, ~600 mảnh, chuyển động hoàn toàn trong vertex shader (uTime - uStart).
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
+import { FIELD_Y } from '../../world/layout';
 
 export interface Confetti {
   update(f: FrameState): void;
@@ -31,7 +32,7 @@ void main() {
   p.z += cos(k * (1.2 + aSeed.x * 2.0) + aSeed.y * 30.0) * 0.8;
   vColor = aColor * (0.75 + 0.25 * sin(k * 9.0 + aSeed.z * 20.0)); // lấp lánh khi lật
   float fadeOut = 1.0 - smoothstep(${(LIFE - 3).toFixed(1)}, ${LIFE.toFixed(1)}, age + aSeed.w * 1.2);
-  vAlpha = (age < 0.0 || p.y < -1.2) ? 0.0 : fadeOut;
+  vAlpha = (age < 0.0 || p.y < ${(FIELD_Y + 0.3).toFixed(2)}) ? 0.0 : fadeOut;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   gl_PointSize = max(2.0, uPx * (0.13 + aSeed.y * 0.08) / -mv.z);

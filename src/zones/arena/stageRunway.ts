@@ -14,6 +14,10 @@ function bar(ax: number, az: number, bx: number, bz: number, y: number, w: numbe
   return g.toNonIndexed();
 }
 
+/** Lan can mép runway/bục: cao RAIL_Y trên mặt sàn, lùi vào trong RAIL_IN (m). */
+const RAIL_Y = 0.55;
+const RAIL_IN = -0.08;
+
 export function createRunway(scene: THREE.Scene) {
   // Thân runway rủ từ mặt sân khấu xuống dưới sàn khán giả 0,2 m.
   const FLOOR = FIELD_Y - 0.2;
@@ -48,7 +52,19 @@ export function createRunway(scene: THREE.Scene) {
     }
     // mép phát sáng trên mặt + dải chân váy; bỏ phần nằm trong hình khác (chỗ nối gọn)
     const step = s.kind === 'disc' ? 0.35 : 0.1;
-    for (const [off, y, w, h] of [[-0.02, 0.02, 0.08, 0.05], [0.015, -0.6, 0.03, 0.04]] as const) {
+    // + lan can thấp phát sáng (thanh trên y RAIL_Y, trụ mỗi ~2,4 m) — cùng mesh dải sáng, không thêm draw call.
+    for (const run of edgeRuns(s, 0.1, RAIL_IN)) {
+      let acc = 0;
+      for (let i = 0; i < run.pts.length; i++) {
+        const [x, z] = run.pts[i]!;
+        if (i > 0) acc += Math.hypot(x - run.pts[i - 1]![0], z - run.pts[i - 1]![1]);
+        if (i === 0 || acc >= 2.4 || (!run.closed && i === run.pts.length - 1)) {
+          acc = 0;
+          strips.push(bar(x, z, x, z + 0.001, STAGE_Y + RAIL_Y / 2, 0.035, RAIL_Y, 0.035));
+        }
+      }
+    }
+    for (const [off, y, w, h] of [[-0.02, 0.02, 0.08, 0.05], [0.015, -0.6, 0.03, 0.04], [RAIL_IN, STAGE_Y + RAIL_Y, 0.045, 0.045]] as const) {
       for (const run of edgeRuns(s, step, off)) {
         // mép đoạn thẳng: cả run thẳng hàng → 1 hộp từ đầu tới cuối
         const pts = run.closed ? [...run.pts, run.pts[0]!] : s.kind === 'seg' ? [run.pts[0]!, run.pts[run.pts.length - 1]!] : run.pts;

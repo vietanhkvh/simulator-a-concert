@@ -2,6 +2,7 @@
 // Toàn bộ là mesh gộp, vật liệu không cần đèn, fog:false; hoạt ảnh bằng uniform/shader.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { FIELD_Y } from '../../world/layout';
 
 const LDIR = new THREE.Vector3(0.35, 0.8, -0.5).normalize();
 
@@ -422,7 +423,7 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
   const wave = new THREE.Mesh(waveGeo, waveMat);
-  wave.position.set(land.x, 0.35, land.z);
+  wave.position.set(land.x, FIELD_Y + 2.0, land.z); // vòng sáng quét ngang đầu khán giả
   wave.renderOrder = 3;
   disposables.push(waveGeo, waveMat);
 

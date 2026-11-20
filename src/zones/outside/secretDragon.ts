@@ -1,16 +1,27 @@
-// Rồng phương Đông: thân 56 đốt (InstancedBufferGeometry) + đầu (1 mesh) bám theo đường cong (DataTexture,
-// tham số hoá theo độ dài), sóng lượn truyền dọc thân — toàn bộ trong vertex shader, CPU chỉ đặt uniform.
-// Hạt: vệt tia lửa sau thân + hơi thở "lửa" lấp lánh (1 Points). = 3 draw call.
+// ★ Rồng chibi (STYLE_GUIDE · SECRET OBJECT): đầu tròn to (≈1,6 × đường kính thân), mắt long lanh chớp + nhìn về
+// sân khấu, má hồng, mõm nhỏ có lỗ mũi, miệng cười (há ra khi "thở"), sừng tròn màu đào, tai cụp + râu lượn,
+// chỏm bờm kem; thân 34 đốt cầu chồng nhau (tham số hoá theo độ dài, đốt dày hơn ở giữa), bụng kem có vạch,
+// đốm + vảy bán nguyệt trong shader, vây lưng tròn, 4 chân ngắn khua, chùm lông đuôi; ngậm/đẩy viên NGỌC
+// phát sáng (SECRET_CORE + vành SECRET_RIM, sao nhỏ quay quanh). Bay lượn sóng như cũ + co giãn khi rẽ +
+// một vòng lộn vui; hơi thở là tim / sao / lấp lánh (không nhắm khán giả). Viền ink (inverted hull) + tô 2 bậc.
+// Draw call: thân + viền thân + đầu + viền đầu + 1 Points + vành secret = 6. Mỗi frame chỉ đổi uniform/transform.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
+import { INK_SKY, OUTLINE, PAL, SECRET_CORE, SECRET_RIM, hexToRgb, popScale, shadowOf } from '../../world/style';
 import { type SecretAct, disposeTree, makePoints, pxScale, seededRnd } from './secretShared';
+import { createSecretHalo } from './secretHalo';
+import { DRAGON_GLSL, DRAGON_PTS_FRAG } from './secretDragonShaders';
 
 const D = 24;
-const NSEG = 56;
-const S = 0.95; // khoảng cách đốt (m)
-const NS = 512; // số mẫu đường bay
+const NSEG = 34;
+const R_BODY = 1.3; // bán kính thân lớn nhất (m)
+const R_HEAD = 2.1; // ≈ 1,6 × đường kính thân
+const S_HEAD = -0.6; // vị trí đầu trên trục thân
+const NS = 512;
 const BREATH_DUR = 2.0;
+const OBJ_H = 4.6; // chiều cao vật thể cho độ dày viền (3,5%)
+const LOOP_R = 5.5, LOOP_LEN = 18;
 
 const PATH_PTS: [number, number, number][] = [
   [80, 22, -46], [55, 19, -46], [36, 15, -38], [8, 14, -32], [-20, 15, -36], [-40, 20, -52],
@@ -21,259 +32,218 @@ const PATH_PTS: [number, number, number][] = [
   [20, 25, -76], [6, 31, -92], [-16, 37, -88], [-22, 45, -72], [-8, 58, -64], [8, 78, -70], [4, 115, -80],
 ];
 const BREATH_AT = new THREE.Vector3(-4, 20, -62);
+const LOOP_AT = new THREE.Vector3(26, 14.5, -35);
+const LOOK_AT = new THREE.Vector3(0, 2, 0); // sân khấu / ca sĩ
 
-const COMMON = /* glsl */ `
-uniform sampler2D uPath;
-uniform float uLen;
-uniform float uSpeed;
-uniform float uT;
-vec3 pathAt(float d) {
-  float x = clamp(d / uLen, 0.0, 1.0) * ${(NS - 1).toFixed(1)};
-  int a = int(floor(x));
-  int b = min(a + 1, ${NS - 1});
-  return mix(texelFetch(uPath, ivec2(a, 0), 0).xyz, texelFetch(uPath, ivec2(b, 0), 0).xyz, fract(x));
-}
-vec3 bodyPos(float i, float t) {
-  float d = uSpeed * t - i * ${S.toFixed(3)};
-  vec3 p = pathAt(d);
-  vec3 T = normalize(pathAt(d + 1.0) - pathAt(d - 1.0) + vec3(1e-4, 0.0, 0.0));
-  vec3 sd = normalize(cross(vec3(0.0, 1.0, 0.0), T) + vec3(0.0, 0.0, 1e-4));
-  vec3 up = cross(T, sd);
-  float env = 0.2 + 0.8 * smoothstep(0.0, 12.0, i);
-  float ph = i * 0.36 - t * 4.2;
-  return p + sd * sin(ph) * 1.8 * env + up * cos(ph * 0.7 + 1.0) * 1.0 * env;
-}
-void frameAt(float i, float t, out vec3 P, out vec3 T, out vec3 sd, out vec3 up) {
-  P = bodyPos(i, t);
-  T = normalize(bodyPos(i - 0.5, t) - bodyPos(i + 0.5, t) + vec3(1e-4, 0.0, 0.0));
-  sd = normalize(cross(vec3(0.0, 1.0, 0.0), T) + vec3(0.0, 0.0, 1e-4));
-  up = cross(T, sd);
-}
-`;
+const sm = (a: number, b: number, x: number) => {
+  const u = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return u * u * (3 - 2 * u);
+};
+/** Bán kính thân theo khoảng cách s sau đầu (giống GLSL radAt). */
+const radAt = (s: number, lb: number) => R_BODY * (0.8 + 0.2 * sm(0, 3, s)) * (1 - 0.66 * sm(lb * 0.3, lb, s));
 
-const BODY_VERT = /* glsl */ `
-${COMMON}
-attribute float aPart;
-#ifdef BODY
-attribute float aI;
-#endif
-varying vec3 vN;
-varying vec3 vW;
-varying vec3 vLoc;
-varying float vPart;
-varying float vI;
-void main() {
-  vec3 l = position;
-  vec3 n = normal;
-#ifdef BODY
-  float i = aI + 1.25;
-  float r = 1.45 * mix(0.95, 1.25, smoothstep(1.6, 7.0, i)) * (1.0 - 0.82 * smoothstep(10.0, ${(NSEG + 1.6).toFixed(1)}, i));
-  bool leg = abs(aI - 6.0) < 0.5 || abs(aI - 27.0) < 0.5;
-  if ((aPart > 2.5 && aPart < 3.5) || aPart > 6.5) { if (!leg) l *= 0.0; }
-  float fin = aPart > 3.5 && aPart < 4.5 ? (aI > ${NSEG - 7}.0 ? 2.4 : 1.0) : 1.0;
-  l.xy *= r * fin;
-  if (fin > 1.5) l.z *= 2.0;
-  vI = aI;
-#else
-  float i = 0.0;
-  if (aPart > 4.5 && aPart < 5.5) l.y += sin(uT * 5.0 + l.z * 1.3) * 0.22 * clamp(3.0 - l.z, 0.0, 4.0);
-  if (aPart > 3.5 && aPart < 4.5) l.x += sin(uT * 6.0 + l.z * 2.0) * 0.12 * max(-l.z, 0.0);
-  vI = -1.0;
-#endif
-  vec3 P, T, sd, up;
-  frameAt(i, uT, P, T, sd, up);
-  vec3 w = P + sd * l.x + up * l.y + T * l.z;
-  vN = normalize(sd * n.x + up * n.y + T * n.z);
-  vW = w;
-  vLoc = l;
-  vPart = aPart;
-  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
-}`;
+// ── 3 bộ màu: [thân, bụng, đốm, vây, sừng, má, bờm, nét tối, miệng, (ngọc), lòng trắng mắt]
+type Way = [number, number, number, number, number, number, number];
+const WAYS: Way[] = [
+  [PAL.honey[500], PAL.cream[500], PAL.berry[500], PAL.mint[500], PAL.peach[500], PAL.berry[300], PAL.cream[300]],
+  [PAL.mint[500], PAL.cream[500], PAL.soda[700], PAL.berry[500], PAL.peach[300], PAL.berry[300], PAL.cream[300]],
+  [PAL.berry[300], PAL.cream[500], PAL.grape[500], PAL.soda[500], PAL.honey[500], PAL.berry[500], PAL.cream[300]],
+];
+const NSLOT = 11;
+const v3 = (hex: number, out = new THREE.Vector3()) => out.fromArray(hexToRgb(hex));
 
-const BODY_FRAG = /* glsl */ `
-uniform float uT;
-uniform float uPal;
-uniform float uPulse;
-uniform float uBreath;
-varying vec3 vN;
-varying vec3 vW;
-varying vec3 vLoc;
-varying float vPart;
-varying float vI;
-void main() {
-  vec3 n = normalize(vN);
-  vec3 v = normalize(cameraPosition - vW);
-  float diff = max(dot(n, normalize(vec3(0.3, 0.85, 0.4))), 0.0);
-  float rim = pow(1.0 - abs(dot(n, v)), 2.0);
-  vec3 base = mix(vec3(0.82, 0.08, 0.05), vec3(0.03, 0.55, 0.45), uPal);
-  vec3 edge = mix(vec3(1.0, 0.78, 0.22), vec3(0.55, 1.0, 0.9), uPal);
-  vec3 belly = mix(vec3(1.0, 0.86, 0.48), vec3(0.85, 1.0, 0.82), uPal);
-  vec3 flame = mix(vec3(1.0, 0.55, 0.1), vec3(0.4, 0.95, 1.0), uPal);
-  vec3 c;
-  float p = vPart;
-  if (p < 0.5 || (p > 6.5)) {
-    // vảy: ô bán nguyệt so le theo chiều dài + chu vi
-    float ang = atan(vLoc.y, vLoc.x) / 3.1416 * 4.0;
-    vec2 g = vec2(ang, (vI + vLoc.z / ${S.toFixed(3)}) * 1.6);
-    g.y += 0.5 * mod(floor(g.x), 2.0);
-    vec2 f = fract(g) - vec2(0.5, 0.0);
-    float sc = smoothstep(0.42, 0.62, length(f * vec2(1.0, 1.2)));
-    float isBelly = smoothstep(-0.2, -0.6, n.y * 0.5 + normalize(vLoc + 1e-4).y * 0.5);
-    c = mix(base, edge, sc * 0.6) * (0.5 + 0.6 * diff);
-    c = mix(c, belly * (0.7 + 0.3 * diff), isBelly * step(vI, 1e3) * step(-0.5, vI));
-    float wave = 0.5 + 0.5 * sin(vI * 0.5 - uT * 7.0);
-    c += edge * sc * (0.08 + 0.35 * wave * (0.6 + 0.6 * uPulse));
-  } else if (p < 1.5) {
-    c = belly * (0.6 + 0.5 * diff);
-  } else if (p < 2.5) {
-    c = mix(vec3(1.0, 0.95, 0.4), vec3(1.0, 0.25, 0.2), uPal) * 1.6; // mắt
-  } else if (p < 3.5) {
-    c = vec3(0.95, 0.9, 0.78) * (0.6 + 0.5 * diff); // sừng / móng
-  } else if (p < 4.5) {
-    c = flame * (0.8 + 0.4 * sin(uT * 8.0 + vLoc.z * 3.0 + vI * 0.4)); // bờm / vây
-  } else if (p < 5.5) {
-    c = edge * 1.1; // râu
-  } else {
-    c = mix(vec3(0.4, 0.05, 0.05), flame * 1.5, uBreath); // miệng
-  }
-  c += mix(edge, flame, 0.5) * rim * 0.55;
-  gl_FragColor = vec4(c, 1.0);
-}`;
-
-const PTS_VERT = /* glsl */ `
-${COMMON}
-uniform float uPx;
-uniform float uBreathT;
-uniform float uPal;
-attribute vec4 aSeed;
-attribute vec3 aColor;
-varying vec3 vColor;
-varying float vAlpha;
-void main() {
-  vec3 p; float alpha; float size;
-  vec3 rd = normalize(aSeed.xyz - 0.5 + 1e-4);
-  if (aSeed.w < 0.62) {
-    // tia lửa rơi từ thân
-    float te = aSeed.w / 0.62 * ${D.toFixed(1)};
-    float age = uT - te;
-    float life = 1.0 + aSeed.x * 1.4;
-    p = bodyPos(aSeed.y * ${NSEG}.0 + 1.6, te) + rd * (0.9 + age * 1.2) - vec3(0.0, 0.9 * age * age, 0.0);
-    alpha = (age < 0.0 || age > life) ? 0.0 : 1.0 - age / life;
-    alpha *= 0.6 + 0.4 * step(0.5, fract(uT * 6.0 + aSeed.z * 9.0));
-    size = 0.5 + 0.3 * aSeed.z;
-    vColor = mix(mix(vec3(1.0, 0.8, 0.3), vec3(0.5, 1.0, 0.9), uPal), aColor, 0.25);
-  } else {
-    // hơi thở lửa lấp lánh (bắn tới trước + chếch lên, không nhắm vào khán giả)
-    float te = uBreathT + (aSeed.w - 0.62) / 0.38 * ${BREATH_DUR.toFixed(1)};
-    float age = uT - te;
-    vec3 P, T, sd, up;
-    frameAt(0.0, te, P, T, sd, up);
-    vec3 mouth = P + T * 5.6 - up * 0.4;
-    vec3 dir = normalize(T + vec3(0.0, 0.5, 0.0) + rd * 0.45);
-    float sp = 18.0 + aSeed.z * 10.0;
-    p = mouth + dir * sp * (1.0 - exp(-age * 1.4)) / 1.4 - vec3(0.0, 0.35 * age * age, 0.0);
-    p += vec3(sin(age * 3.0 + aSeed.x * 20.0), 0.0, cos(age * 2.5 + aSeed.y * 20.0)) * 0.5 * age;
-    float life = 2.2 + aSeed.x * 1.2;
-    alpha = (age < 0.0 || age > life) ? 0.0 : (1.0 - smoothstep(life * 0.5, life, age));
-    alpha *= 0.55 + 0.45 * sin(age * 25.0 + aSeed.y * 40.0);
-    size = mix(1.3, 0.55, clamp(age, 0.0, 1.0));
-    vColor = mix(vec3(1.0, 0.9, 0.6), aColor, smoothstep(0.0, 0.5, age));
-  }
-  vAlpha = alpha;
-  vec4 mv = viewMatrix * vec4(p, 1.0);
-  gl_Position = projectionMatrix * mv;
-  gl_PointSize = clamp(uPx * size / -mv.z, 1.5, 80.0);
-}`;
-
-function tagged(parts: THREE.BufferGeometry[], g: THREE.BufferGeometry, part: number) {
+// ───────────── Hình khối ─────────────
+interface PartOpts { slot: number; part?: number; kind?: number; c?: THREE.Vector3; uv?: boolean }
+function tag(parts: THREE.BufferGeometry[], g: THREE.BufferGeometry, o: PartOpts, uvFrom?: THREE.Matrix4) {
   const h = g.index ? g.toNonIndexed() : g;
+  if (h !== g) g.dispose();
+  const n = h.getAttribute('position').count;
   h.deleteAttribute('uv');
-  h.setAttribute('aPart', new THREE.BufferAttribute(new Float32Array(h.getAttribute('position').count).fill(part), 1));
+  const a = new Float32Array(n * 4);
+  const c = o.c ?? new THREE.Vector3();
+  for (let i = 0; i < n; i++) a.set([c.x, c.y, c.z, o.kind ?? 0], i * 4);
+  h.setAttribute('aC', new THREE.BufferAttribute(a, 4));
+  const b = new Float32Array(n * 4);
+  const p = h.getAttribute('position');
+  const inv = uvFrom ? uvFrom.clone().invert() : null;
+  const q = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    let ux = 0, uy = 0;
+    if (inv) { q.fromBufferAttribute(p, i).applyMatrix4(inv); ux = q.x; uy = q.y; }
+    b.set([o.slot, o.part ?? 0, ux, uy], i * 4);
+  }
+  h.setAttribute('aS', new THREE.BufferAttribute(b, 4));
   parts.push(h);
 }
-/** Nón hướng ra sau (-z), nghiêng lên một góc `lift`, xoay quanh trục z một góc `roll`, gốc ở `at`. */
-function spike(r: number, len: number, lift: number, roll: number, at: [number, number, number], seg = 6) {
-  const g = new THREE.ConeGeometry(r, len, seg);
-  g.translate(0, len / 2, 0);
-  g.rotateX(-(Math.PI / 2 - lift));
-  g.rotateZ(roll);
-  g.translate(...at);
-  return g;
-}
-const mergeAll = (parts: THREE.BufferGeometry[]) => {
-  const g = mergeGeometries(parts)!;
-  parts.forEach((p) => p.dispose());
+const merge = (p: THREE.BufferGeometry[]) => {
+  const g = mergeGeometries(p)!;
+  p.forEach((x) => x.dispose());
   return g;
 };
+const sphere = (r: number, ws = 20, hs = 14) => new THREE.SphereGeometry(r, ws, hs);
+const capsule = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 6, 12);
 
+/** Một đốt thân (đơn vị bán kính = 1, +z hướng về đầu). part: 0 thân · 1 vây · 2 chân · 3 ngón · 4 chùm đuôi. */
 function buildSegment(): THREE.BufferGeometry {
   const p: THREE.BufferGeometry[] = [];
-  const body = new THREE.SphereGeometry(1, 16, 10);
-  body.scale(1, 0.92, 0.8);
-  tagged(p, body, 0);
-  tagged(p, spike(0.28, 1.1, 0.75, 0, [0, 0.85, 0.1], 4), 4); // vây lưng
+  const body = sphere(1, 22, 16);
+  body.scale(1, 0.96, 1.08);
+  tag(p, body, { slot: 0, part: 0 });
+  const fin = sphere(1, 12, 10);
+  fin.scale(0.2, 0.5, 0.48);
+  fin.rotateX(-0.35);
+  fin.translate(0, 1.0, -0.12);
+  tag(p, fin, { slot: 3, part: 1 });
   for (const sx of [-1, 1]) {
-    const leg = new THREE.CylinderGeometry(0.16, 0.24, 1.5, 6);
-    leg.translate(0, -0.75, 0);
-    leg.rotateZ(sx * 0.7);
-    leg.translate(sx * 0.6, -0.3, 0);
-    tagged(p, leg, 7);
-    for (let c = -1; c <= 1; c++) {
-      const claw = new THREE.ConeGeometry(0.07, 0.45, 4);
-      claw.rotateX(Math.PI / 2 + 0.6);
-      claw.translate(sx * 1.6 + c * 0.12 * sx, -1.45, 0.15 + c * 0.05);
-      tagged(p, claw, 3);
+    const m = new THREE.Matrix4().makeTranslation(sx * 0.55, -0.5, 0.15)
+      .multiply(new THREE.Matrix4().makeRotationZ(sx * 0.55))
+      .multiply(new THREE.Matrix4().makeTranslation(0, -0.5, 0));
+    const leg = capsule(0.3, 0.5);
+    leg.applyMatrix4(m);
+    tag(p, leg, { slot: 0, part: 2, c: new THREE.Vector3(sx * 0.55, -0.5, 0.15) });
+    for (let k = -1; k <= 1; k++) {
+      const toe = sphere(0.13, 8, 6);
+      toe.translate(k * 0.17, -0.48, 0.2 - Math.abs(k) * 0.05);
+      toe.applyMatrix4(m);
+      tag(p, toe, { slot: 6, part: 3, c: new THREE.Vector3(sx * 0.55, -0.5, 0.15) });
     }
   }
-  return mergeAll(p);
+  // chùm lông đuôi (chỉ đốt cuối, kích thước tuyệt đối)
+  const tuft: [number, number, number, number, number][] = [
+    [0, 0.1, -0.6, 0.55, 6], [0.35, 0.35, -1.2, 0.5, 6], [-0.35, 0.3, -1.25, 0.5, 6], [0, 0.65, -1.15, 0.45, 3],
+    [0, -0.2, -1.4, 0.42, 3], [0.25, 0.1, -1.75, 0.38, 6], [-0.25, 0.15, -1.8, 0.36, 3], [0, 0.45, -1.75, 0.34, 6],
+  ];
+  for (const [x, y, z, r, slot] of tuft) {
+    const g = sphere(r, 12, 9);
+    g.translate(x, y, z);
+    tag(p, g, { slot, part: 4 });
+  }
+  return merge(p);
 }
 
-function buildHead(): THREE.BufferGeometry {
+/** Đầu (+z = phía trước, +y = lên). kind: 1 mắt · 2 miệng há · 3 tai · 4 râu · 5 ngọc. */
+function buildHead(): { geo: THREE.BufferGeometry; pearl: THREE.Vector3 } {
   const p: THREE.BufferGeometry[] = [];
-  const skull = new THREE.SphereGeometry(1, 16, 12);
-  skull.scale(1.05, 0.85, 1.35);
-  skull.translate(0, 0.15, 0.3);
-  tagged(p, skull, 0);
-  const snout = new THREE.BoxGeometry(1.25, 0.6, 2.0, 2, 1, 2);
-  snout.translate(0, 0.0, 2.0);
-  tagged(p, snout, 0);
-  const nose = new THREE.SphereGeometry(0.5, 10, 8);
-  nose.scale(1.35, 0.7, 0.8);
-  nose.translate(0, 0.15, 3.0);
-  tagged(p, nose, 1);
-  const mouth = new THREE.BoxGeometry(1.05, 0.25, 1.6);
-  mouth.translate(0, -0.38, 2.0);
-  tagged(p, mouth, 6);
-  const jaw = new THREE.BoxGeometry(1.05, 0.25, 2.0);
-  jaw.translate(0, 0, 1.0);
-  jaw.rotateX(0.35);
-  jaw.translate(0, -0.55, 1.0);
-  tagged(p, jaw, 1);
+  const skull = sphere(R_HEAD, 28, 20);
+  skull.scale(1.04, 0.94, 0.96);
+  skull.translate(0, 0.15, 0);
+  tag(p, skull, { slot: 0 });
+  // mõm nhỏ màu kem
+  const muz = sphere(1.08, 22, 14);
+  muz.scale(1.2, 0.72, 0.8);
+  muz.translate(0, -0.72, 1.55);
+  tag(p, muz, { slot: 1 });
   for (const sx of [-1, 1]) {
-    const eye = new THREE.SphereGeometry(0.24, 10, 8);
-    eye.translate(sx * 0.62, 0.48, 1.05);
-    tagged(p, eye, 2);
-    const brow = spike(0.18, 0.9, 0.9, sx * 0.4, [sx * 0.55, 0.7, 1.3], 4);
-    tagged(p, brow, 4);
-    // sừng hươu: nhánh chính + nhánh phụ
-    tagged(p, spike(0.16, 2.4, 0.65, sx * 0.4, [sx * 0.45, 0.7, 0.2]), 3);
-    tagged(p, spike(0.09, 1.0, 1.2, sx * 0.7, [sx * 0.75, 1.35, -0.5]), 3);
-    // râu dài
-    const wh = new THREE.CylinderGeometry(0.03, 0.08, 4.0, 5);
-    wh.translate(0, 2.0, 0);
-    wh.rotateX(-(Math.PI / 2 - 0.05));
-    wh.rotateY(sx * 0.45);
-    wh.translate(sx * 0.6, -0.15, 2.8);
-    tagged(p, wh, 5);
+    // lỗ mũi
+    const ns = sphere(0.11, 8, 6);
+    ns.scale(1.2, 0.8, 0.6);
+    ns.translate(sx * 0.32, -0.42, 2.35);
+    tag(p, ns, { slot: 7 });
+    // mắt to: elip dẹt áp lên mặt, xoay nhẹ ra ngoài
+    const em = new THREE.Matrix4().makeTranslation(sx * 0.8, 0.42, 1.62)
+      .multiply(new THREE.Matrix4().makeRotationY(sx * 0.42))
+      .multiply(new THREE.Matrix4().makeRotationX(-0.12));
+    const eye = sphere(1, 22, 16);
+    eye.scale(0.56, 0.68, 0.3);
+    eye.applyMatrix4(em);
+    const eu = em.clone().multiply(new THREE.Matrix4().makeScale(0.56, 0.68, 0.3));
+    tag(p, eye, { slot: 10, kind: 1, c: new THREE.Vector3(sx * 0.8, 0.42, 1.62), uv: true }, eu);
+    // lông mày ngắn
+    const br = capsule(0.07, 0.34);
+    br.rotateZ(Math.PI / 2 + sx * 0.25);
+    br.rotateY(sx * 0.42);
+    br.translate(sx * 0.86, 1.28, 1.6);
+    tag(p, br, { slot: 7 });
+    // má hồng
+    const ck = sphere(0.36, 14, 10);
+    ck.scale(1.15, 0.62, 0.3);
+    ck.rotateY(sx * 0.95);
+    ck.translate(sx * 1.38, -0.3, 1.32);
+    tag(p, ck, { slot: 5 });
+    // sừng tròn: nhánh chính + nhánh phụ
+    const hm = new THREE.Matrix4().makeTranslation(sx * 0.82, 1.62, -0.25)
+      .multiply(new THREE.Matrix4().makeRotationZ(-sx * 0.42))
+      .multiply(new THREE.Matrix4().makeRotationX(-0.4));
+    const h1 = capsule(0.24, 0.62); h1.translate(0, 0.45, 0); h1.applyMatrix4(hm);
+    tag(p, h1, { slot: 4 });
+    const h2 = capsule(0.16, 0.28); h2.translate(0, 0.2, 0); h2.rotateZ(sx * 0.95); h2.translate(0, 0.5, 0); h2.applyMatrix4(hm);
+    tag(p, h2, { slot: 4 });
+    // tai cụp (vẫy)
+    const ec = new THREE.Vector3(sx * 1.6, 0.85, -0.55);
+    const ear = sphere(1, 14, 10);
+    ear.scale(0.32, 0.18, 0.6);
+    ear.translate(0, 0, -0.35);
+    ear.rotateZ(-sx * 0.5);
+    ear.rotateY(sx * 0.5);
+    ear.translate(ec.x + sx * 0.25, ec.y - 0.1, ec.z);
+    tag(p, ear, { slot: 3, kind: 3, c: ec });
+    // râu capsule lượn (từ mép mõm ra sau)
+    const root = new THREE.Vector3(sx * 1.05, -0.7, 1.9);
+    const wc = new THREE.CatmullRomCurve3([
+      root, new THREE.Vector3(sx * 1.8, -0.75, 1.65), new THREE.Vector3(sx * 2.5, -0.5, 1.0), new THREE.Vector3(sx * 3.05, -0.85, 0.25),
+    ]);
+    const wh = new THREE.TubeGeometry(wc, 18, 0.085, 6, false);
+    tag(p, wh, { slot: 3, kind: 4, c: root });
+    const wt = sphere(0.13, 8, 6); wt.translate(sx * 3.05, -0.85, 0.25);
+    tag(p, wt, { slot: 3, kind: 4, c: root });
   }
-  // bờm quanh gáy
-  for (let k = 0; k < 11; k++) {
-    const a = -2.3 + (k / 10) * 4.6;
-    tagged(p, spike(0.25, 2.2 + (k % 2) * 0.6, 0.35, a, [Math.sin(a) * 0.7, Math.cos(a) * 0.65 + 0.1, -0.5]), 4);
+  // miệng cười (cung) + miệng há (dẹt, phóng to khi thở)
+  const smile = new THREE.TorusGeometry(0.3, 0.065, 6, 18, Math.PI);
+  smile.rotateZ(Math.PI);
+  smile.rotateX(-0.25);
+  smile.translate(0, -0.72, 2.42);
+  tag(p, smile, { slot: 7 });
+  const mo = sphere(0.5, 16, 12);
+  mo.scale(1, 0.85, 0.42);
+  mo.rotateX(-0.25);
+  mo.translate(0, -0.95, 2.3);
+  tag(p, mo, { slot: 8, kind: 2, c: new THREE.Vector3(0, -0.95, 2.3) }, new THREE.Matrix4().makeTranslation(0, -0.95, 2.3).multiply(new THREE.Matrix4().makeScale(0.5, 0.42, 0.21)));
+  // chỏm bờm kem
+  const mane: [number, number, number, number][] = [
+    [0, 2.05, -0.35, 0.55], [0.42, 1.95, -0.75, 0.48], [-0.42, 1.95, -0.75, 0.48], [0, 1.85, -1.1, 0.5],
+    [0.3, 2.3, -0.05, 0.36], [-0.3, 2.28, -0.08, 0.34], [0, 1.45, -1.55, 0.5], [0.55, 1.4, -1.35, 0.4], [-0.55, 1.4, -1.35, 0.4],
+  ];
+  for (const [x, y, z, r] of mane) {
+    const g = sphere(r, 12, 9);
+    g.translate(x, y, z);
+    tag(p, g, { slot: 6 });
   }
-  const g = mergeAll(p);
-  g.scale(1.75, 1.75, 1.75);
-  return g;
+  // ngọc: trước miệng
+  const pearl = new THREE.Vector3(0, -1.5, 3.35);
+  const pg = sphere(0.62, 22, 16);
+  pg.translate(pearl.x, pearl.y, pearl.z);
+  tag(p, pg, { slot: 9, kind: 5, c: pearl });
+  return { geo: merge(p), pearl };
+}
+
+// ───────────── CPU: đường bay (khớp GLSL) ─────────────
+interface PathCPU { data: Float32Array; len: number; speed: number; loopD: number }
+function pathAt(P: PathCPU, d: number, out: THREE.Vector3) {
+  const x = Math.min(1, Math.max(0, d / P.len)) * (NS - 1);
+  const a = Math.floor(x), b = Math.min(a + 1, NS - 1), f = x - a;
+  const A = P.data, ia = a * 4, ib = b * 4;
+  return out.set(A[ia]! + (A[ib]! - A[ia]!) * f, A[ia + 1]! + (A[ib + 1]! - A[ia + 1]!) * f, A[ia + 2]! + (A[ib + 2]! - A[ia + 2]!) * f);
+}
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _T = new THREE.Vector3(), _sd = new THREE.Vector3(), _up = new THREE.Vector3();
+const Y = new THREE.Vector3(0, 1, 0);
+function pathFrame(P: PathCPU, d: number) {
+  pathAt(P, d + 1, _a); pathAt(P, d - 1, _b);
+  _T.subVectors(_a, _b); _T.x += 1e-4; _T.normalize();
+  _sd.crossVectors(Y, _T); _sd.z += 1e-4; _sd.normalize();
+  _up.crossVectors(_T, _sd);
+}
+function bodyPos(P: PathCPU, s: number, t: number, out: THREE.Vector3) {
+  const d = P.speed * t - s;
+  pathAt(P, d, out);
+  pathFrame(P, d);
+  const env = 0.25 + 0.75 * sm(0, 6, s);
+  const ph = s * 0.42 - t * 4.2;
+  out.addScaledVector(_sd, Math.sin(ph) * 1.6 * env).addScaledVector(_up, Math.cos(ph * 0.7 + 1) * 0.9 * env);
+  // vòng lộn: lệch theo d trong mặt phẳng (T, up) của đường
+  const u = Math.min(1, Math.max(0, (d - P.loopD) / LOOP_LEN));
+  const th = 6.2831853 * u * u * (3 - 2 * u);
+  out.addScaledVector(_T, -LOOP_R * Math.sin(th)).addScaledVector(_up, LOOP_R * (1 - Math.cos(th)));
+  return out;
 }
 
 export function createDragon(scene: THREE.Scene): SecretAct {
@@ -284,70 +254,149 @@ export function createDragon(scene: THREE.Scene): SecretAct {
   const curve = new THREE.CatmullRomCurve3(PATH_PTS.map(([x, y, z]) => new THREE.Vector3(x, y, z)), false, 'centripetal');
   const samples = curve.getSpacedPoints(NS - 1);
   const data = new Float32Array(NS * 4);
-  let bi = 0, bd = Infinity;
+  let bi = 0, bd = Infinity, li = 0, ld = Infinity;
   samples.forEach((v, i) => {
     data.set([v.x, v.y, v.z, 1], i * 4);
     const d = v.distanceTo(BREATH_AT);
     if (d < bd) { bd = d; bi = i; }
+    const e = v.distanceTo(LOOP_AT);
+    if (e < ld) { ld = e; li = i; }
   });
   const tex = new THREE.DataTexture(data, NS, 1, THREE.RGBAFormat, THREE.FloatType);
   tex.needsUpdate = true;
   const len = curve.getLength();
   const speed = len / (D - 0.5);
+  const loopD = (li / (NS - 1)) * len - LOOP_LEN / 2;
+  const P: PathCPU = { data, len, speed, loopD };
   const tBreath = ((bi / (NS - 1)) * len) / speed - 0.6;
 
+  // ── vị trí các đốt: khoảng cách ∝ bán kính để luôn chồng khít
+  let lb = 26;
+  const sArr = new Float32Array(NSEG);
+  for (let it = 0; it < 6; it++) {
+    let s = 0.9;
+    for (let k = 0; k < NSEG; k++) { sArr[k] = s; s += 0.5 * radAt(s, lb); }
+    lb = sArr[NSEG - 1]!;
+  }
+  const nearest = (s: number) => sArr.reduce((bk, v, k) => (Math.abs(v - s) < Math.abs(sArr[bk]! - s) ? k : bk), 0);
+  const LEG1 = nearest(2.6), LEG2 = nearest(lb * 0.42);
+
+  const uCol = Array.from({ length: NSLOT }, () => new THREE.Vector3());
+  const uSh = Array.from({ length: NSLOT }, () => new THREE.Vector3());
   const U = {
-    uPath: { value: tex }, uLen: { value: len }, uSpeed: { value: speed }, uT: { value: 0 },
-    uPal: { value: 0 }, uPulse: { value: 0 }, uBreath: { value: 0 },
+    uPath: { value: tex }, uLen: { value: len }, uSpeed: { value: speed }, uLoopD: { value: loopD }, uLb: { value: lb },
+    uT: { value: 0 }, uPop: { value: 1 }, uPulse: { value: 0 }, uViewH: { value: 720 },
+    uCol: { value: uCol }, uSh: { value: uSh },
+    uRimC: { value: v3(PAL.cream[300]).lerp(v3(SECRET_RIM), 0.6) },
+    uInk: { value: v3(INK_SKY) },
+    uCore: { value: v3(SECRET_CORE) }, uRimS: { value: v3(SECRET_RIM) },
+    uBlink: { value: 0 }, uMouth: { value: 0 }, uLook: { value: new THREE.Vector2() },
+    uOutW: { value: OUTLINE.secret * OBJ_H }, uObjH: { value: OBJ_H },
   };
+  const defs = (o: Record<string, number>) => ({ NSEG, LEG1, LEG2, ...o });
 
   const segBase = buildSegment();
   const segGeo = new THREE.InstancedBufferGeometry();
-  segGeo.index = segBase.index;
   for (const [k, a] of Object.entries(segBase.attributes)) segGeo.setAttribute(k, a);
-  segGeo.setAttribute('aI', new THREE.InstancedBufferAttribute(new Float32Array(NSEG).map((_, i) => i), 1));
+  const inst = new Float32Array(NSEG * 2);
+  for (let k = 0; k < NSEG; k++) inst.set([sArr[k]!, k], k * 2);
+  segGeo.setAttribute('aInst', new THREE.InstancedBufferAttribute(inst, 2));
   segGeo.instanceCount = NSEG;
-  const bodyMat = new THREE.ShaderMaterial({
-    vertexShader: BODY_VERT, fragmentShader: BODY_FRAG, uniforms: U, fog: false, defines: { BODY: 1 },
-  });
-  const body = new THREE.Mesh(segGeo, bodyMat);
-  body.frustumCulled = false;
-  root.add(body);
 
-  const head = new THREE.Mesh(buildHead(), new THREE.ShaderMaterial({
-    vertexShader: BODY_VERT, fragmentShader: BODY_FRAG, uniforms: U, fog: false,
-  }));
-  head.frustumCulled = false;
+  const mk = (o: Record<string, number>, hull: boolean) => new THREE.ShaderMaterial({
+    vertexShader: DRAGON_GLSL.vert, fragmentShader: DRAGON_GLSL.frag, uniforms: U, fog: false,
+    defines: defs(hull ? { ...o, HULL: 1 } : o), side: hull ? THREE.BackSide : THREE.FrontSide,
+  });
+  const addMesh = (g: THREE.BufferGeometry, m: THREE.Material, parent: THREE.Object3D) => {
+    const x = new THREE.Mesh(g, m);
+    x.frustumCulled = false;
+    parent.add(x);
+    return x;
+  };
+  addMesh(segGeo, mk({ BODY: 1 }, false), root);
+  addMesh(segGeo, mk({ BODY: 1 }, true), root);
+
+  const head = new THREE.Group();
   root.add(head);
+  const { geo: headGeo, pearl } = buildHead();
+  addMesh(headGeo, mk({ HEAD: 1 }, false), head);
+  addMesh(headGeo, mk({ HEAD: 1 }, true), head);
 
-  const ptsU = { ...U, uPx: { value: 600 }, uBreathT: { value: tBreath } };
+  // ── hạt: lấp lánh sau thân · hơi thở tim/sao · sao quanh ngọc (1 Points)
+  const ptsU = { ...U, uPx: { value: 720 }, uBreathT: { value: tBreath }, uPearl: { value: new THREE.Vector3() } };
   const rnd = seededRnd(9001);
-  const fire = [0xff3d81, 0xffd93d, 0xff8a3d, 0xffffff, 0x35d0ff, 0xb06bff].map((c) => new THREE.Color(c));
-  const pts = makePoints(3600, PTS_VERT, ptsU, (i, s, c) => {
+  const cols = [PAL.berry[500], PAL.berry[300], PAL.honey[500], PAL.honey[300], PAL.mint[500], PAL.soda[300], PAL.cream[100], PAL.peach[300]];
+  const pts = makePoints(2600, DRAGON_GLSL.pts, ptsU, (i, s, c) => {
     s.set([rnd(), rnd(), rnd(), rnd()], i * 4);
-    const col = fire[Math.floor(rnd() * fire.length)]!;
-    c.set([col.r, col.g, col.b], i * 3);
-  });
+    c.set(hexToRgb(cols[Math.floor(rnd() * cols.length)]!), i * 3);
+  }, { additive: false, frag: DRAGON_PTS_FRAG });
   pts.renderOrder = 7;
   root.add(pts);
+
+  const halo = createSecretHalo();
+  root.add(halo.group);
+
+  // ── trạng thái mỗi lần chạy
+  let blinks: number[] = [];
+  const hp = new THREE.Vector3(), hq = new THREE.Vector3(), fw = new THREE.Vector3(), sd = new THREE.Vector3(), up = new THREE.Vector3();
+  const mtx = new THREE.Matrix4(), look = new THREE.Vector3(), pw = new THREE.Vector3();
+  const tA = new THREE.Vector3(), tB = new THREE.Vector3();
 
   return {
     duration: D,
     start() {
       root.visible = true;
-      U.uPal.value = Math.random() < 0.5 ? 0 : 1;
+      const way = WAYS[Math.floor(Math.random() * WAYS.length)]!;
+      const slots = [...way, INK_SKY === PAL.night[100] ? 0x2b1d5c : INK_SKY, PAL.berry[700], SECRET_CORE, PAL.cream[100]];
+      slots.forEach((hex, k) => { v3(hex, uCol[k]); v3(shadowOf(hex), uSh[k]); });
+      blinks = [];
+      for (let t = 1 + Math.random() * 2; t < D; t += 3 + Math.random() * 2) blinks.push(t);
     },
     stop() { root.visible = false; },
     update(t: number, f: FrameState) {
       U.uT.value = t;
       U.uPulse.value = f.beatPulse;
+      U.uPop.value = popScale(t);
+      U.uViewH.value = ptsU.uPx.value = pxScale();
       const b = t - tBreath;
-      U.uBreath.value = b > 0 && b < BREATH_DUR + 0.5 ? 1 : 0;
-      ptsU.uPx.value = pxScale();
+      U.uMouth.value = sm(-0.25, 0.15, b) * (1 - sm(BREATH_DUR, BREATH_DUR + 0.4, b));
+      let bl = 0;
+      for (const x of blinks) bl = Math.max(bl, 1 - Math.abs(t - x) / 0.09);
+      U.uBlink.value = Math.max(0, bl);
+
+      // khung đầu (khớp shader thân)
+      bodyPos(P, S_HEAD, t, hp);
+      bodyPos(P, S_HEAD - 0.5, t, tA); bodyPos(P, S_HEAD + 0.5, t, tB);
+      fw.subVectors(tA, tB).normalize();
+      pathFrame(P, speed * t - S_HEAD);
+      sd.crossVectors(Y, _T).normalize();
+      up.crossVectors(fw, sd).normalize();
+      sd.crossVectors(up, fw).normalize();
+      mtx.makeBasis(sd, up, fw);
+      head.position.copy(hp);
+      head.quaternion.setFromRotationMatrix(mtx);
+      // co giãn: rẽ gắt → dẹt dọc trục bay; thở → vươn lên
+      pathAt(P, speed * t + 4, tA); pathAt(P, speed * t - 4, tB); pathAt(P, speed * t, hq);
+      const turn = tA.sub(hq).normalize().distanceTo(hq.sub(tB).normalize());
+      const sq = Math.min(0.2, turn * 0.3);
+      const br = U.uMouth.value * 0.08;
+      const pop = U.uPop.value;
+      head.scale.set(pop * (1 + sq * 0.5), pop * (1 + sq * 0.4 + br), pop * (1 - sq - br * 0.5));
+      // mắt nhìn về sân khấu
+      look.subVectors(LOOK_AT, hp).normalize();
+      U.uLook.value.set(Math.max(-0.28, Math.min(0.28, look.dot(sd) * 0.4)), Math.max(-0.22, Math.min(0.22, look.dot(up) * 0.4)));
+      // ngọc (khớp kind 5 trong shader)
+      pw.copy(pearl);
+      pw.y += Math.sin(t * 3) * 0.12;
+      ptsU.uPearl.value.copy(head.localToWorld(pw));
+      const appear = sm(0.1, 0.8, t) * (1 - sm(D - 2.2, D - 0.6, t));
+      halo.group.position.copy(hp);
+      halo.update(t, R_HEAD * 1.35, appear);
     },
     dispose() {
       segBase.dispose();
       tex.dispose();
+      halo.dispose();
       disposeTree(root);
     },
   };

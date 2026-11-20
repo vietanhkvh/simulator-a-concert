@@ -5,6 +5,7 @@
 //
 // Quy ước tọa độ (xem layout.ts): ca sĩ ở gốc, nhìn về -Z; khán giả ở phía -Z; +Y hướng lên.
 import * as THREE from 'three';
+import { createDebugLayers } from '../core/debugLayers';
 import type { FrameState, Stage } from '../core/types';
 import { createArenaZone, type ArenaOptions, type ArenaZone } from '../zones/arena';
 import { createOutsideZone, type OutsideZone } from '../zones/outside';
@@ -19,6 +20,16 @@ export interface World extends Stage {
   readonly stands: StandsZone;
   readonly arena: ArenaZone;
   dispose(): void;
+  /** Debug (chế độ developer): ẩn/hiện một khu, hoặc 'glow' = điểm sáng dùng chung (sao + khán giả chấm sáng). */
+  setZoneVisible(zone: DebugZoneName, on: boolean): boolean;
+  /** Debug: số liệu renderer của lần vẽ gần nhất. */
+  stats(): WorldStats;
+}
+
+export type DebugZoneName = 'outside' | 'stands' | 'arena' | 'glow';
+export interface WorldStats {
+  calls: number; triangles: number; points: number; lines: number;
+  geometries: number; textures: number; programs: number; sceneObjects: number;
 }
 
 export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions): World {
@@ -40,7 +51,8 @@ export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions): Worl
   // Từ xa tới gần. Điểm sáng dùng chung được dựng sau khi khu ngoài sân và khán đài đã thêm điểm.
   const outside = createOutsideZone(ctx);
   const stands = createStandsZone(ctx);
-  const glowPoints = buildGlowPoints(scene, uniforms, glow);
+  const worldLayers = createDebugLayers(scene); // chế độ developer
+  const glowPoints = worldLayers.track('glow', () => buildGlowPoints(scene, uniforms, glow));
   const arena = createArenaZone(ctx, opts);
 
   let animT = 0; // đồng hồ hoạt họa: đứng yên khi dt = 0 (tạm dừng)
@@ -64,6 +76,22 @@ export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions): Worl
       stands.update(f, animT);
     },
     render: () => renderer.render(scene, camera),
+    setZoneVisible(zone, on) {
+      if (zone === 'glow') return worldLayers.set('glow', on);
+      const z = zone === 'outside' ? outside : zone === 'stands' ? stands : arena;
+      if (!z.setVisible) return false;
+      z.setVisible(on);
+      return true;
+    },
+    stats() {
+      const i = renderer.info;
+      let n = 0;
+      scene.traverse(() => { n++; });
+      return {
+        calls: i.render.calls, triangles: i.render.triangles, points: i.render.points, lines: i.render.lines,
+        geometries: i.memory.geometries, textures: i.memory.textures, programs: i.programs?.length ?? 0, sceneObjects: n,
+      };
+    },
     dispose() {
       window.removeEventListener('resize', resize);
       arena.dispose();

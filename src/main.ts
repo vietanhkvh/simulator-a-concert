@@ -3,7 +3,7 @@ import * as THREE from 'three';
  * Nối dây toàn bộ game. Không chứa logic nghiệp vụ: chỉ khởi tạo module, dựng FrameState mỗi frame
  * và chuyển trạng thái menu → loading → countdown → playing → result.
  *
- * Tham số URL: ?fakeMic=perfect|off|octave  ?latency=<ms>  ?crowd=<số người>
+ * Tham số URL: ?fakeMic=perfect|off|octave  ?latency=<ms>  ?crowd=<số người>  ?dev=1|0 (chế độ developer)
  */
 import { createCrowdAudio, type CrowdAudio } from './audio/crowdAudio';
 import { createCrowdSing, type CrowdSing } from './audio/crowdSing';
@@ -17,7 +17,8 @@ import type {
 } from './core/types';
 import { createMic } from './mic/input';
 import { createWorld } from './world/world';
-import { ENTRANCE_SEC, type EntranceKind, type StageControls } from './zones/arena';
+import * as arenaZone from './zones/arena';
+import { ENTRANCE_SEC, PLATFORMS, VIEW_ORDER, type EntranceKind, type StageControls, type ViewMode } from './zones/arena';
 import { createScoring } from './scoring/scoring';
 import { createVoiceScoring } from './scoring/voice';
 import { findChorusLines } from './song/chorus';
@@ -32,13 +33,17 @@ import { createControlsGuide } from './ui/controlsGuide';
 import {
   createPauseMenu, loadSettings, saveSettings, type SecretKind, type TestKind, type ViewName,
 } from './ui/pauseMenu';
+import { createDevPanel, devRequested, installDevLog, midiName, type DevEntrance, type DevHost, type DevMicMode } from './ui/devPanel';
+
+// Chế độ developer: ghi nhật ký sự kiện/lỗi console ngay từ lúc tải (rẻ, không đổi gameplay).
+installDevLog();
 
 const LEAD_IN_SEC = 3;
 const TAIL_SEC = 2;
 
 const params = new URLSearchParams(location.search);
 const fakeMicParam = params.get('fakeMic');
-const requestedMic: MicMode =
+let requestedMic: MicMode =
   fakeMicParam === 'perfect' || fakeMicParam === 'off' || fakeMicParam === 'octave' ? fakeMicParam : 'real';
 // Micro giả trễ ~50 ms (cửa sổ phân tích), micro thật mặc định bù 120 ms.
 // Chỉnh được trong menu tạm dừng (lưu localStorage); ?latency= vẫn được ưu tiên khi mở trang.
@@ -67,6 +72,7 @@ document.body.appendChild(skipHint);
 const entranceParam = params.get('entrance');
 /** ?entrance=jump|lift|cable|off (cũ: hero→jump, parachute→cable) ưu tiên hơn lựa chọn ở sảnh. */
 function pickEntrance(): LobbyEntrance | null {
+  if (devEntrance) { const k = devEntrance; devEntrance = null; return k; }
   if (entranceParam === 'off') return null;
   if (entranceParam === 'jump' || entranceParam === 'lift' || entranceParam === 'cable') return entranceParam;
   if (entranceParam === 'hero') return 'jump';
@@ -74,6 +80,8 @@ function pickEntrance(): LobbyEntrance | null {
   return getLobbyEntrance();
 }
 /** Độ dài màn chào sân (giây), chịu được cả khi module entrance chưa có kiểu này. */
+/** Chế độ developer: kiểu chào sân cho lần bắt đầu kế tiếp (ưu tiên hơn ?entrance=). */
+let devEntrance: LobbyEntrance | null = null;
 const entranceSec = (k: LobbyEntrance) => (ENTRANCE_SEC as Record<string, number>)[k] ?? 12;
 // Màn đen chuyển cảnh (sảnh → sân khấu, kết quả → sảnh).
 const fade = document.createElement('div');
@@ -420,6 +428,7 @@ const pauseMenu = createPauseMenu(uiRoot, {
   seekTo: (sec) => panelControls.seekTo(sec),
   songTime: () => audio?.now() ?? 0,
   duration: () => songDuration(),
+  onDevPanel: () => dev.show(),
 });
 showView(controls?.getViewMode() ?? 'singer');
 showLook(controls?.isMouseLook() ?? false);
@@ -720,6 +729,7 @@ const panelControls: PanelControls = {
 };
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || (state !== 'playing' && state !== 'countdown')) return;
+  if (isTypingTarget(e)) return;
   if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
     e.preventDefault();
     panelControls.seekBy(e.code === 'BracketLeft' ? -SEEK_STEP_SEC : SEEK_STEP_SEC);
@@ -785,7 +795,7 @@ function tick(dt: number): void {
   } else if ((state === 'countdown' || state === 'playing') && song && audio && mic) {
     const songTime = audio.now();
     if (state === 'countdown' && songTime >= 0) setState('playing');
-    let pitch = mic.read();
+    let pitch = devMicSilent ? null : mic.read();
     // Hỏi–đáp: giữ C thì khán giả hát thay ca sĩ (chỉ bài có nốt, cần Hype ≥ 0,15, có giới hạn thời gian).
     const targetNote = hasNotes ? noteAt(song, songTime - latencySec) : null;
     crowdSinging = handoverHeld && hasNotes && state === 'playing' && handoverEnergy > 0 && (lastFrame?.hype ?? 0) >= 0.15;
@@ -848,6 +858,11 @@ function tick(dt: number): void {
       f = { ...f, hype, waveMode: waving || hype > 0.7 ? 1 : 0 };
     }
   }
+  // Chế độ developer: khóa Hype hiển thị (hình + âm thanh); f.score (điểm, Hype của điểm) giữ nguyên.
+  if (devHype !== null) f = { ...f, hype: devHype, waveMode: devHype > 0.7 || (state === 'playing' && performance.now() < waveUntil) ? 1 : 0 };
+  if (devCrowdSing && crowdSing) crowdSing.update(SING_TEST_NOTES[Math.floor(performance.now() / 500) % SING_TEST_NOTES.length], 0.8);
+  dev.tick(dt);
+  dev.setLobby(devLobbyLink && screens.isLobby());
   crowdAudio?.update(f);
   // Cập nhật cả ba khu (khán giả, đèn, hiệu ứng, camera, trời, khán đài…) trong một lời gọi.
   world.arena.setSong(state === 'countdown' || state === 'playing' ? song : null);
@@ -907,6 +922,158 @@ window.__game = {
   finish: () => { if (lastFrame) finish({ ...lastFrame.score }); },
   seek: (sec) => seekSong(sec),
 };
+
+// --- Chế độ developer (ui/devPanel.ts): bảng thử mọi tính năng + window.__dev cho kiểm thử tự động ---
+let devHype: number | null = null;
+let devMicSilent = false;
+let devCrowdSing = false;
+/** Danh sách góc máy: lấy VIEW_MODES của khu sân trung tâm nếu có (vd. thêm 'aerial'), không thì VIEW_ORDER. */
+const devViews = (): string[] => {
+  const m = (arenaZone as unknown as Record<string, unknown>).VIEW_MODES;
+  return Array.isArray(m) && m.length ? m.map(String) : [...VIEW_ORDER];
+};
+const TELEPORTS: Record<string, { x: number; z: number; yaw: number }> = {
+  stage: { x: 0, z: 0, yaw: 0 },
+  runwayEnd: { x: PLATFORMS.centre.x, z: PLATFORMS.centre.z, yaw: 0 },
+  left: { x: PLATFORMS.left.x, z: PLATFORMS.left.z, yaw: 0 },
+  right: { x: PLATFORMS.right.x, z: PLATFORMS.right.z, yaw: 0 },
+  bstage: { x: PLATFORMS.bstage.x, z: PLATFORMS.bstage.z, yaw: 0 },
+};
+const devZone = (z: string) => (z === 'outside' ? world.outside : z === 'stands' ? world.stands : z === 'arena' ? world.arena : null);
+const devHost: DevHost = {
+  snapshot() {
+    const f = lastFrame;
+    const pose = controls?.getSingerPose();
+    const pitch = f?.pitch ?? null;
+    return {
+      state, paused,
+      songTime: +(audio?.now() ?? 0).toFixed(2), duration: +songDuration().toFixed(1),
+      hype: f ? +f.hype.toFixed(3) : null, scoreHype: f ? +f.score.hype.toFixed(3) : null,
+      score: f ? Math.round(f.score.score) : null,
+      mic: mic?.mode ?? null, micReq: devMicSilent ? 'silent' : requestedMic,
+      micLevel: mic?.level ? +mic.level().toFixed(3) : null,
+      note: pitch ? `${midiName(pitch.midi)} ${pitch.hz.toFixed(0)}Hz` : null,
+      view: controls?.getViewMode() ?? null, mouseLook: controls?.isMouseLook() ?? false,
+      pos: pose ? { x: +pose.position.x.toFixed(2), z: +pose.position.z.toFixed(2) } : null,
+      yawDeg: controls ? Math.round((controls.yaw * 180) / Math.PI) : null,
+      crowd: crowdCount, crowdQ: crowd.getQuality ? +crowd.getQuality().toFixed(2) : null,
+      secret: world.outside.getSecretFocus() ? 'đang diễn' : null,
+      entrance: introKind ?? (entrance.isPlaying() ? 'preview' : null),
+      ...world.stats(),
+    };
+  },
+  startInstant() {
+    if (state === 'menu' || state === 'result') void start(false);
+  },
+  startWithEntrance(k) {
+    if (state !== 'menu' && state !== 'result') return;
+    devEntrance = k;
+    void start(true).finally(() => { devEntrance = null; });
+  },
+  restart: () => restartSong(),
+  end: () => endConcert(),
+  result() {
+    if (state === 'playing' || state === 'countdown') endConcert();
+    else if (state === 'menu' && entry) { screens.hide(); finish({ ...(lastFrame?.score ?? idleScore) }); }
+  },
+  seekBy: (d) => panelControls.seekBy(d),
+  seekTo: (sec) => panelControls.seekTo(sec),
+  chorusSec() {
+    if (!song) return null;
+    const i = [...chorusLines].sort((a, b) => a - b)[0];
+    return i === undefined ? null : song.lines[i]?.startSec ?? null;
+  },
+  duration: () => songDuration(),
+  setHypeLock(v) { devHype = v === null ? null : Math.max(0, Math.min(1, v)); },
+  getHypeLock: () => devHype,
+  setMicMode(m: DevMicMode) {
+    devMicSilent = m === 'silent';
+    requestedMic = m === 'silent' ? 'perfect' : m;
+    if (audio && state !== 'menu' && state !== 'result') void reopenMic();
+  },
+  getMicMode: () => (devMicSilent ? 'silent' : requestedMic),
+  setLatency(ms) {
+    latencySec = Math.max(0, Math.min(400, ms)) / 1000;
+    settings.latencyMs = Math.round(latencySec * 1000);
+    saveSettings(settings);
+  },
+  getLatency: () => Math.round(latencySec * 1000),
+  setSensitivity: (g) => mic?.setGain?.(g),
+  interact: (k) => { interact(k, true); },
+  pyro: () => stageFx.pyro(),
+  confetti: () => confetti.burst(),
+  emote: (k) => emotes.burst(60, k as Parameters<typeof emotes.burst>[1]),
+  formation: (k) => emotes.formation?.(k as Parameters<typeof emotes.burst>[1]),
+  emoteKinds: ['heart', 'star', 'note', 'fire', 'clap', 'face', 'hand', 'text', 'crown', 'party'],
+  setCrowdSing(on) { devCrowdSing = on; if (!on) crowdSing?.update(null, 0); },
+  getCrowdSing: () => devCrowdSing,
+  secretKinds: () => Object.keys(secretChances()),
+  secret: (k) => optional.triggerSecret?.(k as SecretKind, true),
+  flyby: () => optional.triggerFlyby?.(),
+  secretChances: () => secretChances(),
+  setSecretChance(k, v) {
+    const cur = { ...secretChances() };
+    cur[k as SecretKind] = v;
+    settings.chances = cur;
+    saveSettings(settings);
+    optional.setSecretChances?.({ [k]: v });
+  },
+  meteors: (n) => world.outside.triggerMeteors(n),
+  entrancePreview(k: DevEntrance) {
+    if (!controls || state === 'intro') return;
+    controls.setView('crane');
+    entrance.play(k as unknown as EntranceKind);
+  },
+  banners(lines) {
+    settings.banners = lines;
+    saveSettings(settings);
+    optional.setCheerBanners?.(lines);
+  },
+  views: devViews,
+  setView: (v) => controls?.setView(v as ViewMode),
+  setMouseLook: (on) => controls?.setMouseLook(on),
+  isMouseLook: () => controls?.isMouseLook() ?? false,
+  teleportTargets: () => Object.keys(TELEPORTS),
+  teleport(t) {
+    const p = typeof t === 'string' ? TELEPORTS[t] : t;
+    if (!p || !controls) return;
+    controls.setView('singer');
+    controls.teleport(p.x, p.z, p.yaw);
+  },
+  getLookSens: () => controls?.getLookSensitivity() ?? null,
+  setLookSens: (v) => controls?.setLookSensitivity(v),
+  setDebugCamera(p) {
+    const fn = (controls as { setDebugCamera?: (p: unknown) => void } | null)?.setDebugCamera;
+    if (typeof fn !== 'function') return false;
+    fn(p);
+    return true;
+  },
+  cameraPose: () => ({
+    x: stage.camera.position.x, y: stage.camera.position.y, z: stage.camera.position.z,
+    yaw: stage.camera.rotation.y, pitch: stage.camera.rotation.x,
+  }),
+  setZoneVisible: (z, on) => world.setZoneVisible(z, on),
+  layers: (z) => devZone(z)?.debugLayers?.() ?? [],
+  setLayerVisible: (z, n, on) => devZone(z)?.setLayerVisible?.(n, on) ?? false,
+  isLayerVisible: (z, n) => devZone(z)?.isLayerVisible?.(n) ?? true,
+  getCrowdQuality: () => crowd.getQuality?.() ?? null,
+  setCrowdQuality: (q) => crowd.setQuality?.(q),
+  reloadWithCrowd(n) {
+    const u = new URL(location.href);
+    u.searchParams.set('crowd', String(n));
+    location.href = u.toString();
+  },
+};
+const dev = createDevPanel(devHost, devRequested(params));
+// ?dev=0: không hiện gì liên quan tới developer (cả link ở sảnh); phím ` / F2 vẫn bật được.
+const devLobbyLink = params.get('dev') !== '0';
+declare global {
+  interface Window {
+    /** Chế độ developer: các hành động của bảng developer (xem README "Chế độ developer"). */
+    __dev: Record<string, unknown>;
+  }
+}
+window.__dev = dev.api;
 
 hud.setVisible(false);
 createLoop(tick).start();

@@ -4,6 +4,7 @@ import { WALK_SHAPES, edgeRuns, shapeSignedDist, chaseDistance } from './walkLay
 import type { FrameState, Updatable } from '../../core/types';
 import { PALETTES, COOL, palColor, livePal } from './stageDecoPal';
 import { createDecoFixtures } from './stageDecoFixtures';
+import { CROWD_BARRIER_Z, FIELD_Y, STAGE_Y, fieldY } from '../../world/layout';
 
 const LEN = 60;
 
@@ -219,16 +220,16 @@ export function createLights(scene: THREE.Scene): Updatable {
     switch (fx.group) {
       case 0: { // fan: nan quạt mở/khép
         const open = 0.5 + 0.5 * Math.sin(p * 0.5 + i * 0.15) + 0.3;
-        out.set((i - 3.5) * 4 * open, 0, -16 - 8 * Math.sin(p + i * 0.5));
+        out.set((i - 3.5) * 4 * open, FIELD_Y + 1.5, -16 - 8 * Math.sin(p + i * 0.5));
         break;
       }
       case 1: { // cross: chéo qua runway
         const sd = i < 3 ? 1 : -1;
-        out.set(sd * (3 - 9 * Math.sin(p * 0.5 + i)), 0.5, -20 + 16 * Math.sin(p * 0.5 + i * 1.3));
+        out.set(sd * (3 - 9 * Math.sin(p * 0.5 + i)), FIELD_Y + 2, -20 + 16 * Math.sin(p * 0.5 + i * 1.3));
         break;
       }
       case 2: { // ballyhoo: loạn hướng về sân khấu, hơi ngẩng
-        out.set(12 * Math.sin(p * 0.7 + i * 1.7), 1 + 5 * (0.5 + 0.5 * Math.sin(p * 1.3 + i * 2.1)), -8 + 14 * Math.sin(p * 0.5 + i));
+        out.set(12 * Math.sin(p * 0.7 + i * 1.7), FIELD_Y + 2.5 + 5 * (0.5 + 0.5 * Math.sin(p * 1.3 + i * 2.1)), -8 + 14 * Math.sin(p * 0.5 + i));
         break;
       }
       default: { // circle: xoay quanh sân
@@ -346,7 +347,10 @@ export function createLights(scene: THREE.Scene): Updatable {
         const b = washBase[w]!;
         const t = p * 0.15 + w * 1.7;
         tmpS.setScalar(15 + 3 * Math.sin(t * 1.3));
-        tmpM.compose(tgt.set(b[0] + 3.5 * Math.sin(t), 0.6, b[1] + 4.5 * Math.cos(t * 0.8)), tmpQ.identity(), tmpS);
+        const wx = b[0] + 3.5 * Math.sin(t), wz = b[1] + 4.5 * Math.cos(t * 0.8);
+        // ngay trên đầu khán giả (sàn dốc fieldY + ~2,3 m); vệt sau rào (trên sân khấu) giữ sát mặt sàn diễn
+        const wy = b[1] > CROWD_BARRIER_Z ? STAGE_Y + 0.6 : fieldY(Math.hypot(wx, wz)) + 2.3;
+        tmpM.compose(tgt.set(wx, wy, wz), tmpQ.identity(), tmpS);
         washes.mesh.setMatrixAt(w, tmpM);
         // màu trôi chậm theo hue pha + palette
         palColor(pCur, w, beat * 0.25, cA);

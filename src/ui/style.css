@@ -437,3 +437,43 @@
 .cs-secret-banner { position: fixed; top: 14%; left: 50%; transform: translateX(-50%); z-index: 40; pointer-events: none;
   padding: 10px 22px; border-radius: 999px; background: rgba(20, 8, 40, 0.8); color: #ffe66b; font: 700 22px var(--cs-font);
   letter-spacing: .05em; box-shadow: 0 0 24px rgba(255, 230, 107, 0.4); }
+
+/* ───── Chế độ developer (ui/devPanel.ts) ───── */
+.cs-dev { position: fixed; left: 8px; top: 64px; width: 340px; max-width: calc(100vw - 16px); max-height: calc(100vh - 80px);
+  z-index: 60; display: flex; flex-direction: column; pointer-events: auto; color: #e8e6f4;
+  font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: rgba(8, 8, 18, 0.9);
+  border: 1px solid rgba(124, 92, 255, 0.7); border-radius: 8px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
+.cs-dev[hidden], .cs-dev [hidden] { display: none; }
+.cs-dev-head { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: move; user-select: none; touch-action: none;
+  background: rgba(124, 92, 255, 0.35); border-radius: 8px 8px 0 0; }
+.cs-dev-head b { color: #ffd34d; letter-spacing: 0.1em; }
+.cs-dev-state { flex: 1; opacity: 0.85; }
+.cs-dev-x { font: inherit; font-size: 14px; line-height: 1; color: #fff; background: none; border: 0; cursor: pointer; padding: 0 4px; }
+.cs-dev-scroll { overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 8px; }
+.cs-dev.collapsed .cs-dev-scroll { display: none; }
+.cs-dev-sec { border-top: 1px solid rgba(255, 255, 255, 0.12); padding: 3px 0; }
+.cs-dev-sec summary { cursor: pointer; font-weight: 700; color: #b9a8ff; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 0; }
+.cs-dev-body { display: flex; flex-direction: column; gap: 5px; padding: 4px 0; }
+.cs-dev-btns, .cs-dev-zones { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.cs-dev-btn { font: inherit; color: #fff; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+.cs-dev-btn:hover { background: rgba(124, 92, 255, 0.55); }
+.cs-dev-btn.on { background: rgba(61, 220, 132, 0.3); border-color: #3ddc84; }
+.cs-dev-row { display: flex; align-items: center; gap: 6px; }
+.cs-dev-row input[type='range'], .cs-dev-row input[type='text'] { flex: 1; min-width: 0; }
+.cs-dev input[type='text'], .cs-dev input[type='number'] { font: inherit; color: #fff; background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; padding: 1px 4px; }
+.cs-dev-chances { display: flex; flex-wrap: wrap; gap: 8px; }
+.cs-dev-chances input { width: 42px; }
+.cs-dev-chk { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; }
+.cs-dev-sub { font-weight: 700; opacity: 0.75; margin-top: 2px; }
+.cs-dev-note { opacity: 0.6; }
+.cs-dev pre { margin: 0; white-space: pre-wrap; word-break: break-all; font: inherit; }
+.cs-dev-log { max-height: 220px; overflow-y: auto; }
+.cs-dev-badge { position: fixed; left: 8px; top: 8px; z-index: 61; pointer-events: auto; cursor: pointer;
+  font: 700 11px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.1em; color: #111; background: #ffd34d;
+  border: 0; border-radius: 4px; padding: 3px 7px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.cs-dev-lobby { position: fixed; left: 8px; bottom: 6px; z-index: 61; pointer-events: auto; cursor: pointer;
+  font: 10px ui-monospace, Menlo, Consolas, monospace; color: rgba(255, 255, 255, 0.35); background: none; border: 0; padding: 2px 4px; }
+.cs-dev-lobby:hover { color: #ffd34d; }
+.cs-dev-badge[hidden], .cs-dev-lobby[hidden] { display: none; }
