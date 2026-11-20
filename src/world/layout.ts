@@ -25,6 +25,7 @@ export const EYE_HEIGHT = 1.65;
 export const CAMERA_FOV = 70;
 /** Tầm nhìn xa của camera: mọi vật xa hơn mức này bị cắt. */
 export const CAMERA_FAR = 220;
+/** Màu sương của phong cách chibi; world.ts lấy màu theo phong cách ở style SKY.fog. */
 export const FOG_COLOR = 0x0b0a1c;
 export const FOG_DENSITY = 0.022;
 
