@@ -3,7 +3,7 @@ import { PAL, hexToRgb } from '../../world/style';
 
 const g3 = (hex: number) => `vec3(${hexToRgb(hex).map((x) => x.toFixed(4)).join(', ')})`;
 
-const vert = /* glsl */ `
+const vert = () => /* glsl */ `
 uniform mat4 uM[3];
 uniform float uVis[3];
 uniform float uT;
@@ -47,7 +47,7 @@ void main() {
   gl_Position = (vis < 0.5 || kd < 0.002) ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 
-const frag = /* glsl */ `
+const frag = () => /* glsl */ `
 uniform vec3 uInk;
 uniform vec3 uRimC;
 uniform vec3 uFace;
@@ -123,7 +123,7 @@ void main() {
 }`;
 
 // Quad trái tim + mũi tên trong mặt phẳng tim (SDF, xem secretJetHeart.ts). Xuất màu premultiplied.
-const heartVert = /* glsl */ `
+const heartVert = () => /* glsl */ `
 uniform vec3 uC; uniform vec3 uEX; uniform vec3 uEY;
 uniform float uScale; uniform vec3 uDrift;
 uniform vec4 uBox; // u0, v0, u1-u0, v1-v0
@@ -135,7 +135,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 
-const heartFrag = /* glsl */ `
+const heartFrag = () => /* glsl */ `
 uniform sampler2D uSdf;
 uniform vec4 uBox;
 uniform float uT;
@@ -222,7 +222,7 @@ void main() {
   gl_FragColor = res;
 }`;
 
-const ptsVert = /* glsl */ `
+const ptsVert = () => /* glsl */ `
 uniform float uT;
 uniform float uPx;
 uniform vec3 uHeart;
@@ -262,4 +262,8 @@ void main() {
   if (alpha < 0.004) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 
-export const JET_GLSL = { vert, frag, heartVert, heartFrag, ptsVert };
+/** Getter: chuỗi GLSL dựng lúc đọc để lấy màu của phong cách đang bật. */
+export const JET_GLSL = {
+  get vert() { return vert(); }, get frag() { return frag(); }, get heartVert() { return heartVert(); },
+  get heartFrag() { return heartFrag(); }, get ptsVert() { return ptsVert(); },
+};

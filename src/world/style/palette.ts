@@ -1,5 +1,11 @@
-// PALETTE — token màu "Kẹo đêm" (STYLE_GUIDE mục 2, 5). Không phụ thuộc three.js.
-// Hex chỉ được viết ở file này và ở src/ui/tokens.css. Hype nhận giá trị 0..1.
+// PALETTE — token màu của PHONG CÁCH ĐANG BẬT (mặc định "Kẹo đêm", STYLE_GUIDE mục 2, 5). Không phụ thuộc three.js.
+// Hex chỉ được viết ở themes/*.ts và ở src/ui/tokens.css. Hype nhận giá trị 0..1.
+//
+// ĐỔI PHONG CÁCH: theme.ts gọi applyPaletteTokens() — các object/mảng dưới đây GIỮ NGUYÊN danh tính và được ghi đè
+// tại chỗ; các số lẻ (INK, SECRET_CORE…) là `export let` (live binding). Vì vậy KHÔNG chép token vào hằng cấp module
+// (const X = PAL.berry[500] ở đầu file, chuỗi GLSL nướng sẵn màu…): đọc token bên trong hàm dựng. Xem docs/THEMES.md.
+import { chibi } from './themes/chibi';
+import type { Theme } from './themeTypes';
 
 export type ColorName = 'night' | 'berry' | 'grape' | 'soda' | 'mint' | 'honey' | 'peach' | 'cream';
 export type ShadeKey = 700 | 500 | 300 | 100;
@@ -8,17 +14,11 @@ export type Rgb = [number, number, number];
 export const COLOR_NAMES: readonly ColorName[] = ['night', 'berry', 'grape', 'soda', 'mint', 'honey', 'peach', 'cream'];
 export const SHADE_KEYS: readonly ShadeKey[] = [700, 500, 300, 100];
 
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const T0: Theme = chibi;
+
 /** 8 màu × 4 bậc dạng số 0xRRGGBB: `PAL.berry[500]`. */
-export const PAL: Record<ColorName, Record<ShadeKey, number>> = {
-  night: { 700: 0x0a0818, 500: 0x14102b, 300: 0x2a2350, 100: 0x4a3f82 },
-  berry: { 700: 0xb8326e, 500: 0xff5fa8, 300: 0xff94c4, 100: 0xffd0e4 },
-  grape: { 700: 0x5238b8, 500: 0x8b6bff, 300: 0xb5a0ff, 100: 0xddd4ff },
-  soda: { 700: 0x1c8fc0, 500: 0x45d9ff, 300: 0x8fe9ff, 100: 0xd2f7ff },
-  mint: { 700: 0x1e9c84, 500: 0x4fe3c1, 300: 0x96f0da, 100: 0xd6faf1 },
-  honey: { 700: 0xc48a12, 500: 0xffd45a, 300: 0xffe596, 100: 0xfff5d1 },
-  peach: { 700: 0xc25a2e, 500: 0xff9a6b, 300: 0xffbe9e, 100: 0xffe2d4 },
-  cream: { 700: 0xc9b8a6, 500: 0xfff4e6, 300: 0xfffaf3, 100: 0xffffff },
-};
+export const PAL: Record<ColorName, Record<ShadeKey, number>> = clone(T0.pal);
 /** Alias theo tên trong guide mục 5. */
 export const PALETTE = PAL;
 
@@ -29,27 +29,33 @@ export const PAL_HEX = Object.fromEntries(
   COLOR_NAMES.map((n) => [n, Object.fromEntries(SHADE_KEYS.map((s) => [s, hexStr(PAL[n][s])]))]),
 ) as Record<ColorName, Record<ShadeKey, string>>;
 
+/** Ramp theo tên gốc của style sheet đang bật (vd. RAMPS.blood ở "Thép & Lửa"). Builder theo phong cách dùng. */
+export const RAMPS: Record<string, Record<ShadeKey, number>> = clone(T0.ramps);
+
 /** Màu thứ 9: viền nét. INK_SKY: viền vật thể trên trời (night-100). */
-export const INK = 0x2b1d5c;
-export const INK_HEX = hexStr(INK);
-export const INK_SKY = PAL.night[100];
+export let INK = T0.ink;
+export let INK_HEX = hexStr(INK);
+export let INK_SKY = T0.inkSky;
 
-export const SECRET_CORE = PAL.honey[300];
-export const SECRET_RIM = PAL.mint[500];
+export let SECRET_CORE = T0.secretCore;
+export let SECRET_RIM = T0.secretRim;
 
-export const SKIN: readonly number[] = [0xffe0c7, 0xf7cba4, 0xe0a57c, 0xb87a55, 0x8a5a3c];
-export const HAIR: readonly number[] = [0x2a1f3d, 0x4a2f24, 0x6b4226, 0xc99a5b, 0xf6e0a8, 0xff94c4, 0x8fe9ff, 0xb5a0ff];
+export const SKIN: number[] = [...T0.skin];
+export const HAIR: number[] = [...T0.hair];
 /** Màu áo khán giả: berry/grape/soda/mint/cream, 60% bậc 500/300 + 40% bậc 700 (chọn ở shader). */
-export const CLOTH: readonly number[] = [PAL.berry[500], PAL.grape[500], PAL.soda[500], PAL.mint[500], PAL.cream[500]];
+export const CLOTH: number[] = [...T0.cloth];
 
-export const MOTIF = { star: PAL.honey[500], heart: PAL.berry[500], bow: PAL.soda[500] } as const;
+export const MOTIF: { star: number; heart: number; bow: number } = { ...T0.motif };
 
 export type ZoneName = 'arena' | 'stands' | 'outside' | 'balloon';
 /** Độ bão hoà theo khu. Secret và cực quang giữ 1.0 (không gọi shade()). */
-export const ZONE_SAT: Record<ZoneName, number> = { arena: 1.0, stands: 0.75, outside: 0.6, balloon: 0.8 };
+export const ZONE_SAT: Record<ZoneName, number> = { ...T0.zoneSat };
 /** Khu 1 dịch hue 8° về `grape`. */
-export const ZONE_HUE_SHIFT_DEG: Record<ZoneName, number> = { arena: 0, stands: 0, outside: 8, balloon: 0 };
-const GRAPE_HUE = 255;
+export const ZONE_HUE_SHIFT_DEG: Record<ZoneName, number> = { ...T0.zoneHueShiftDeg };
+let ZONE_HUE_TARGET = T0.zoneHueTarget;
+
+/** Màu vòm trời + sương mù (sky.ts, world.ts). */
+export const SKY: Theme['sky'] = { ...T0.sky };
 
 // ───────────── Chuyển đổi màu ─────────────
 export function hexToRgb(hex: number | string): Rgb {
@@ -93,28 +99,49 @@ function hueToward(h: number, target: number, deg: number): number {
 export function shade(hex: number | string, zone: ZoneName): number {
   const [h, s, l] = rgbToHsl(hexToRgb(hex));
   const shift = ZONE_HUE_SHIFT_DEG[zone];
-  const h2 = s > 0 && shift ? hueToward(h, GRAPE_HUE, shift) : h;
+  const h2 = s > 0 && shift ? hueToward(h, ZONE_HUE_TARGET, shift) : h;
   return rgbToHex(hslToRgb([h2, s * ZONE_SAT[zone], l]));
 }
 
 // ───────────── Tô bóng đồ chơi 2 bậc ─────────────
+const floorLOf = (night700: number, lift: number) => rgbToHsl(hexToRgb(night700))[2] + lift;
 export const toonRamp = {
   lit: 1.0,
+  model: T0.shadow.model as Theme['shadow']['model'],
   /** Hệ số độ sáng (HSL L) của bậc bóng. */
-  shadow: 0.72,
+  shadow: T0.shadow.shadow,
   /** Bóng không bao giờ tối hơn L này (≈ night-700, không về đen). */
-  floorL: rgbToHsl(hexToRgb(PAL.night[700]))[2] + 0.06,
+  floorL: floorLOf(T0.pal.night[700], T0.shadow.floorLift),
   /** Bóng dịch hue về tím (độ) và tối thiểu bão hoà khi màu gốc xám. */
-  hueTarget: GRAPE_HUE,
+  hueTarget: T0.shadow.hueTarget,
   /** Xoay hue tối đa (độ), chỉ một phần, theo cung ngắn nhất; màu ấm xa tím gần như không xoay. */
-  hueShiftDeg: 10,
-  minSat: 0.25,
+  hueShiftDeg: T0.shadow.hueShiftDeg,
+  minSat: T0.shadow.minSat,
   /** Lượng phủ lavender (RGB) lên bậc bóng: màu nhạt nhận đủ, màu bão hoà gần như không. */
-  tint: 0.3,
+  tint: T0.shadow.tint,
+  tintHueOffset: T0.shadow.tintHueOffset,
   /** Ngưỡng mềm (tỉ lệ) nhân vật / đạo cụ. */
-  softChar: [0.12, 0.18] as const,
-  softProp: [0.08, 0.12] as const,
-} as const;
+  softChar: [...T0.form.toy.softChar] as [number, number],
+  softProp: [...T0.form.toy.softProp] as [number, number],
+};
+/** Sắc của bóng tính ngay trong shader (xem glShadow); null = giữ nguyên hệ số gốc của từng shader (chibi). */
+let SHADOW_GL_BIAS: Rgb | null = T0.shadow.glBias ?? null;
+const glVec = (v: Rgb) => `vec3(${v.map((x) => x.toFixed(4)).join(', ')})`;
+/**
+ * Hằng vec3 GLSL cho bậc bóng tính trong shader (`sh = c * mul + add`). `base` = hệ số gốc viết cho chibi (bóng ngả tím):
+ * chibi trả lại đúng `base`; phong cách khác giữ độ tối trung bình của `base` (× tỉ lệ shadow so với chibi) nhưng đổi
+ * sắc theo shadow.glBias (thép: lạnh · sơn mài: chàm · pixel: lam tím). Gọi BÊN TRONG hàm dựng chuỗi shader.
+ */
+export function glShadow(base: Rgb): string {
+  if (!SHADOW_GL_BIAS) return glVec(base);
+  const m = ((base[0] + base[1] + base[2]) / 3) * (toonRamp.shadow / 0.72);
+  return glVec([m * SHADOW_GL_BIAS[0], m * SHADOW_GL_BIAS[1], m * SHADOW_GL_BIAS[2]]);
+}
+/** Token → hằng vec3 GLSL (giá trị sRGB 0..1). */
+export const glHex = (hex: number): string => glVec(hexToRgb(hex));
+
+/** Bảng "lùi một bậc ramp" cho mô hình bóng 'rampStep' (pixel): hex → bậc tối kế tiếp. */
+const rampDown = new Map<number, number>();
 
 /** Màu bậc bóng: tối hơn (L × 0,72), ngả nhẹ về tím, không xám hơn gốc, không tối hơn night-700.
  * Hue chỉ xoay một phần (≤ hueShiftDeg) theo cung ngắn nhất về grape và giảm dần về 0 với các màu ấm
@@ -124,6 +151,7 @@ export const toonRamp = {
  * giữ HSL-S như trước khiến màu nhạt (kem, mật ong nhạt) thành cam rực trong bóng. */
 export function shadowOf(hex: number | string): number {
   const rgb = hexToRgb(hex);
+  if (toonRamp.model === 'rampStep') { const d = rampDown.get(rgbToHex(rgb)); if (d !== undefined) return d; }
   const [h, s, l] = rgbToHsl(rgb);
   const mx = Math.max(...rgb), mn = Math.min(...rgb);
   const sv = mx > 0 ? (mx - mn) / mx : 0;
@@ -140,7 +168,7 @@ export function shadowOf(hex: number | string): number {
   const toHslS = (svv: number) => { const v = l2 / (1 - svv / 2); return Math.min(l2, 1 - l2) > 1e-6 ? Math.min(1, (v - l2) / Math.min(l2, 1 - l2)) : 0; };
   let out = hslToRgb([h2, toHslS(svT), l2]);
   // 3) phủ lavender nhẹ (cùng độ sáng), rồi trả lại sắc độ nếu lớp phủ làm xám đi
-  const tint = hslToRgb([toonRamp.hueTarget - 15, 0.5, l2]);
+  const tint = hslToRgb([toonRamp.hueTarget + toonRamp.tintHueOffset, 0.5, l2]);
   const k = toonRamp.tint * (0.05 + 0.95 * Math.pow(1 - sv, 1.5));
   out = [out[0] + (tint[0] - out[0]) * k, out[1] + (tint[1] - out[1]) * k, out[2] + (tint[2] - out[2]) * k];
   const omx = Math.max(...out), omn = Math.min(...out);
@@ -166,12 +194,16 @@ export interface HypeStage {
   secondary: number;
   accent: number;
 }
+const HYPE_ORDER: readonly HypeState[] = ['cool', 'warm', 'vivid'];
+const HYPE_RANGE: Record<HypeState, [number, number]> = { cool: [0, 0.4], warm: [0.4, 0.8], vivid: [0.8, 1] };
+const stageOf = (t: Theme, k: HypeState): HypeStage => {
+  const h = t.hype[k];
+  return { state: k, from: HYPE_RANGE[k][0], to: HYPE_RANGE[k][1], lightFraction: h.lightFraction, primary: h.primary, secondary: h.secondary, accent: h.accent };
+};
 /** 3 bảng Hype dùng chung (đèn, lightstick, khán đài, trời); mốc 0 / 0,4 / 0,8. */
-export const HYPE_STAGES: readonly [HypeStage, HypeStage, HypeStage] = [
-  { state: 'cool', from: 0, to: 0.4, lightFraction: 0.25, primary: PAL.grape[500], secondary: PAL.soda[700], accent: PAL.soda[300] },
-  { state: 'warm', from: 0.4, to: 0.8, lightFraction: 0.6, primary: PAL.berry[500], secondary: PAL.soda[500], accent: PAL.grape[500] },
-  { state: 'vivid', from: 0.8, to: 1, lightFraction: 1.0, primary: PAL.berry[500], secondary: PAL.honey[500], accent: PAL.peach[500] },
-];
+export const HYPE_STAGES: readonly [HypeStage, HypeStage, HypeStage] = [stageOf(T0, 'cool'), stageOf(T0, 'warm'), stageOf(T0, 'vivid')];
+/** Tên ba trạng thái Hype của phong cách đang bật. */
+export const HYPE_NAMES: [string, string, string] = [...T0.strings.hypeNames];
 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 export const smoothstep = (a: number, b: number, x: number) => {
@@ -190,9 +222,10 @@ export function hypeMix(h: number): [number, number, number] {
   return [1 - up1, up1 * (1 - up2), up1 * up2];
 }
 
-const STAGE_RGB = HYPE_STAGES.map((s) => ({
+const stageRgb = () => HYPE_STAGES.map((s) => ({
   primary: hexToRgb(s.primary), secondary: hexToRgb(s.secondary), accent: hexToRgb(s.accent),
 }));
+let STAGE_RGB = stageRgb();
 
 /** Bộ 3 màu theo Hype, [r,g,b] 0..1, nội suy mượt. */
 export function hypeColors(h: number): { primary: Rgb; secondary: Rgb; accent: Rgb } {
@@ -214,4 +247,41 @@ export function auroraAmount(h: number): number {
 /** Công thức guide 2.3: auroraAmount × mix(0.6, 0.9, smoothstep(0.8, 1, h)). */
 export function auroraAlpha(h: number): number {
   return auroraAmount(h) * (0.6 + 0.3 * smoothstep(0.8, 1, h));
+}
+
+// ───────────── Đổi phong cách ─────────────
+/** (nội bộ — chỉ theme.ts gọi) Ghi token màu của `t` vào các object/mảng/biến ở trên, giữ nguyên danh tính. */
+export function applyPaletteTokens(t: Theme): void {
+  for (const n of COLOR_NAMES) for (const s of SHADE_KEYS) { PAL[n][s] = t.pal[n][s]; PAL_HEX[n][s] = hexStr(t.pal[n][s]); }
+  for (const k of Object.keys(RAMPS)) delete RAMPS[k];
+  for (const [k, r] of Object.entries(t.ramps)) RAMPS[k] = { ...r };
+  INK = t.ink; INK_HEX = hexStr(t.ink); INK_SKY = t.inkSky;
+  SECRET_CORE = t.secretCore; SECRET_RIM = t.secretRim;
+  SKIN.splice(0, SKIN.length, ...t.skin);
+  HAIR.splice(0, HAIR.length, ...t.hair);
+  CLOTH.splice(0, CLOTH.length, ...t.cloth);
+  Object.assign(MOTIF, t.motif);
+  Object.assign(ZONE_SAT, t.zoneSat);
+  Object.assign(ZONE_HUE_SHIFT_DEG, t.zoneHueShiftDeg);
+  ZONE_HUE_TARGET = t.zoneHueTarget;
+  Object.assign(SKY, t.sky);
+  const sh = t.shadow;
+  Object.assign(toonRamp, {
+    model: sh.model, shadow: sh.shadow, floorL: floorLOf(t.pal.night[700], sh.floorLift), hueTarget: sh.hueTarget,
+    hueShiftDeg: sh.hueShiftDeg, minSat: sh.minSat, tint: sh.tint, tintHueOffset: sh.tintHueOffset,
+  });
+  toonRamp.softChar.splice(0, 2, ...t.form.toy.softChar);
+  toonRamp.softProp.splice(0, 2, ...t.form.toy.softProp);
+  SHADOW_GL_BIAS = sh.glBias ?? null;
+  rampDown.clear();
+  if (sh.model === 'rampStep') {
+    for (const r of [...Object.values(t.ramps), ...Object.values(t.pal)]) {
+      if (!rampDown.has(r[100])) rampDown.set(r[100], r[300]);
+      if (!rampDown.has(r[300])) rampDown.set(r[300], r[500]);
+      if (!rampDown.has(r[500])) rampDown.set(r[500], r[700]);
+    }
+    for (const r of [...Object.values(t.ramps), ...Object.values(t.pal)]) if (!rampDown.has(r[700])) rampDown.set(r[700], mixHex(r[700], t.ink, 0.45));
+  }
+  HYPE_ORDER.forEach((k, i) => { Object.assign(HYPE_STAGES[i]!, stageOf(t, k)); HYPE_NAMES[i] = t.strings.hypeNames[i]!; });
+  STAGE_RGB = stageRgb();
 }

@@ -5,7 +5,7 @@
 import { EYE_HEIGHT } from '../../world/layout';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
-import { createCable, createHeli, createHeroFx, createLiftFx } from './entranceProps';
+import { createCable, createHeli, createHeroFx, createLiftFx, type Cable, type Heli, type HeroFx, type LiftFx } from './entranceProps';
 import { singerSquash } from './singer';
 
 export type EntranceKind = 'jump' | 'lift' | 'cable';
@@ -49,11 +49,20 @@ function orbit(out: THREE.Vector3, c: THREE.Vector3, theta: number, r: number, y
   out.set(c.x + Math.sin(theta) * r, y, c.z - Math.cos(theta) * r);
 }
 
-export function createEntrance(scene: THREE.Scene): Entrance {
-  const heli = createHeli();
-  const cable = createCable();
-  const hero = createHeroFx(new THREE.Vector3(LAND.x, 0, LAND.z));
-  const lift = createLiftFx(LAND);
+/** Bộ đạo cụ của ba màn chào sân (trực thăng, cáp, hiệu ứng đáp đất, bục nâng) — khe 'entranceProps' thay được từng món. */
+export interface EntranceKit {
+  createHeli(): Heli;
+  createCable(): Cable;
+  createHeroFx(land: THREE.Vector3): HeroFx;
+  createLiftFx(land: THREE.Vector3): LiftFx;
+}
+export const DEFAULT_ENTRANCE_KIT: EntranceKit = { createHeli, createCable, createHeroFx, createLiftFx };
+
+export function createEntrance(scene: THREE.Scene, kit: EntranceKit = DEFAULT_ENTRANCE_KIT): Entrance {
+  const heli = kit.createHeli();
+  const cable = kit.createCable();
+  const hero = kit.createHeroFx(new THREE.Vector3(LAND.x, 0, LAND.z));
+  const lift = kit.createLiftFx(LAND);
   scene.add(heli.group, cable.group, hero.group, lift.group);
 
   let kind: EntranceKind = 'jump';

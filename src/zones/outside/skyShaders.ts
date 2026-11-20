@@ -2,7 +2,7 @@
 // (trừ cực quang — guide: cực quang giữ 1,0). Shader ghi thẳng giá trị sRGB (không có colorspace_fragment).
 import * as THREE from 'three';
 
-import { hexToRgb, INK_SKY, PAL, shade } from '../../world/style';
+import { hexToRgb, INK_SKY, PAL, shade, SKY } from '../../world/style';
 import { MOON_CELLS } from './skyMoon';
 
 const f = (x: number) => x.toFixed(4);
@@ -38,7 +38,7 @@ const mr = new THREE.Vector3().crossVectors(md, new THREE.Vector3(0, 1, 0)).norm
 const mu = new THREE.Vector3().crossVectors(mr, md).normalize();
 const vec = (v: THREE.Vector3) => `vec3(${f(v.x)}, ${f(v.y)}, ${f(v.z)})`;
 
-export const SKY_FRAG = /* glsl */ `
+export const SKY_FRAG = () => /* glsl */ `
 const vec3 MW_N = ${vec(MW_N)};
 const vec3 MD = ${vec(md)}; const vec3 MR = ${vec(mr)}; const vec3 MU = ${vec(mu)};
 uniform float uTime; uniform float uHype; uniform float uAur; uniform float uWake;
@@ -54,17 +54,17 @@ void main(){
   float h = max(el, 0.0);
   float az = atan(d.x, -d.z);
   // night-700 (đỉnh) → night-500 → chút grape gần chân trời
-  vec3 zen = ${v3(PAL.night[700])};
-  vec3 mid = ${v3(PAL.night[500])};
-  vec3 hor = mix(mix(${v3(PAL.night[500])}, ${v3(PAL.night[300])}, 0.7), ${v3(PAL.grape[700])}, 0.18);
+  vec3 zen = ${v3(SKY.zenith)};
+  vec3 mid = ${v3(SKY.mid)};
+  vec3 hor = mix(mix(${v3(SKY.mid)}, ${v3(SKY.horizon)}, 0.7), ${v3(SKY.haze)}, 0.18);
   vec3 col = mix(hor, mid, smoothstep(0.0, 0.3, h));
   col = mix(col, zen, smoothstep(0.3, 0.95, h));
   // ánh đèn thành phố cam đào rất thấp
   float glow = exp(-h * 18.0) * (0.75 + 0.25 * sin(az * 3.0 + 1.0));
-  col = mix(col, ${v3(PAL.peach[700])}, glow * 0.4);
+  col = mix(col, ${v3(SKY.glow)}, glow * 0.4);
   // cực quang hắt nhẹ lên nền trời (chỉ khi có cực quang)
   col += ${v3(PAL.mint[700], true)} * 0.05 * uAur * smoothstep(0.05, 0.45, h) * (0.6 + 0.4 * sin(az * 2.0 + uTime * 0.05));
-  col = mix(col, ${v3(PAL.night[500])}, smoothstep(0.0, -0.08, el));
+  col = mix(col, ${v3(SKY.mid)}, smoothstep(0.0, -0.08, el));
   // dải Ngân Hà mờ
   float mw = dot(d, MW_N);
   float band = exp(-mw * mw / 0.018);
@@ -115,7 +115,7 @@ void main(){
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 
-export const AURORA_FRAG = /* glsl */ `
+export const AURORA_FRAG = () => /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uAur;
 varying vec2 vUv; varying float vS; varying float vId; varying float vG;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
@@ -168,7 +168,7 @@ void main(){
 }`;
 
 // Blend premultiplied (ONE, ONE_MINUS_SRC_ALPHA): sao thường alpha 0 → cộng; sao hero có thân đặc + viền INK_SKY.
-export const STAR_FRAG = /* glsl */ `
+export const STAR_FRAG = () => /* glsl */ `
 varying vec3 vCol; varying float vHero; varying float vRot;
 ${SDF_STAR}
 void main(){
@@ -224,7 +224,7 @@ void main(){
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
 }`;
 
-export const MET_FRAG = /* glsl */ `
+export const MET_FRAG = () => /* glsl */ `
 varying vec2 vQ; varying float vA; varying float vFlare; varying float vBr; varying float vT; varying float vSpin;
 ${SDF_STAR}
 void main(){
@@ -276,7 +276,7 @@ void main(){
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 
-export const PLANE_FRAG = /* glsl */ `
+export const PLANE_FRAG = () => /* glsl */ `
 varying float vA; varying float vTrail; varying vec2 vUv2; varying vec3 vN; varying vec3 vL; varying float vBody;
 void main(){
   if (vTrail > 0.5) {

@@ -1,4 +1,5 @@
 // Tiện ích chung cho các sự kiện bí mật (UFO / tên lửa / rồng).
+import { viewHeightPx } from '../../world/shared/viewport';
 import { groundYAtZ } from '../../world/layout';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
@@ -80,7 +81,7 @@ export function makePoints(
 export const PALETTE = [0xff3d81, 0x35d0ff, 0xffd93d, 0x7cff6b, 0xb06bff, 0xff8a3d, 0xffffff].map((c) => new THREE.Color(c));
 
 /** Kích thước điểm ~ chiều cao viewport (giống confetti.ts). */
-export const pxScale = () => (typeof window !== 'undefined' ? window.innerHeight : 720);
+export const pxScale = () => viewHeightPx();
 
 export function disposeTree(o: THREE.Object3D) {
   o.traverse((c) => {

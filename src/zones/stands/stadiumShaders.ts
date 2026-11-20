@@ -1,6 +1,6 @@
 // Shader của khán đài (phong cách "Kẹo đêm"): khán giả chấm kẹo + lightstick sao/tim, kết cấu, đồ trang trí.
 // Mọi màu lấy từ PAL (qua shade() theo độ bão hoà khu khán đài) hoặc từ uniform Hype dùng chung.
-import { PAL, hexToRgb, shade } from '../../world/style';
+import { PAL, glShadow, hexToRgb, shade } from '../../world/style';
 
 /** Màu token → chuỗi vec3 GLSL, đã áp độ bão hoà của khu khán đài (0.75). */
 export const g3 = (hex: number): string => {
@@ -8,7 +8,7 @@ export const g3 = (hex: number): string => {
   return `vec3(${r.toFixed(4)}, ${g.toFixed(4)}, ${b.toFixed(4)})`;
 };
 
-export const CROWD_VERT = /* glsl */ `
+export const CROWD_VERT = () => /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uPhase; uniform float uRes;
 uniform vec3 uHA; uniform vec3 uHB; uniform vec3 uHC; // primary / secondary / accent của Hype (đã nhân bão hoà khu)
 // hiệu ứng tương tác (JS nới mềm): bao 0..1 + tuổi (s)
@@ -185,7 +185,7 @@ void main(){
   vCol = color; vUv = aUv; vKind = kind; vI = inten;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
-export const DECOR_FRAG = /* glsl */ `
+export const DECOR_FRAG = () => /* glsl */ `
 uniform sampler2D uTex; uniform float uPulse;
 varying vec3 vCol; varying vec2 vUv; varying float vKind; varying float vI;
 void main(){
@@ -197,7 +197,7 @@ void main(){
     vec3 c = mix(vCol, vec3(1.0, 0.96, 0.9), core * 0.45) * vI;
     gl_FragColor = vec4(c * (core + halo * 0.7), core * 0.95);
   } else if (vKind < 2.5) { // cờ: 2 bậc, phần đuôi tối hơn và ngả tím
-    vec3 c = mix(vCol, vCol * vec3(0.72, 0.62, 0.95), step(0.55, vUv.y));
+    vec3 c = mix(vCol, vCol * ${glShadow([0.72, 0.62, 0.95])}, step(0.55, vUv.y));
     gl_FragColor = vec4(c, 1.0);
   } else gl_FragColor = vec4(vCol, 1.0);
 }`;

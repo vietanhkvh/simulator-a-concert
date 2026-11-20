@@ -2,6 +2,7 @@
 // cực quang (chỉ hiện khi Hype > 40%, bung rèm từ chân lên), trường sao + sao hero 5 cánh, sao băng đầu ngôi sao,
 // máy bay chở khách mập + vệt khói chấm, điểm sáng (đèn hàng không, drone). 4–5 draw call (cực quang ẩn hẳn < 40%).
 // Shader: skyShaders.ts · texture trăng: skyMoon.ts.
+import { drawSize } from '../../world/shared/viewport';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -44,7 +45,9 @@ let activeBurst: ((n: number) => void) | null = null;
 /** Bắn n sao băng (cho kiểm thử). */
 export function triggerMeteors(count: number): void { activeBurst?.(count); }
 
-export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf) {
+/** `aurora: false` (phong cách thay cực quang bằng thứ khác ở khe 'skyFeature'): không vẽ rèm cực quang, không hắt màu lên vòm. */
+export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf, opts: { aurora?: boolean } = {}) {
+  const withAurora = opts.aurora !== false;
   const disposables: { dispose(): void }[] = [];
   uniforms.uPx = { value: 500 };
   uniforms.uRes = { value: 1 };
@@ -59,7 +62,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   // 1) Vòm trời + trăng (bám theo camera, bán kính < far)
   const skyGeo = new THREE.SphereGeometry(190, 48, 24);
   const skyMat = new THREE.ShaderMaterial({
-    uniforms: U, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG,
+    uniforms: U, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG(),
     side: THREE.BackSide, depthWrite: false, fog: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
@@ -67,7 +70,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   sky.frustumCulled = false;
   const v2 = new THREE.Vector2();
   sky.onBeforeRender = (renderer, _s, camera) => {
-    renderer.getDrawingBufferSize(v2);
+    drawSize(renderer, v2);
     uniforms.uPx.value = v2.y * camera.projectionMatrix.elements[5] * 0.5;
     uniforms.uRes.value = Math.max(0.6, v2.y / 720);
   };
@@ -107,7 +110,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   aurGeo.setAttribute('aCurt', new THREE.Float32BufferAttribute(ac, 3));
   aurGeo.setIndex(ai);
   const aurMat = new THREE.ShaderMaterial({
-    uniforms: U, vertexShader: AURORA_VERT, fragmentShader: AURORA_FRAG,
+    uniforms: U, vertexShader: AURORA_VERT, fragmentShader: AURORA_FRAG(),
     side: THREE.DoubleSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
   const aurora = new THREE.Mesh(aurGeo, aurMat);
@@ -164,7 +167,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   starGeo.setAttribute('aSize', new THREE.Float32BufferAttribute(ss, 1));
   starGeo.setAttribute('aTw', new THREE.Float32BufferAttribute(st, 3));
   const starMat = new THREE.ShaderMaterial({
-    uniforms: U, vertexShader: STAR_VERT(STAR_R), fragmentShader: STAR_FRAG,
+    uniforms: U, vertexShader: STAR_VERT(STAR_R), fragmentShader: STAR_FRAG(),
     transparent: true, depthWrite: false, fog: false,
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
     blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
@@ -192,7 +195,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   mGeo.setAttribute('aP0', aP0); mGeo.setAttribute('aT', aT); mGeo.setAttribute('aLife', aLife); mGeo.setAttribute('aLook', aLook);
   mGeo.instanceCount = POOL;
   const mMat = new THREE.ShaderMaterial({
-    uniforms: U, vertexShader: MET_VERT(STAR_R - 5), fragmentShader: MET_FRAG,
+    uniforms: U, vertexShader: MET_VERT(STAR_R - 5), fragmentShader: MET_FRAG(),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
   const meteors = new THREE.Mesh(mGeo, mMat);
@@ -266,7 +269,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   const planeGeo = mergeGeometries(parts)!;
   parts.forEach((g) => g.dispose());
   const planeMat = new THREE.ShaderMaterial({
-    uniforms: U, vertexShader: PLANE_VERT, fragmentShader: PLANE_FRAG,
+    uniforms: U, vertexShader: PLANE_VERT, fragmentShader: PLANE_FRAG(),
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
   });
   const planes = new THREE.Mesh(planeGeo, planeMat);
@@ -312,9 +315,9 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
       aur += Math.sign(target - aur) * Math.min(Math.abs(target - aur), rate * dt);
       if (aurOn) grow = Math.min(1, grow + dt / AUR_UNFURL_SEC);
       if (!aurOn && aur <= 0.001) { aur = 0; grow = 0; }
-      loc.uAur.value = aur;
+      loc.uAur.value = withAurora ? aur : 0;
       loc.uGrow.value = grow;
-      aurora.visible = aur > 0.001 && grow > 0;
+      aurora.visible = withAurora && aur > 0.001 && grow > 0;
 
       // Trăng thức khi Hype > 80%
       if (!awake && h > WAKE_ON) awake = true; else if (awake && h < WAKE_OFF) awake = false;
@@ -336,6 +339,9 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
         (uniforms.uPlaneVis.value as THREE.Vector2).setComponent(i, vis);
       }
     },
-    dispose() { disposables.forEach((d) => d.dispose()); },
+    dispose() {
+      if (activeBurst === burst) activeBurst = null;
+      disposables.forEach((d) => d.dispose());
+    },
   };
 }

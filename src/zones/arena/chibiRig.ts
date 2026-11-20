@@ -2,6 +2,7 @@
 // STYLE_GUIDE mục 3: 2,3 đầu, không cổ, tay 1 đoạn + bàn tay cầu, chân ngắn, mặt là CanvasTexture atlas 2×2,
 // khối tròn (cầu / capsule / lathe), viền ink bằng inverted hull, tô bóng đồ chơi 2 bậc + đốm highlight + rim theo Hype.
 // Nhiều nhân vật gộp vào MỘT ChibiBatch → 3 draw call (thân, mặt, viền) cho cả nhóm. Không có đèn thật: hướng sáng cố định.
+import { drawSize } from '../../world/shared/viewport';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
@@ -452,7 +453,7 @@ export class ChibiBatch {
 
   private buildAccessory(c: ChibiChar, hy: number): void {
     const L = c.look, R = RIG;
-    const ac = L.accColor ?? MOTIF_BOW;
+    const ac = L.accColor ?? PAL.soda[500];
     const P = (g: THREE.BufferGeometry, col = ac, emit = 0) => this.part(c, c.head, g, col, emit);
     switch (L.accessory) {
       case 'bow': { // nơ soda trên đỉnh lệch phải người xem
@@ -571,7 +572,7 @@ export class ChibiBatch {
     body.name = this.group.name + 'Body'; face.name = this.group.name + 'Face'; out.name = this.group.name + 'Outline';
     face.renderOrder = 1;
     const res = new THREE.Vector2();
-    out.onBeforeRender = (r) => { r.getDrawingBufferSize(res); (this.uOut.uRes!.value as THREE.Vector2).copy(res); };
+    out.onBeforeRender = (r) => { drawSize(r, res); (this.uOut.uRes!.value as THREE.Vector2).copy(res); };
     body.add(this.group);
     for (const m of [body, face, out]) { m.frustumCulled = false; scene.add(m); }
     body.updateMatrixWorld(true);
@@ -610,7 +611,6 @@ export class ChibiBatch {
     releaseAtlas();
   }
 }
-const MOTIF_BOW = PAL.soda[500];
 
 // ───────── Tư thế ─────────
 const _d = new THREE.Vector3(), _t = new THREE.Vector3(), _iu = new THREE.Vector3();

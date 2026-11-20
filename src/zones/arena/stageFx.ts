@@ -1,6 +1,7 @@
 // Hiệu ứng sân khấu giả (additive, không Light thật, không bóng): laser quạt, đài phun sao/tim, blinder bóng kem, khói thấp.
 // 4 draw call; mỗi frame chỉ đổi uniform. Màu theo "Kẹo đêm": laser mint/soda/berry, pháo honey/cream/berry,
 // khói nhuộm theo 3 trạng thái Hype, chớp pháo màu kem (không bao giờ trắng xoá, ≤ 3 lần chớp/giây).
+import { viewHeightPx } from '../../world/shared/viewport';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import { FIELD_Y } from '../../world/layout';
@@ -41,12 +42,12 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
   ${GLARE_VERT_MAIN}
 }`;
-const LASER_FRAG = /* glsl */ `
+const LASER_FRAG = () => /* glsl */ `
 uniform vec3 uColor;
 uniform float uIntensity;
 varying float vAlong;
 varying float vSide;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 void main() {
   float x = abs(vSide);
   float core = exp(-x * x * 18.0);        // lõi mảnh tròn
@@ -143,11 +144,11 @@ void main() {
   vI = uIntensity;
   gl_PointSize = uPx * (1.1 + 0.6 * uIntensity) / -mv.z;
 }`;
-const BLIND_FRAG = /* glsl */ `
+const BLIND_FRAG = () => /* glsl */ `
 uniform vec3 uCream;
 uniform vec3 uHoney;
 varying float vI;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 void main() {
   vec2 q = (gl_PointCoord - 0.5) * 2.0;
   float d = length(q);
@@ -175,14 +176,14 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   ${GLARE_VERT_MAIN}
 }`;
-const HAZE_FRAG = /* glsl */ `
+const HAZE_FRAG = () => /* glsl */ `
 uniform float uTime;
 uniform vec3 uColor;
 uniform float uIntensity;
 uniform vec3 uColor2;
 varying vec2 vUv;
 varying float vLayer;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p) {
   vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -230,7 +231,7 @@ export function createStageFx(scene: THREE.Scene): StageFx {
     uIntensity: { value: 0 },
   };
   const laserMat = new THREE.ShaderMaterial({
-    vertexShader: LASER_VERT, fragmentShader: LASER_FRAG, uniforms: laserU,
+    vertexShader: LASER_VERT, fragmentShader: LASER_FRAG(), uniforms: laserU,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
   });
   const lasers = new THREE.Mesh(laserGeo, laserMat);
@@ -283,7 +284,7 @@ export function createStageFx(scene: THREE.Scene): StageFx {
     uHoney: { value: new THREE.Color(PAL.honey[300]).convertLinearToSRGB() },
   };
   const blindMat = new THREE.ShaderMaterial({
-    vertexShader: BLIND_VERT, fragmentShader: BLIND_FRAG, uniforms: blindU,
+    vertexShader: BLIND_VERT, fragmentShader: BLIND_FRAG(), uniforms: blindU,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const blinders = new THREE.Points(blindGeo, blindMat);
@@ -325,7 +326,7 @@ export function createStageFx(scene: THREE.Scene): StageFx {
   }
   const hazeU = { uTime: { value: 0 }, uColor: { value: new THREE.Color() }, uColor2: { value: new THREE.Color() }, uIntensity: { value: 0.1 } };
   const hazeMat = new THREE.ShaderMaterial({
-    vertexShader: HAZE_VERT, fragmentShader: HAZE_FRAG, uniforms: hazeU,
+    vertexShader: HAZE_VERT, fragmentShader: HAZE_FRAG(), uniforms: hazeU,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
   });
   const haze = new THREE.Mesh(hazeGeo, hazeMat);
@@ -355,7 +356,7 @@ export function createStageFx(scene: THREE.Scene): StageFx {
     update(f) {
       const dt = Math.min(f.dt, 0.1);
       time += dt;
-      const px = window.innerHeight * 1.2;
+      const px = viewHeightPx() * 1.2;
       sparkU.uTime.value = time;
       sparkU.uPx.value = px;
       blindU.uPx.value = px;

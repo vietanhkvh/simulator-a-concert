@@ -1,5 +1,6 @@
 // Confetti: 1 THREE.Points, ~600 mảnh, chuyển động hoàn toàn trong vertex shader (uTime - uStart).
 // Mảnh kẹo bo tròn: đĩa, tim, sao, ruy băng (SDF trong fragment), màu berry/soda/honey/mint/cream; lật = co một trục.
+import { viewHeightPx } from '../../world/shared/viewport';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import { FIELD_Y } from '../../world/layout';
@@ -124,7 +125,7 @@ export function createConfetti(scene: THREE.Scene): Confetti {
     update(f) {
       time += Math.min(f.dt, 0.1);
       uniforms.uTime.value = time;
-      uniforms.uPx.value = window.innerHeight * 1.2; // gl_PointSize ~ tỉ lệ chiều cao viewport
+      uniforms.uPx.value = viewHeightPx() * 1.2; // gl_PointSize ~ tỉ lệ chiều cao viewport
       if (f.hype > 0.9 && prevHype <= 0.9 && time - lastBurst >= COOLDOWN) burst();
       prevHype = f.hype;
       if (points.visible && time - uniforms.uStart.value > LIFE + 1.5) points.visible = false;

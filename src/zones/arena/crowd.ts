@@ -67,7 +67,7 @@ const QUALITY_TIERS = [0.35, 0.4, 0.55, 0.7, 0.85, 1];
 const v3 = (hex: number) => new THREE.Vector3(...hexToRgb(hex));
 /** Áo khán giả: 5 hue × bậc [500, 300, 700] (shader chọn 60% 500/300, 40% 700). */
 const CLOTH_HUES: ColorName[] = ['berry', 'grape', 'soda', 'mint', 'cream'];
-const CROWD_PAL = {
+const crowdPal = () => ({
   uSkin: { value: SKIN.map(v3) },
   uHair: { value: HAIR.map(v3) },
   uCloth: { value: CLOTH_HUES.flatMap((c) => [PAL[c][500], PAL[c][300], PAL[c][700]].map(v3)) },
@@ -87,7 +87,7 @@ const CROWD_PAL = {
   uStar: { value: v3(PAL.honey[500]) },
   uHeart: { value: v3(PAL.berry[500]) },
   uShadowTint: { value: v3(PAL.grape[700]) },
-};
+});
 
 /** PRNG có seed để bố trí giống nhau mỗi lần tải. */
 function mulberry32(seed: number): () => number {
@@ -326,7 +326,7 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
     uLodDist: { value: CROWD_QUALITY.lodDist },
     uFaceDist: { value: CROWD_QUALITY.faceDist },
     uTilt: { value: CROWD_QUALITY.tilt },
-    ...CROWD_PAL,
+    ...crowdPal(),
   };
   let waveWasOn = false;
   let waveCount = 0;

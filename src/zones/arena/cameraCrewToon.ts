@@ -1,7 +1,7 @@
 // Vật liệu "đồ chơi" cho đội quay phim: InstancedMesh + instanceColor, tô 2 bậc (bóng dịch về tím),
 // rim sáng, 1 đốm highlight kem, viền ink bằng fresnel (+0 draw call, đúng guide cho mesh instanced).
 import * as THREE from 'three';
-import { INK, PAL, TOY, toColor } from '../../world/style';
+import { INK, PAL, TOY, glShadow, toColor } from '../../world/style';
 
 const VERT = /* glsl */ `
 #include <common>
@@ -20,7 +20,7 @@ void main() {
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
 }`;
-const FRAG = /* glsl */ `
+const FRAG = () => /* glsl */ `
 uniform vec3 uInk;
 uniform vec3 uRim;
 uniform vec3 uLight;
@@ -36,7 +36,7 @@ void main() {
   if (ndv < 0.0) N = -N;
   float l = dot(N, uLight);
   float t = smoothstep(-0.1, 0.06, l);                                // ngưỡng mềm 2 bậc
-  vec3 sh = vCol * vec3(0.55, 0.5, 0.78) + vec3(0.004, 0.0, 0.012);  // bóng dịch về tím, không về đen
+  vec3 sh = vCol * ${glShadow([0.55, 0.5, 0.78])} + ${glShadow([0.004, 0.0, 0.012])};  // bóng dịch về tím, không về đen
   vec3 c = mix(sh, vCol, t);
   float rim = pow(1.0 - abs(ndv), 3.0);
   c += uRim * rim * ${TOY.rim.toFixed(2)};
@@ -52,7 +52,7 @@ void main() {
 export function createToonMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader: VERT,
-    fragmentShader: FRAG,
+    fragmentShader: FRAG(),
     uniforms: THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
       {

@@ -9,7 +9,7 @@ export const GLARE_VERT_MAIN = /* glsl */ `vClip = gl_Position;`;
  * Fragment: `lyricDim()` trả hệ số ≤ 1. Cửa sổ lời ≈ NDC x ∈ [-0,55; 0,55], y ∈ [-1; -0,5];
  * mỗi lớp additive bị nén về ≈ GLARE.lyricsAdditiveMax / 2 ở đó (nhiều lớp chồng vẫn ≤ 0,35).
  */
-export const GLARE_FRAG_PARS = /* glsl */ `
+export const GLARE_FRAG_PARS = () => /* glsl */ `
 varying vec4 vClip;
 float lyricDim() {
   vec2 n = vClip.xy / max(vClip.w, 1e-4);

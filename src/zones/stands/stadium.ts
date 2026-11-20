@@ -21,7 +21,9 @@ const ROOF_LIP_R = 126.9;
 const S = (hex: number): number[] => hexToRgb(shade(hex, 'stands'));
 const satRgb = (c: Rgb): Rgb => { const [h, s, l] = rgbToHsl(c); return hslToRgb([h, s * ZONE_SAT.stands, l]); };
 
-export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf) {
+/** `crowd: false`: không vẽ khán giả chấm sáng (phong cách có builder riêng ở khe 'standCrowd'); kết cấu vẫn phản ứng tương tác. */
+export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf, opts: { crowd?: boolean } = {}) {
+  const withCrowd = opts.crowd !== false;
   const disposables: { dispose(): void }[] = [];
   const pos: number[] = [], col: number[] = [], kind: number[] = [];
   const quad = (a: number[], b: number[], c: number[], d: number[], ca: number[], cb: number[] = ca, k = 0) => {
@@ -195,7 +197,7 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
   const atlas = makeSignAtlas();
   const decorU = { uChase: { value: 0 }, uCheerFx: { value: 0 }, uTex: { value: atlas } };
   const decorMat = new THREE.ShaderMaterial({
-    uniforms: { ...uniforms, ...decorU }, vertexShader: decorVert(CX, CZ), fragmentShader: DECOR_FRAG,
+    uniforms: { ...uniforms, ...decorU }, vertexShader: decorVert(CX, CZ), fragmentShader: DECOR_FRAG(),
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
@@ -242,13 +244,13 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
     uHeart: { value: 0 }, uHeartAge: { value: 99 }, uFlash: { value: 0 }, uPyro: { value: 0 }, uPyroAge: { value: 99 },
   };
   const crowdMat = new THREE.ShaderMaterial({
-    uniforms: { ...uniforms, ...fxU, ...hypeU }, vertexShader: CROWD_VERT, fragmentShader: CROWD_FRAG,
+    uniforms: { ...uniforms, ...fxU, ...hypeU }, vertexShader: CROWD_VERT(), fragmentShader: CROWD_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
   const crowd = new THREE.Points(crowdGeo, crowdMat);
   crowd.frustumCulled = false;
   crowd.renderOrder = 1;
-  scene.add(crowd);
+  if (withCrowd) scene.add(crowd);
   disposables.push(crowdGeo, crowdMat);
 
   // Tương tác khán giả (sự kiện 'cs-interact' từ main.ts) → bao hiệu ứng nới mềm trong JS
@@ -267,7 +269,10 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
   const env = (a: number, dur: number, fin: number, fout: number) => Math.max(0, Math.min(1, a / fin, (dur - a) / fout));
   const ease = (v: number, target: number, rate: number) => v + Math.max(-rate, Math.min(rate, target - v));
   const tint = structMat.uniforms.uTint.value as THREE.Vector3;
-  crowd.onBeforeRender = () => {
+  // Nhịp mỗi frame chạy trên vật luôn được vẽ: khán giả chấm sáng, hoặc kết cấu khi không có khán giả.
+  const host: THREE.Object3D = withCrowd ? crowd : struct;
+  if (!withCrowd) struct.frustumCulled = false;
+  host.onBeforeRender = () => {
     const now = performance.now();
     const t = uniforms.uTime?.value as number ?? now / 1000;
     const hype = (uniforms.uHype?.value as number) ?? 0;

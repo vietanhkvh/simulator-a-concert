@@ -30,9 +30,9 @@ void main() {
   gl_Position = projectionMatrix * mv;
   ${GLARE_VERT_MAIN}
 }`;
-const beamFrag = /* glsl */ `
+const beamFrag = () => /* glsl */ `
 varying vec2 vUv; varying float vFres; varying vec3 vCol; varying float vInt; varying float vDepth;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 void main() {
   float along = pow(vUv.y, 1.5) * smoothstep(0.0, 0.25, vUv.y);
   // mép tròn mềm: hồ sơ gauss theo fresnel thay vì cạnh cứng
@@ -58,9 +58,9 @@ void main() {
   gl_Position = projectionMatrix * c;
   ${GLARE_VERT_MAIN}
 }`;
-const flareFrag = /* glsl */ `
+const flareFrag = () => /* glsl */ `
 varying vec2 vP; varying vec3 vCol; varying float vInt; varying float vKind;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 float star5(vec2 p, float r) {
   float a = atan(p.x, p.y);
   float k = 6.2831853 / 5.0;
@@ -104,9 +104,9 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
   ${GLARE_VERT_MAIN}
 }`;
-const washFrag = /* glsl */ `
+const washFrag = () => /* glsl */ `
 varying vec2 vP; varying vec3 vCol; varying float vInt;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 void main() {
   float r = length(vP);
   float a = pow(max(0.0, 1.0 - r * r), 2.0) * vInt * lyricDim();
@@ -229,11 +229,11 @@ export function createLights(scene: THREE.Scene): Updatable {
   // ── mesh ──
   const beamGeo = new THREE.CylinderGeometry(0.12, 2.6, LEN, 18, 1, true);
   beamGeo.translate(0, -LEN / 2, 0);
-  const beams = instanced(beamGeo, addMat(beamVert, beamFrag, THREE.DoubleSide), NBT, 5);
+  const beams = instanced(beamGeo, addMat(beamVert, beamFrag(), THREE.DoubleSide), NBT, 5);
   const flareGeo = new THREE.PlaneGeometry(1, 1);
   // flare: [0, NBT) bóng đèn, [NBT, NBT+ND) chấm runway, [NBT+ND, 2·NBT+ND) sao gobo ở đầu chùm (cùng draw call)
   const NF = NBT + ND + NBT;
-  const flares = instanced(flareGeo, addMat(flareVert, flareFrag), NF, 6);
+  const flares = instanced(flareGeo, addMat(flareVert, flareFrag()), NF, 6);
   {
     const kd = new THREE.InstancedBufferAttribute(new Float32Array(NF), 1);
     for (let i = 0; i < NF; i++) kd.array[i] = i < NBT ? 0 : i < NBT + ND ? 1 : 2;
@@ -241,7 +241,7 @@ export function createLights(scene: THREE.Scene): Updatable {
   }
   const washGeo = new THREE.PlaneGeometry(1, 1);
   washGeo.rotateX(-Math.PI / 2);
-  const washes = instanced(washGeo, addMat(washVert, washFrag), NW, 3);
+  const washes = instanced(washGeo, addMat(washVert, washFrag()), NW, 3);
   root.add(washes.mesh, beams.mesh, flares.mesh);
   scene.add(root);
   const extra = createDecoFixtures(scene);

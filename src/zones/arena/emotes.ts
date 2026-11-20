@@ -3,6 +3,7 @@
 // (2) THREE.Points vệt sáng/quầng (additive) cho icon đặc biệt. Mọi chuyển động trong vertex shader;
 // CPU chỉ ghi attribute khi spawn (ring buffer). Hành vi: bay lắc, xoắn ốc, nảy, zig-zag, trôi xoay,
 // nổ tỏa, đài phun, đội hình (trái tim). Mẫu đồng bộ: sóng theo phách, đội hình tim, đài phun khi hype vượt 0,8/0,95.
+import { viewHeightPx } from '../../world/shared/viewport';
 import { fieldY } from '../../world/layout';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
@@ -521,7 +522,7 @@ export function createEmotes(scene: THREE.Scene): Emotes {
       const dt = Math.min(f.dt, 0.1);
       time += dt;
       uniforms.uTime.value = time;
-      uniforms.uPx.value = window.innerHeight * 0.75;
+      uniforms.uPx.value = viewHeightPx() * 0.75;
       uniforms.uPulse.value = f.beatPulse;
       const h = f.hype;
       const rate = h < 0.15 ? 0.5 : 0.5 + 26 * Math.pow(h, 1.8);

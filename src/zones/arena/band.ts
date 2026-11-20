@@ -33,7 +33,7 @@ const STEP_H = 0.5; // bục kê chân keyboard: vai cao hơn đàn tầng trên
 const POD_H = 0.55; // bục tròn vocal (miệng ngang mic stand)
 const SEAT = 0.34; // đáy thân chibi (khung gốc) ngồi lên mặt ghế
 
-const SPECS: Spec[] = [
+const specs = (): Spec[] => [
   { kind: 'drum', x: -6.5, y: 0.45, z: 1.32, yaw: 0.05, poolR: 3.4, poolCol: PAL.honey[500],
     look: { skin: SKIN[2]!, hair: HAIR[0]!, hairStyle: 'spiky', top: PAL.grape[500], bottom: PAL.night[100], shoe: PAL.cream[500], trim: PAL.honey[300],
       accessory: 'headphones', accColor: PAL.berry[500], heldL: 'stick', heldR: 'stick', itemColor: PAL.honey[500] } },
@@ -83,7 +83,7 @@ interface Mus { spec: Spec; c: ChibiChar; seed: number; gtr?: Gtr; lift: number;
 
 export function createBand(scene: THREE.Scene): Band {
   const batch = new ChibiBatch({ maxChars: 6, name: 'band' });
-  const mus: Mus[] = SPECS.map((spec, i) => {
+  const mus: Mus[] = specs().map((spec, i) => {
     const c = batch.addChar(spec.look, spec.x, spec.y, spec.z);
     const m: Mus = { spec, c, seed: i * 1.7, lift: 0, jumpY: 0, roll: 0 };
     const P = (g: THREE.BufferGeometry, col: number, emit = 0) => batch.part(c, c.root, g, col, emit);

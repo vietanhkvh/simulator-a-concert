@@ -59,7 +59,7 @@ const radAt = (s: number, lb: number) => SC * R_BODY * (0.8 + 0.2 * sm(0, 3 * SC
 
 // ── bộ màu: [thân, bụng, đốm, vây, sừng, má, bờm] + [nét tối, miệng, ngọc, lòng trắng mắt]
 type Way = [number, number, number, number, number, number, number];
-const WAYS: Way[] = [
+const WAYS = (): Way[] => [
   [PAL.honey[500], PAL.cream[500], PAL.berry[500], PAL.mint[500], PAL.peach[500], PAL.berry[300], PAL.cream[300]],
   [PAL.mint[500], PAL.cream[500], PAL.soda[700], PAL.berry[500], PAL.peach[300], PAL.berry[300], PAL.cream[300]],
   [PAL.berry[300], PAL.cream[500], PAL.grape[500], PAL.soda[500], PAL.honey[500], PAL.berry[500], PAL.cream[300]],
@@ -442,7 +442,7 @@ export function createDragon(scene: THREE.Scene): SecretAct {
       const pr = PAIRS[Math.floor(Math.random() * PAIRS.length)]!;
       const flip = Math.random() < 0.5;
       for (let id = 0; id < 2; id++) {
-        const way = WAYS[pr[flip ? 1 - id : id]!]!;
+        const way = WAYS()[pr[flip ? 1 - id : id]!]!;
         const slots = [...way, INK, PAL.berry[700], SECRET_CORE, PAL.cream[100]];
         slots.forEach((hex, k) => { v3(hex, uCol[k + id * NSLOT]); v3(mixHex(shadowOf(hex), hex, 0.3), uSh[k + id * NSLOT]); });
         blinks[id] = [];

@@ -3,7 +3,7 @@
 // nên đèn, lightstick, khán đài và trời luôn cùng một bảng. Đa dạng = mỗi nhóm đèn lấy vai trò
 // primary / secondary / accent khác nhau và vai trò chạy đuổi theo phách.
 import * as THREE from 'three';
-import { HYPE_STAGES, PAL, hypeColors, hypeMix, rgbToColor, toColor } from '../../world/style';
+import { HYPE_STAGES, PAL, hypeColors, hypeMix, rgbToColor, themed, toColor } from '../../world/style';
 
 /** Trạng thái hiện tại; lights.ts cập nhật mỗi frame (hype, beat). */
 export const livePal = { hype: 0, beat: 0, chase: 0 };
@@ -11,9 +11,10 @@ export const livePal = { hype: 0, beat: 0, chase: 0 };
 // 3 màu Hype (THREE.Color tuyến tính, như mọi màu khác của three) — tính lại khi hype đổi.
 const tri: THREE.Color[] = [new THREE.Color(), new THREE.Color(), new THREE.Color()];
 /** Màu thứ 4 chỉ xuất hiện khi rực rỡ: kem chớp (thay trắng tinh). */
-const CREAM = toColor(PAL.cream[300]);
-const SODA = toColor(PAL.soda[500]);
+const CREAM = new THREE.Color();
+const SODA = new THREE.Color();
 let triHype = -1;
+themed(() => { toColor(PAL.cream[300], CREAM); toColor(PAL.soda[500], SODA); triHype = -1; });
 
 function refresh(h: number) {
   if (Math.abs(h - triHype) < 0.002) return;

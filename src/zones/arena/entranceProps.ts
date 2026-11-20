@@ -1,5 +1,6 @@
 // Đạo cụ cho cảnh mở màn (entrance.ts): trực thăng + dù, sao chổi + hiệu ứng chạm đất.
 // Toàn bộ là mesh gộp, vật liệu không cần đèn, fog:false; hoạt ảnh bằng uniform/shader.
+import { viewHeightPx } from '../../world/shared/viewport';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { FIELD_Y } from '../../world/layout';
@@ -78,7 +79,7 @@ export function radialTex(stops: [number, string][]): THREE.CanvasTexture {
 const ROTOR_VERT = /* glsl */ `
 varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-const ROTOR_FRAG = /* glsl */ `
+const ROTOR_FRAG = () => /* glsl */ `
 uniform float uTime;
 varying vec2 vUv;
 void main() {
@@ -125,7 +126,7 @@ void main() {
 const CONE_VERT = /* glsl */ `
 varying float vV;
 void main() { vV = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-const CONE_FRAG = /* glsl */ `
+const CONE_FRAG = () => /* glsl */ `
 uniform float uOpacity;
 varying float vV;
 void main() {
@@ -191,7 +192,7 @@ export function createHeli(): Heli {
   const rotorGeo = mergeGeometries([main.toNonIndexed(), tail.toNonIndexed()])!;
   main.dispose(); tail.dispose();
   const rotorMat = new THREE.ShaderMaterial({
-    vertexShader: ROTOR_VERT, fragmentShader: ROTOR_FRAG, uniforms: { uTime: { value: 0 } },
+    vertexShader: ROTOR_VERT, fragmentShader: ROTOR_FRAG(), uniforms: { uTime: { value: 0 } },
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
   });
   const rotor = new THREE.Mesh(rotorGeo, rotorMat);
@@ -230,7 +231,7 @@ export function createHeli(): Heli {
   // Đèn pha rọi xuống: nón mở, đỉnh ở bụng trực thăng
   const coneGeo = new THREE.ConeGeometry(6, 40, 32, 1, true).translate(0, -20, 0);
   const coneMat = new THREE.ShaderMaterial({
-    vertexShader: CONE_VERT, fragmentShader: CONE_FRAG, uniforms: { uOpacity: { value: 0.16 } },
+    vertexShader: CONE_VERT, fragmentShader: CONE_FRAG(), uniforms: { uOpacity: { value: 0.16 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
   const cone = new THREE.Mesh(coneGeo, coneMat);
@@ -251,7 +252,7 @@ export function createHeli(): Heli {
     update(time) {
       rotorMat.uniforms.uTime.value = time;
       lightMat.uniforms.uTime.value = time;
-      lightMat.uniforms.uPx.value = window.innerHeight * 1.2;
+      lightMat.uniforms.uPx.value = viewHeightPx() * 1.2;
       if (aimAt) {
         group.updateMatrixWorld(true);
         group.worldToLocal(aimTmp.copy(aimAt)).sub(cone.position).normalize();
@@ -324,7 +325,7 @@ export function createCanopy(): Canopy {
 }
 
 // ---------------------------------------------------------------- Siêu anh hùng (5 draw call)
-const STREAK_FRAG = /* glsl */ `
+const STREAK_FRAG = () => /* glsl */ `
 uniform float uTime;
 uniform float uOpacity;
 varying vec2 vUv;
@@ -346,7 +347,7 @@ void main() {
   vW = w.xyz;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
-const FLOOR_FRAG = /* glsl */ `
+const FLOOR_FRAG = () => /* glsl */ `
 uniform float uAge;
 varying vec2 vP;
 varying vec3 vW;
@@ -374,7 +375,7 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
 }`;
 
-const WAVE_FRAG = /* glsl */ `
+const WAVE_FRAG = () => /* glsl */ `
 uniform float uAge;
 varying vec2 vP;
 varying vec3 vW;
@@ -390,7 +391,7 @@ void main() {
   gl_FragColor = vec4(c * ring * fade * front * 0.9, 1.0);
 }`;
 
-const SPARK_VERT = /* glsl */ `
+const SPARK_VERT = () => /* glsl */ `
 uniform float uAge;
 uniform float uPx;
 attribute vec4 aSeed;
@@ -456,7 +457,7 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
   const streakGeo = new THREE.CylinderGeometry(0, 0.75, 1, 14, 1, true).translate(0, 0.5, 0);
   // uv.y của CylinderGeometry: 1 ở đỉnh → đổi sang 0 ở đáy(đầu)...: đáy (y=0) có uv.y=0 → đúng quy ước
   const streakMat = new THREE.ShaderMaterial({
-    vertexShader: ROTOR_VERT, fragmentShader: STREAK_FRAG,
+    vertexShader: ROTOR_VERT, fragmentShader: STREAK_FRAG(),
     uniforms: { uTime: { value: 0 }, uOpacity: { value: 1 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
@@ -472,7 +473,7 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
 
   const floorGeo = new THREE.PlaneGeometry(16, 16).rotateX(-Math.PI / 2);
   const floorMat = new THREE.ShaderMaterial({
-    vertexShader: FLOOR_VERT, fragmentShader: FLOOR_FRAG, uniforms: { uAge: { value: -1 } },
+    vertexShader: FLOOR_VERT, fragmentShader: FLOOR_FRAG(), uniforms: { uAge: { value: -1 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
   const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -482,7 +483,7 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
 
   const waveGeo = new THREE.PlaneGeometry(130, 130).rotateX(-Math.PI / 2);
   const waveMat = new THREE.ShaderMaterial({
-    vertexShader: FLOOR_VERT, fragmentShader: WAVE_FRAG, uniforms: { uAge: { value: -1 } },
+    vertexShader: FLOOR_VERT, fragmentShader: WAVE_FRAG(), uniforms: { uAge: { value: -1 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
   const wave = new THREE.Mesh(waveGeo, waveMat);
@@ -502,7 +503,7 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
   sparkGeo.setAttribute('aSeed', new THREE.BufferAttribute(ss, 4));
   const sparkMat = new THREE.ShaderMaterial({
-    vertexShader: SPARK_VERT, fragmentShader: SPARK_FRAG,
+    vertexShader: SPARK_VERT(), fragmentShader: SPARK_FRAG,
     uniforms: { uAge: { value: -1 }, uPx: { value: 600 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
@@ -531,7 +532,7 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
       floorMat.uniforms.uAge.value = age;
       waveMat.uniforms.uAge.value = age;
       sparkMat.uniforms.uAge.value = age;
-      sparkMat.uniforms.uPx.value = window.innerHeight * 1.2;
+      sparkMat.uniforms.uPx.value = viewHeightPx() * 1.2;
       floor.visible = wave.visible = sparks.visible = age >= 0;
     },
     dispose() { for (const d of disposables) d.dispose(); },
@@ -616,7 +617,7 @@ void main() {
 }`;
 // Cột sáng (aK = 0: kem → nho nhạt) + 6 tia (aK = 1 honey, 2 berry). Additive nên mỗi lớp chỉ ~0,1–0,25:
 // chồng 3–4 lớp vẫn ra màu kẹo, không cháy trắng (lỗi cũ: kem + soda gần trắng, cắt về 0,05 thì mất hẳn).
-const SHAFT_FRAG = /* glsl */ `
+const SHAFT_FRAG = () => /* glsl */ `
 uniform float uOpacity;
 uniform float uTime;
 varying vec2 vUv;
@@ -637,7 +638,7 @@ void main() {
   gl_FragColor = vec4(c * a * uOpacity * flick, 1.0);
 }`;
 
-const LIFTP_VERT = /* glsl */ `
+const LIFTP_VERT = () => /* glsl */ `
 uniform float uT;
 uniform float uLock;
 uniform float uSmoke;
@@ -749,7 +750,7 @@ export function createLiftFx(land: THREE.Vector3): LiftFx {
   const shaftGeo = mergeGeometries(sg)!;
   for (const g of sg) g.dispose();
   const shaftMat = new THREE.ShaderMaterial({
-    vertexShader: SHAFT_VERT, fragmentShader: SHAFT_FRAG, uniforms: { uOpacity: { value: 0 }, uTime: { value: 0 } },
+    vertexShader: SHAFT_VERT, fragmentShader: SHAFT_FRAG(), uniforms: { uOpacity: { value: 0 }, uTime: { value: 0 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
   const shaft = new THREE.Mesh(shaftGeo, shaftMat);
@@ -774,7 +775,7 @@ export function createLiftFx(land: THREE.Vector3): LiftFx {
   pg.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
   pg.setAttribute('aType', new THREE.BufferAttribute(type, 1));
   const pMat = new THREE.ShaderMaterial({
-    vertexShader: LIFTP_VERT, fragmentShader: LIFTP_FRAG,
+    vertexShader: LIFTP_VERT(), fragmentShader: LIFTP_FRAG,
     uniforms: { uT: { value: 0 }, uLock: { value: -1 }, uSmoke: { value: 0 }, uPx: { value: 600 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   });
@@ -797,7 +798,7 @@ export function createLiftFx(land: THREE.Vector3): LiftFx {
       pMat.uniforms.uT.value = time;
       pMat.uniforms.uLock.value = lockAge;
       pMat.uniforms.uSmoke.value = smoke;
-      pMat.uniforms.uPx.value = window.innerHeight * 1.2;
+      pMat.uniforms.uPx.value = viewHeightPx() * 1.2;
     },
     dispose() { for (const d of disposables) d.dispose(); },
   };

@@ -6,8 +6,8 @@ type V3 = number[];
 export interface DecorTier { rf: number; y0: number; yf0: number }
 
 const sh = (hex: number): V3 => hexToRgb(shade(hex, 'stands'));
-const BULB_COLS = [PAL.berry[500], PAL.honey[500], PAL.soda[500], PAL.mint[500], PAL.peach[500], PAL.grape[300]].map(sh);
-const FLAG_COLS = [PAL.berry[500], PAL.soda[500], PAL.honey[500], PAL.mint[500], PAL.grape[500], PAL.peach[500]].map(sh);
+const BULB_COLS = () => [PAL.berry[500], PAL.honey[500], PAL.soda[500], PAL.mint[500], PAL.peach[500], PAL.grape[300]].map(sh);
+const FLAG_COLS = () => [PAL.berry[500], PAL.soda[500], PAL.honey[500], PAL.mint[500], PAL.grape[500], PAL.peach[500]].map(sh);
 const LETTERS = 'ABCDEFGH';
 export const SIGN_W = 4.4, SIGN_H = 2.0;
 const CELL_W = 440, CELL_H = 200;
@@ -74,7 +74,7 @@ export function buildDecor(o: DecorOpts): THREE.BufferGeometry {
     for (let i = 0; i < n; i++) {
       const a = A0 + (arc * i) / (n - 1);
       const c = P(row.r, a, row.y), t = tang(a), s = 0.55;
-      const cc = BULB_COLS[(i + ti * 2) % BULB_COLS.length];
+      const cc = BULB_COLS()[(i + ti * 2) % BULB_COLS().length];
       const q = (sx: number, sy: number): V3 => [c[0] + t[0] * sx * s, c[1] + sy * s, c[2] + t[2] * sx * s];
       quad([q(-1, -1), q(1, -1), q(1, 1), q(-1, 1)], cc, [[-1, -1], [1, -1], [1, 1], [-1, 1]], [1, i, 0, ti]);
     }
@@ -124,7 +124,7 @@ export function buildDecor(o: DecorOpts): THREE.BufferGeometry {
       const fc = (j + 0.5) / NF, hw = 0.42 / NF; // nửa bề rộng cờ theo phần của nhịp
       const aL = aS + (aE - aS) * (fc - hw), aR = aS + (aE - aS) * (fc + hw), aM = aS + (aE - aS) * fc;
       const ph = rnd() * 6.3;
-      const cc = FLAG_COLS[(s * 2 + j) % FLAG_COLS.length];
+      const cc = FLAG_COLS()[(s * 2 + j) % FLAG_COLS().length];
       const inf = (w: number) => [2, w, ph, 0];
       tri([P(R, aL, ys(fc - hw) - 0.04), P(R, aR, ys(fc + hw) - 0.04), P(R, aM, ys(fc) - 1.55)], cc, [[0, 0], [1, 0], [0.5, 1]], [inf(0), inf(0), inf(1)]);
     }

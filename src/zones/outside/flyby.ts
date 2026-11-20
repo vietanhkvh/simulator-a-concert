@@ -17,7 +17,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
 import type { Uniforms } from '../../world/shared/glowPoints';
-import { HAIR, INK_SKY, PAL, SKIN, popScale } from '../../world/style';
+import { HAIR, INK, INK_SKY, PAL, SKIN, glHex, popScale } from '../../world/style';
 import { emitSecret, secretFocusState } from './secretShared';
 import {
   BANNER_H, BANNER_PX_H, BANNER_PX_W, BANNER_TOP, BANNER_W, BALLOON_SCALE, BALLOON_STYLES,
@@ -73,10 +73,10 @@ void main(){
   }
   gl_Position = kd < 0.002 ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * modelViewMatrix * vec4(p * kd, 1.0);
 }`;
-const PLANE_FRAG = /* glsl */ `
+const PLANE_FRAG = () => /* glsl */ `
 uniform float uTime; uniform sampler2D uMap;
 varying vec2 vUv; varying float vKind; varying vec3 vCol; varying vec3 vN;
-${TOON_GLSL}
+${TOON_GLSL()}
 void main(){
   vec3 c = vCol; float k = vKind;
   if (k > 3.5 && k < 4.5) { c = vCol; }
@@ -95,13 +95,13 @@ void main(){
   } else if (k > 0.5 && k < 1.5) {
     c = toon(vCol, vN);
     vec2 q = vec2((vUv.x - 0.25) * 6.2832, (vUv.y - 0.5) * 3.1416);
-    c = mix(c, vec3(1.0, 0.58, 0.77), smoothstep(0.15, 0.1, length(vec2(abs(q.x) - 0.5, q.y + 0.2))) * 0.45);
+    c = mix(c, ${glHex(PAL.berry[300])}, smoothstep(0.15, 0.1, length(vec2(abs(q.x) - 0.5, q.y + 0.2))) * 0.45);
     vec2 e = vec2(abs(q.x) - 0.3, q.y - 0.02);
     float eye = smoothstep(0.13, 0.1, length(e * vec2(1.0, 0.8)));
-    c = mix(c, vec3(0.169, 0.114, 0.361), eye);
+    c = mix(c, ${glHex(INK)}, eye);
     c = mix(c, vec3(1.0), smoothstep(0.05, 0.03, length(e - vec2(-0.035, 0.045))) * eye);
     float sm = abs(length(q - vec2(0.0, -0.05)) - 0.17);
-    c = mix(c, vec3(0.72, 0.2, 0.43), smoothstep(0.045, 0.02, sm) * step(q.y, -0.17) * step(abs(q.x), 0.12));
+    c = mix(c, ${glHex(PAL.berry[700])}, smoothstep(0.045, 0.02, sm) * step(q.y, -0.17) * step(abs(q.x), 0.12));
   } else {
     c = toon(vCol, vN);
     float hi = smoothstep(0.93, 0.95, dot(normalize(vN), normalize(vec3(-0.55, 0.62, 0.56))));
@@ -169,7 +169,7 @@ export function createFlyby(scene: THREE.Scene, uniforms: Uniforms) {
     const t2 = TOWS[1]!;
     drawTowBanner(ctx, t2.x, t2.y, t2.w, t2.h, `♥ ${texts[PLANES[1]!.text]!.replace(/♥/g, '').trim()} ♥`);
     BAL_SLOTS.forEach((r, i) => {
-      const st = BALLOON_STYLES[BAL_STYLE_IDX[i]];
+      const st = BALLOON_STYLES()[BAL_STYLE_IDX[i]];
       drawRibbonBanner(ctx, r.x, r.y, BANNER_PX_W, BANNER_PX_H, texts[BAL_TEXT_IDX[i]], st.band, st.bow);
     });
     tex.needsUpdate = true;
@@ -281,7 +281,7 @@ export function createFlyby(scene: THREE.Scene, uniforms: Uniforms) {
   };
   const pU = { uTime: uniforms.uTime, uMap: { value: tex } };
   const planeMat = new THREE.ShaderMaterial({
-    uniforms: pU, vertexShader: PLANE_VERT, fragmentShader: PLANE_FRAG, vertexColors: true, side: THREE.FrontSide, fog: false,
+    uniforms: pU, vertexShader: PLANE_VERT, fragmentShader: PLANE_FRAG(), vertexColors: true, side: THREE.FrontSide, fog: false,
   });
   disposables.push(planeMat);
   const planes = PLANES.map((pl, i) => {
@@ -306,7 +306,7 @@ export function createFlyby(scene: THREE.Scene, uniforms: Uniforms) {
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(-fin0.x, -fin0.z));
     const S = BALLOON_SCALE;
     const m = new THREE.Matrix4().compose(new THREE.Vector3(), q, new THREE.Vector3(S, S, S));
-    buildBalloon(bParts, m, id, BALLOON_STYLES[BAL_STYLE_IDX[id]], 0.22);
+    buildBalloon(bParts, m, id, BALLOON_STYLES()[BAL_STYLE_IDX[id]], 0.22);
     buildHangers(bParts, m, id, (BANNER_TOP - BANNER_H * (92 / 576)) / S, BANNER_W * 0.42 / S);
     const r = BAL_SLOTS[id];
     pushBanner(banParts, new THREE.Matrix4().compose(new THREE.Vector3(), q, new THREE.Vector3(1, 1, 1)), id, BANNER_W, BANNER_H, BANNER_TOP, {
@@ -318,7 +318,7 @@ export function createFlyby(scene: THREE.Scene, uniforms: Uniforms) {
   const uBal = [0, 1, 2, 3].map(() => new THREE.Vector4(0, -500, 0, 0));
   const balMat = new THREE.ShaderMaterial({
     uniforms: { uTime: uniforms.uTime, uHype: uniforms.uHype, uPulse: uniforms.uPulse, uBal: { value: uBal } },
-    vertexShader: balloonVert(true), fragmentShader: BALLOON_FRAG, fog: false,
+    vertexShader: balloonVert(true), fragmentShader: BALLOON_FRAG(), fog: false,
   });
   const banMat = new THREE.ShaderMaterial({
     uniforms: { uTime: uniforms.uTime, uHype: uniforms.uHype, uPulse: uniforms.uPulse, uMap: { value: tex }, uBal: { value: uBal } },

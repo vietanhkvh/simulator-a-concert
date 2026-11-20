@@ -4,7 +4,7 @@
 // dải ruy băng đuôi én + nơ + cờ đuôi nheo + khẩu hiệu kem viền ink (tim vẽ bằng path).
 import * as THREE from 'three';
 import {
-  HAIR, INK_HEX, INK_SKY, MOTIF, PAL, PAL_HEX, SKIN, hexToRgb, hexStr, shade, shadowOf, type ColorName,
+  HAIR, INK, INK_HEX, INK_SKY, MOTIF, PAL, PAL_HEX, SKIN, glHex, glShadow, hexToRgb, hexStr, shade, shadowOf, type ColorName,
 } from '../../world/style';
 
 /** Font tròn đậm (Baloo 2 nếu có), fallback hệ thống có dấu tiếng Việt. */
@@ -75,7 +75,7 @@ export function drawCheerText(ctx: CanvasRenderingContext2D, text: string, cx: n
   drawCheerLine(ctx, text, cx, cy, w > maxW ? Math.floor(size * maxW / w) : size, PAL_HEX.berry[500]);
 }
 
-const FLAG_COLS = [PAL_HEX.berry[500], PAL_HEX.honey[500], PAL_HEX.soda[500], PAL_HEX.mint[500], PAL_HEX.grape[300], PAL_HEX.cream[500]];
+const FLAG_COLS = () => [PAL_HEX.berry[500], PAL_HEX.honey[500], PAL_HEX.soda[500], PAL_HEX.mint[500], PAL_HEX.grape[300], PAL_HEX.cream[500]];
 
 function drawBow(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, fill: string) {
   ctx.lineJoin = 'round'; ctx.lineWidth = s * 0.12; ctx.strokeStyle = INK_HEX; ctx.fillStyle = fill;
@@ -118,7 +118,7 @@ export function drawRibbonBanner(ctx: CanvasRenderingContext2D, x0: number, y0: 
     const a = fx - 26 * u, b = fx + 26 * u;
     ctx.beginPath(); ctx.moveTo(a, gy(a)); ctx.lineTo(b, gy(b)); ctx.lineTo(fx, gy(fx) + 62 * u); ctx.closePath();
     ctx.lineWidth = 6 * u; ctx.strokeStyle = INK_HEX; ctx.stroke();
-    ctx.fillStyle = FLAG_COLS[i % FLAG_COLS.length]; ctx.fill();
+    ctx.fillStyle = FLAG_COLS()[i % FLAG_COLS().length]; ctx.fill();
   }
   // đuôi ruy băng gấp phía sau (bóng tối hơn) với đuôi én
   const back = hexStr(shadowOf(band)), front = hexStr(band);
@@ -237,6 +237,8 @@ function pushHull(out: THREE.BufferGeometry[], src: THREE.BufferGeometry, w: num
 }
 
 let seedState = 7;
+/** Đặt lại PRNG hình học để mỗi lần dựng lại world cho cùng một kết quả. */
+export const resetBalloonSeed = (): void => { seedState = 7; };
 const rnd = () => ((seedState = (seedState * 16807) % 2147483647) / 2147483647);
 
 /**
@@ -343,19 +345,19 @@ export const BOB_GLSL = /* glsl */ `
 vec3 bob(float id, float t){ return vec3(sin(t*0.13+id*1.7)*2.4, sin(t*0.42+id*2.3)*1.3, cos(t*0.11+id*1.3)*1.8); }`;
 
 /** Tô đồ chơi 2 bậc: bóng tối hơn, dịch về tím, không về đen. */
-export const TOON_GLSL = /* glsl */ `
+export const TOON_GLSL = () => /* glsl */ `
 vec3 toon(vec3 c, vec3 n){
   float d = dot(normalize(n), normalize(vec3(-0.45, 0.8, 0.55)));
   float k = smoothstep(-0.12, -0.02, d);
-  vec3 sh = c * 0.7; sh = mix(sh, vec3(dot(sh, vec3(0.33))) * vec3(0.8, 0.62, 1.3), 0.35);
-  sh = max(sh, vec3(0.1, 0.08, 0.2));
+  vec3 sh = c * 0.7; sh = mix(sh, vec3(dot(sh, vec3(0.33))) * ${glShadow([0.8, 0.62, 1.3])}, 0.35);
+  sh = max(sh, ${glShadow([0.1, 0.08, 0.2])});
   return mix(sh, c, k);
 }`;
 
-export const BALLOON_FRAG = /* glsl */ `
+export const BALLOON_FRAG = () => /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse;
 varying vec2 vUv; varying vec3 vA; varying vec3 vB; varying vec4 vMot; varying float vKind; varying float vId; varying vec3 vN;
-${TOON_GLSL}
+${TOON_GLSL()}
 float dot2(vec2 v){ return dot(v, v); }
 float sdHeart(vec2 p){
   p.x = abs(p.x);
@@ -383,13 +385,13 @@ void main(){
     c = toon(vA, vN);
     vec2 q = vec2((vUv.x - 0.25) * 6.2832, (vUv.y - 0.5) * 3.1416);
     float cheek = smoothstep(0.15, 0.1, length(vec2(abs(q.x) - 0.5, q.y + 0.2)));
-    c = mix(c, vec3(1.0, 0.58, 0.77), cheek * 0.45);
+    c = mix(c, ${glHex(PAL.berry[300])}, cheek * 0.45);
     vec2 e = vec2(abs(q.x) - 0.3, q.y - 0.02);
     float eye = smoothstep(0.13, 0.1, length(e * vec2(1.0, 0.8)));
-    c = mix(c, vec3(0.169, 0.114, 0.361), eye);
+    c = mix(c, ${glHex(INK)}, eye);
     c = mix(c, vec3(1.0), smoothstep(0.05, 0.03, length(e - vec2(-0.035, 0.045))) * eye);
     float sm = abs(length(q - vec2(0.0, -0.05)) - 0.17);
-    c = mix(c, vec3(0.72, 0.2, 0.43), smoothstep(0.045, 0.02, sm) * step(q.y, -0.17) * step(abs(q.x), 0.12));
+    c = mix(c, ${glHex(PAL.berry[700])}, smoothstep(0.045, 0.02, sm) * step(q.y, -0.17) * step(abs(q.x), 0.12));
   } else {
     // vỏ: sọc 8 múi, motif phía trước (+Z) và phía sau, highlight kem, lửa ấm trong theo phách
     float u = vUv.x, v = vUv.y;
@@ -405,7 +407,7 @@ void main(){
     if (vMot.w < 0.5) d = sdHeart(q + vec2(0.0, 0.5)) * 1.0;
     else if (vMot.w < 1.5) d = sdStar5(q, 0.85, 0.48) - 0.08;
     else d = sdBow(q * 1.05);
-    c = mix(c, vec3(0.29, 0.247, 0.51), smoothstep(0.1, 0.07, d));
+    c = mix(c, ${glHex(PAL.night[100])}, smoothstep(0.1, 0.07, d));
     c = mix(c, toon(vMot.rgb, vN), smoothstep(0.02, -0.01, d));
     float hi = smoothstep(0.955, 0.965, dot(normalize(vN), normalize(vec3(-0.55, 0.62, 0.56))));
     c = mix(c, vec3(1.0, 0.98, 0.95), hi * 0.9);

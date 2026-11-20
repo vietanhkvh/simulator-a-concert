@@ -6,7 +6,7 @@ import { PAL, hexToRgb } from '../../world/style';
 
 const g3 = (hex: number) => `vec3(${hexToRgb(hex).map((x) => x.toFixed(4)).join(', ')})`;
 
-const COMMON = /* glsl */ `
+const COMMON = () => /* glsl */ `
 uniform sampler2D uPath;
 uniform float uLen;
 uniform float uSpeed;
@@ -47,8 +47,8 @@ void frameAt(float id, float s, float t, out vec3 P, out vec3 T, out vec3 sd, ou
 }
 `;
 
-const VERT = /* glsl */ `
-${COMMON}
+const VERT = () => /* glsl */ `
+${COMMON()}
 uniform float uViewH;
 uniform vec2 uMouth;
 uniform vec2 uBlink;
@@ -151,7 +151,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 
-const FRAG = /* glsl */ `
+const FRAG = () => /* glsl */ `
 uniform float uT;
 uniform float uPulse;
 uniform vec3 uCol[NSLOT * 2];
@@ -250,8 +250,8 @@ void main() {
 // Hạt (1 Points cho cả đôi): aSeed.x < 0,5 ⇒ rồng 0, ngược lại rồng 1 (rx = fract(2x) là số ngẫu nhiên).
 // aSeed.w: < 0,5 lấp lánh rơi từ thân · < 0,86 hơi thở → trái tim lớn trên trời (luồng chéo nhau)
 // · < 0,96 lấp lánh "chào nhau" khi hai rồng lướt qua · < 0,99 sao quanh ngọc · còn lại quầng ngọc.
-const PTS = /* glsl */ `
-${COMMON}
+const PTS = () => /* glsl */ `
+${COMMON()}
 uniform float uPx;
 uniform float uBreathT;
 uniform vec3 uHeart;
@@ -417,4 +417,5 @@ void main() {
   gl_FragColor = vec4(col, a);
 }`;
 
-export const DRAGON_GLSL = { vert: VERT, frag: FRAG, pts: PTS };
+/** Getter: chuỗi GLSL dựng lúc đọc để lấy màu của phong cách đang bật. */
+export const DRAGON_GLSL = { get vert() { return VERT(); }, get frag() { return FRAG(); }, get pts() { return PTS(); } };

@@ -19,9 +19,9 @@ void main() {
   gl_Position = projectionMatrix * c;
   ${GLARE_VERT_MAIN}
 }`;
-const spriteFrag = /* glsl */ `
+const spriteFrag = () => /* glsl */ `
 varying vec2 vP; varying vec3 vCol; varying float vInt; varying float vKind;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 void main() {
   float r = length(vP);
   float a; vec3 col = toSrgb(vCol); vec3 c = col;
@@ -55,9 +55,9 @@ void main() {
   gl_Position = projectionMatrix * mv;
   ${GLARE_VERT_MAIN}
 }`;
-const beamFrag = /* glsl */ `
+const beamFrag = () => /* glsl */ `
 varying vec2 vUv; varying float vFres; varying vec3 vCol; varying float vInt; varying float vDepth;
-${GLARE_FRAG_PARS}
+${GLARE_FRAG_PARS()}
 void main() {
   float along = pow(vUv.y, 0.7) * smoothstep(0.0, 0.2, vUv.y);
   float soft = exp(-pow(1.0 - vFres, 2.0) * 5.0);
@@ -126,7 +126,7 @@ export function createDecoFixtures(scene: THREE.Scene) {
   const NS = sprites.length;
 
   const spGeo = new THREE.PlaneGeometry(1, 1);
-  const spr = instanced(spGeo, addMat(spriteVert, spriteFrag), NS, 7, true);
+  const spr = instanced(spGeo, addMat(spriteVert, spriteFrag()), NS, 7, true);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   sprites.forEach((s, i) => {
     spr.mesh.setMatrixAt(i, m.compose(s.pos, q, sc.setScalar(s.size)));
@@ -139,7 +139,7 @@ export function createDecoFixtures(scene: THREE.Scene) {
   const NC = 24, NSK = 8, NB = NC + NU + NSK;
   const bGeo = new THREE.CylinderGeometry(0.03, 0.2, 1, 10, 1, true);
   bGeo.translate(0, -0.5, 0);
-  const bm = instanced(bGeo, addMat(beamVert, beamFrag, THREE.DoubleSide), NB, 5);
+  const bm = instanced(bGeo, addMat(beamVert, beamFrag(), THREE.DoubleSide), NB, 5);
   scene.add(spr.mesh, bm.mesh);
 
   const DOWN = new THREE.Vector3(0, -1, 0);

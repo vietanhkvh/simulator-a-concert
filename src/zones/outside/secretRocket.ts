@@ -28,8 +28,8 @@ const SHELLS: [number, number, number, number, number][] = [
   [28, 42, -16, T_BURST + 2.9, 1],
   [-20, 60, -44, T_BURST + 3.5, 0],
 ];
-const SHELL_COL = [PAL.honey[500], PAL.berry[500], PAL.soda[500], PAL.mint[500], PAL.berry[300], PAL.honey[500]];
-const SHELL_COL2 = [PAL.berry[300], PAL.honey[300], PAL.mint[300], PAL.honey[500], PAL.soda[300], PAL.soda[500]];
+const SHELL_COL = () => [PAL.honey[500], PAL.berry[500], PAL.soda[500], PAL.mint[500], PAL.berry[300], PAL.honey[500]];
+const SHELL_COL2 = () => [PAL.berry[300], PAL.honey[300], PAL.mint[300], PAL.honey[500], PAL.soda[300], PAL.soda[500]];
 /** Tỉ lệ model: thân bán kính ~1,05 local ⇒ ~3,9 m; dài ~4,7 local ⇒ ~17 m. */
 const S = 3.7;
 const LEN_LOCAL = 4.7;
@@ -470,9 +470,9 @@ export function createRocket(scene: THREE.Scene): SecretAct {
     const cl = Math.floor(w);
     if (cl === 0) raw(trailCols[Math.floor(rnd() * trailCols.length)]!, tmp);
     else if (cl === 1) raw(PAL.honey[300], tmp);
-    else if (cl === 3) raw(SHELL_COL2[si]!, tmp);
+    else if (cl === 3) raw(SHELL_COL2()[si]!, tmp);
     else if (cl === 4) raw(rnd() < 0.5 ? PAL.honey[300] : PAL.cream[300], tmp);
-    else raw(rnd() < 0.8 ? SHELL_COL[si]! : SHELL_COL2[si]!, tmp);
+    else raw(rnd() < 0.8 ? SHELL_COL()[si]! : SHELL_COL2()[si]!, tmp);
     c.set([tmp.r, tmp.g, tmp.b], i * 3);
   }, { additive: false, frag: SHAPE_FRAG });
   (sparks.material as THREE.ShaderMaterial).premultipliedAlpha = true;

@@ -11,7 +11,7 @@ import type { FrameState } from '../../core/types';
 import { getControls, walkable, type ViewMode, type ViewPose } from './stageControls';
 import { FOH_TOWER } from './viewControl';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { PAL, INK, SKIN as SKIN_TONES, HAIR, CHAR_H } from '../../world/style';
+import { PAL, INK, SKIN as SKIN_TONES, HAIR, CHAR_H, themed } from '../../world/style';
 import { createToonMaterial, roundedCylinder } from './cameraCrewToon';
 
 export type { ViewMode, ViewPose };
@@ -34,17 +34,20 @@ type Kind = 0 | 1 | 2 | 3 | 4; // hộp bo, trụ bo, cầu, vòng xuyến mập
 interface Part { obj: THREE.Object3D; kind: Kind; idx: number }
 
 // Token "Kẹo đêm" (guide mục 6, khu 3: quay phim / drone / cần cẩu → night-100, grape-300, tally peach-500)
-const BLACK = PAL.night[300]; // áo, quần
-const DARK = PAL.night[100]; // thân máy, khung
-const GREY = PAL.grape[300]; // điểm sáng thân máy
-const METAL = PAL.night[100];
-const STRIPE = PAL.grape[500];
-const LENS = INK;
-const YELLOW = PAL.honey[500];
-const TALLY = PAL.peach[500];
-const EYE_C = INK;
-const CHEEK = PAL.berry[300];
-const ACCENTS = [PAL.soda[500], PAL.berry[500]];
+let BLACK = 0, DARK = 0, GREY = 0, METAL = 0, STRIPE = 0, LENS = 0, YELLOW = 0, TALLY = 0, EYE_C = 0, CHEEK = 0, ACCENTS: number[] = [];
+themed(() => {
+  BLACK = PAL.night[300]; // áo, quần
+  DARK = PAL.night[100]; // thân máy, khung
+  GREY = PAL.grape[300]; // điểm sáng thân máy
+  METAL = PAL.night[100];
+  STRIPE = PAL.grape[500];
+  LENS = INK;
+  YELLOW = PAL.honey[500];
+  TALLY = PAL.peach[500];
+  EYE_C = INK;
+  CHEEK = PAL.berry[300];
+  ACCENTS = [PAL.soda[500], PAL.berry[500]];
+});
 
 /** fov dọc (độ) để khung hình cao H mét ở khoảng cách d. */
 const fovFor = (d: number, h: number, lo = 14, hi = 70) =>

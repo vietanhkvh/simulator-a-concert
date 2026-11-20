@@ -55,8 +55,11 @@ export function getSecretFocus(): THREE.Vector3 | null {
   return secretFocusState.active ? secretFocusState.v.clone() : null;
 }
 
-export function createSecretEvents(scene: THREE.Scene): SecretEvents {
-  const factories: Record<SecretKind, (s: THREE.Scene) => SecretAct> = { ufo: createUfo, rocket: createRocket, dragon: createDragon, jet: createJet };
+export type SecretFactories = Record<SecretKind, (s: THREE.Scene) => SecretAct>;
+/** Builder mặc định (chibi) của từng sự kiện; index.ts thay từng cái theo phong cách (builders.ts). */
+export const DEFAULT_SECRET_FACTORIES: SecretFactories = { ufo: createUfo, rocket: createRocket, dragon: createDragon, jet: createJet };
+
+export function createSecretEvents(scene: THREE.Scene, factories: SecretFactories = DEFAULT_SECRET_FACTORIES): SecretEvents {
   const acts: Partial<Record<SecretKind, SecretAct>> = {}; // tạo lười ở lần đầu cần
   const trigger = new SecretTrigger(SECRET_CHANCES);
   let running: { kind: SecretKind; act: SecretAct; t: number } | null = null;
@@ -108,8 +111,9 @@ export function createSecretEvents(scene: THREE.Scene): SecretEvents {
       }
     },
     dispose() {
-      if (running) running.act.stop();
+      if (running) { running.act.stop(); emit(running.kind, 'end'); } // main.ts trả lại góc máy cũ
       running = null;
+      secretFocusState.active = false;
       for (const a of Object.values(acts)) a?.dispose();
       if (current === self) current = null;
     },

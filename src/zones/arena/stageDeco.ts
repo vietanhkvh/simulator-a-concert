@@ -6,13 +6,14 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
-import { PAL, hypeColors, toColor } from '../../world/style';
+import { PAL, glHex, hypeColors, themed, toColor } from '../../world/style';
 import { DECO } from './stageDecoLayout';
 import { GLSL_SHAPES, Toy, createToyMaterial, updateToyHype } from './stageStyle';
 
 const { TX, ZF, ZB, TH, ay } = DECO;
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
-const NIGHT = PAL.night[300], GRAPE = PAL.grape[500], CREAM = PAL.cream[500];
+let NIGHT = 0, GRAPE = 0, CREAM = 0;
+themed(() => { NIGHT = PAL.night[300]; GRAPE = PAL.grape[500]; CREAM = PAL.cream[500]; });
 
 // ───────── cấu trúc tĩnh ─────────
 function buildStatic(): THREE.BufferGeometry {
@@ -208,13 +209,13 @@ function buildStatic(): THREE.BufferGeometry {
 
 // ───────── màn LED tháp (shader palette Kẹo đêm) ─────────
 const ledVert = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
-const ledFrag = /* glsl */ `
+const ledFrag = () => /* glsl */ `
 uniform float uTime; uniform float uBeat; uniform float uLevel; uniform float uHype; uniform vec3 uA; uniform vec3 uB; uniform vec3 uC;
 varying vec2 vUv;
 ${GLSL_SHAPES}
-const vec3 N5 = vec3(0.078, 0.063, 0.169);
-const vec3 N3 = vec3(0.165, 0.137, 0.314);
-const vec3 CREAM = vec3(1.0, 0.957, 0.9);
+const vec3 N5 = ${glHex(PAL.night[500])};
+const vec3 N3 = ${glHex(PAL.night[300])};
+const vec3 CREAM = ${glHex(PAL.cream[500])};
 void main(){
   vec2 q = (vUv - 0.5) * vec2(3.0, 8.6);
   float sd = sdRoundRect(q, vec2(1.5, 4.3), 0.4);
@@ -259,13 +260,13 @@ void main(){
 }`;
 
 // ───────── panel LED riser mặt tiền (kẹo sọc + tim/sao) ─────────
-const riserFrag = /* glsl */ `
+const riserFrag = () => /* glsl */ `
 uniform float uTime; uniform float uBeat; uniform float uHype; uniform vec3 uA; uniform vec3 uB; uniform vec3 uC;
 varying vec2 vUv; varying float vId;
 ${GLSL_SHAPES}
-const vec3 N5 = vec3(0.078, 0.063, 0.169);
-const vec3 N3 = vec3(0.165, 0.137, 0.314);
-const vec3 CREAM = vec3(1.0, 0.957, 0.9);
+const vec3 N5 = ${glHex(PAL.night[500])};
+const vec3 N3 = ${glHex(PAL.night[300])};
+const vec3 CREAM = ${glHex(PAL.cream[500])};
 void main(){
   vec2 q = (vUv - 0.5) * vec2(1.8, 2.8);
   float sd = sdRoundRect(q, vec2(0.9, 1.4), 0.38);
@@ -343,7 +344,7 @@ export function createStageDeco(scene: THREE.Scene) {
     uTime: { value: 0 }, uBeat: { value: 0 }, uLevel: { value: 0 }, uHype: { value: 0 },
     uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uC: { value: new THREE.Vector3() },
   };
-  const ledMat = new THREE.ShaderMaterial({ uniforms: ledU, vertexShader: ledVert, fragmentShader: ledFrag, side: THREE.DoubleSide, fog: false });
+  const ledMat = new THREE.ShaderMaterial({ uniforms: ledU, vertexShader: ledVert, fragmentShader: ledFrag(), side: THREE.DoubleSide, fog: false });
   const ledMesh = new THREE.Mesh(ledGeo, ledMat);
   scene.add(ledMesh);
 
@@ -366,7 +367,7 @@ export function createStageDeco(scene: THREE.Scene) {
   const riserMat = new THREE.ShaderMaterial({
     uniforms: riserU,
     vertexShader: 'attribute float aId; varying vec2 vUv; varying float vId; void main(){ vUv = uv; vId = aId; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-    fragmentShader: riserFrag, side: THREE.DoubleSide, fog: false,
+    fragmentShader: riserFrag(), side: THREE.DoubleSide, fog: false,
   });
   const riserMesh = new THREE.Mesh(riserGeo, riserMat);
   scene.add(riserMesh);

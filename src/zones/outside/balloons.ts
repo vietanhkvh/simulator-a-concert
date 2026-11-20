@@ -8,15 +8,18 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Uniforms } from '../../world/shared/glowPoints';
 import { BALLOON_Y, EYE_HEIGHT, STADIUM_CENTRE, STANDS_R_OUTER, STANDS_TOP_Y } from '../../world/layout';
-import { MOTIF, PAL } from '../../world/style';
+import { MOTIF, PAL, getTheme, themed } from '../../world/style';
 import {
-  BALLOON_FRAG, BANNER_FRAG, BAL_DIM, balloonVert, bannerVert, buildBalloon, buildHangers, drawRibbonBanner, pushBanner,
+  BALLOON_FRAG, BANNER_FRAG, BAL_DIM, balloonVert, bannerVert, buildBalloon, buildHangers, drawRibbonBanner, pushBanner, resetBalloonSeed,
   type BalloonStyle,
 } from './balloonKit';
 export { CHEER_FONT, drawCheerText } from './balloonKit';
 
-export const DEFAULT_CHEERS = ['MÃI YÊU ♥', 'HÁT NỮA ĐI!', 'ENCORE!', 'CHÁY HẾT MÌNH', 'WE LOVE YOU', 'NGÔI SAO ĐÊM NAY'];
-let cheerTexts: string[] = DEFAULT_CHEERS.slice();
+/** Khẩu hiệu mặc định của phong cách đang bật (6 chuỗi). */
+export const defaultCheers = (): string[] => getTheme().strings.cheers.slice();
+/** Khẩu hiệu người chơi đặt (chưa điền mặc định) — giữ lại để điền lại mặc định khi đổi phong cách. */
+let cheerCustom: string[] = [];
+let cheerTexts: string[] = defaultCheers();
 const cheerListeners = new Set<() => void>();
 let flybyRequested = false;
 
@@ -28,12 +31,16 @@ export function onCheerChange(cb: () => void): () => void { cheerListeners.add(c
 /** Thay khẩu hiệu trên 6 khinh khí cầu (tối đa 6 chuỗi, mỗi chuỗi ≤ 24 ký tự; thiếu → mặc định). Gọi được trước/sau khi tạo backdrop. */
 export function setCheerBanners(texts: string[]): void {
   const src = Array.isArray(texts) ? texts : [];
-  cheerTexts = DEFAULT_CHEERS.map((d, i) => {
+  cheerCustom = src.slice(0, 6);
+  cheerTexts = defaultCheers().map((d, i) => {
     const s = typeof src[i] === 'string' ? src[i].trim().slice(0, 24).trim() : '';
     return s || d;
   });
   cheerListeners.forEach((cb) => cb());
 }
+
+// Đổi phong cách: ô nào người chơi để trống thì lấy khẩu hiệu mặc định của phong cách mới.
+themed(() => setCheerBanners(cheerCustom));
 
 /** Kích hoạt màn bay chào mừng (máy bay kéo băng rôn + khinh khí cầu) ngay lập tức. Gọi lúc nào cũng được. */
 export function triggerFlyby(): void { flybyRequested = true; }
@@ -53,7 +60,7 @@ export const BANNER_TOP = BAL_DIM.basketBottom * BALLOON_SCALE - 0.9;
 /** Phần dải chữ kết thúc ở tỉ lệ này của chiều cao băng rôn (phía dưới là nền trong suốt). */
 const BAND_BOTTOM_FRAC = 536 / 576;
 
-export const BALLOON_STYLES: BalloonStyle[] = [
+export const BALLOON_STYLES = (): BalloonStyle[] => [
   { a: 'berry', b: 'cream', motif: 0, motifCol: MOTIF.star, band: PAL.berry[700], bow: PAL.soda[500] },
   { a: 'soda', b: 'cream', motif: 1, motifCol: MOTIF.star, band: PAL.soda[700], bow: PAL.berry[500] },
   { a: 'grape', b: 'honey', motif: 0, motifCol: MOTIF.heart, band: PAL.grape[700], bow: PAL.honey[500] },
@@ -84,8 +91,9 @@ export function balloonPosition(deg: number, r: number, out = new THREE.Vector3(
 }
 
 export function createBalloons(scene: THREE.Scene, uniforms: Uniforms) {
+  resetBalloonSeed();
   const disposables: { dispose(): void }[] = [];
-  const n = BALLOON_STYLES.length, COLS = 2, ROWS = Math.ceil(n / COLS);
+  const n = BALLOON_STYLES().length, COLS = 2, ROWS = Math.ceil(n / COLS);
   const canvas = document.createElement('canvas');
   canvas.width = BANNER_PX_W * COLS; canvas.height = BANNER_PX_H * ROWS;
   const ctx = canvas.getContext('2d')!;
@@ -94,7 +102,7 @@ export function createBalloons(scene: THREE.Scene, uniforms: Uniforms) {
   const cell = (i: number) => ({ x: (i % COLS) * BANNER_PX_W, y: Math.floor(i / COLS) * BANNER_PX_H });
   const draw = () => {
     const texts = getCheerTexts();
-    BALLOON_STYLES.forEach((s, i) => {
+    BALLOON_STYLES().forEach((s, i) => {
       const c = cell(i);
       drawRibbonBanner(ctx, c.x, c.y, BANNER_PX_W, BANNER_PX_H, texts[i], s.band, s.bow);
     });
@@ -111,7 +119,7 @@ export function createBalloons(scene: THREE.Scene, uniforms: Uniforms) {
   const banParts: THREE.BufferGeometry[] = [];
   const S = BALLOON_SCALE;
   const p = new THREE.Vector3();
-  BALLOON_STYLES.forEach((st, id) => {
+  BALLOON_STYLES().forEach((st, id) => {
     balloonPosition(ARC[id].deg, ARC[id].r, p);
     const ry = Math.atan2(-p.x, -p.z); // mặt trước (+Z cục bộ) hướng về ca sĩ
     const m = new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry), new THREE.Vector3(S, S, S));
@@ -127,7 +135,7 @@ export function createBalloons(scene: THREE.Scene, uniforms: Uniforms) {
   const balGeo = mergeGeometries(balParts)!;
   const banGeo = mergeGeometries(banParts)!;
   balParts.forEach((g) => g.dispose()); banParts.forEach((g) => g.dispose());
-  const balMat = new THREE.ShaderMaterial({ uniforms, vertexShader: balloonVert(false), fragmentShader: BALLOON_FRAG, fog: false });
+  const balMat = new THREE.ShaderMaterial({ uniforms, vertexShader: balloonVert(false), fragmentShader: BALLOON_FRAG(), fog: false });
   const banMat = new THREE.ShaderMaterial({
     uniforms: { ...uniforms, uMap: { value: tex } }, vertexShader: bannerVert(false), fragmentShader: BANNER_FRAG, fog: false, side: THREE.DoubleSide,
   });

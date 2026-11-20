@@ -3,17 +3,17 @@
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import type { Uniforms } from '../../world/shared/glowPoints';
-import { PAL, hypeColors } from '../../world/style';
+import { PAL, glHex, hypeColors } from '../../world/style';
 import { GLSL_SHAPES, Toy, bakeToonShade, createToyMaterial, ringGeo, slabGeo, updateToyHype } from './stageStyle';
 
-const LED_FRAG = /* glsl */ `
+const LED_FRAG = () => /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uLevel; uniform float uPhase;
 uniform vec3 uA; uniform vec3 uB; uniform vec3 uC;
 varying vec2 vUv;
 ${GLSL_SHAPES}
-const vec3 N5 = vec3(0.078, 0.063, 0.169);
-const vec3 N3 = vec3(0.165, 0.137, 0.314);
-const vec3 CREAM = vec3(1.0, 0.957, 0.9);
+const vec3 N5 = ${glHex(PAL.night[500])};
+const vec3 N3 = ${glHex(PAL.night[300])};
+const vec3 CREAM = ${glHex(PAL.cream[500])};
 void main(){
   vec2 q = (vUv - 0.5) * vec2(26.0, 10.0);
   float sd = sdRoundRect(q, vec2(12.9, 4.9), 1.0);
@@ -83,7 +83,7 @@ export function createLedWall(scene: THREE.Scene, uniforms: Uniforms) {
   const ledMat = new THREE.ShaderMaterial({
     uniforms: { ...uniforms, ...own },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: LED_FRAG,
+    fragmentShader: LED_FRAG(),
     fog: false,
   });
   const led = new THREE.Mesh(ledGeo, ledMat);

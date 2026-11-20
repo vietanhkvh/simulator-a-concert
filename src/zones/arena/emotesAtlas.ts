@@ -60,7 +60,6 @@ export const ICON_TINT: [number, number, number][] = [
 type G = CanvasRenderingContext2D;
 // Màu lấy từ palette "Kẹo đêm"; viền ink thống nhất (STYLE_GUIDE 2, 6).
 const C = PAL_HEX;
-const INK = INK_HEX;
 /** '#rrggbb' + alpha → 'rgba(...)' cho quầng sáng / má hồng. */
 const al = (hex: string, a: number): string => {
   const n = parseInt(hex.slice(1), 16);
@@ -96,7 +95,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.shadowBlur = 16;
     }
     g.lineWidth = lw;
-    g.strokeStyle = INK;
+    g.strokeStyle = INK_HEX;
     g.stroke();
     g.restore();
     g.beginPath();
@@ -151,7 +150,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
   };
   const ink = (w: number) => {
     g.lineWidth = w;
-    g.strokeStyle = INK;
+    g.strokeStyle = INK_HEX;
   };
   const SKIN = () => lin(0, -50, 0, 50, [C.honey[300], C.honey[500], C.honey[700]]);
   /** Bàn tay xòe (lòng bàn tay + 4 ngón + ngón cái) ở gốc tọa độ, cao ~100*s. */
@@ -207,7 +206,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.textAlign = 'left';
     g.textBaseline = 'alphabetic';
     g.lineWidth = 6;
-    g.strokeStyle = INK;
+    g.strokeStyle = INK_HEX;
     g.strokeText(text, x0, ty);
     g.fillStyle = C.cream[100];
     g.fillText(text, x0, ty);
@@ -247,7 +246,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
   cells[IC.SMILE] = () => {
     face();
     blush();
-    g.fillStyle = INK;
+    g.fillStyle = INK_HEX;
     g.beginPath();
     g.ellipse(-16, -10, 6, 10, 0, 0, 7);
     g.ellipse(16, -10, 6, 10, 0, 0, 7);
@@ -319,7 +318,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.stroke();
       g.beginPath();
       g.arc(sx * 17, -10, 4.5, 0, 7);
-      g.fillStyle = INK;
+      g.fillStyle = INK_HEX;
       g.fill();
     }
     shape(() => g.ellipse(0, 22, 13, 18, 0, 0, Math.PI * 2), C.berry[700], undefined, 4);
@@ -393,7 +392,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.shadowColor = al(C.honey[500], 1);
     g.shadowBlur = 16;
     g.lineWidth = 15;
-    g.strokeStyle = INK;
+    g.strokeStyle = INK_HEX;
     g.stroke();
     g.restore();
     g.beginPath();
@@ -484,7 +483,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.beginPath();
     g.arc(0, -34, 22, 0, 7);
     g.clip();
-    g.strokeStyle = al(INK, 0.45);
+    g.strokeStyle = al(INK_HEX, 0.45);
     g.lineWidth = 2;
     for (let k = -30; k <= 30; k += 7) {
       g.beginPath();
@@ -541,7 +540,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
     g.shadowColor = al(C.berry[500], 1);
     g.shadowBlur = 16;
     g.lineWidth = 9;
-    g.strokeStyle = INK;
+    g.strokeStyle = INK_HEX;
     g.strokeText('100', 0, -6);
     g.restore();
     g.fillStyle = lin(0, -30, 0, 20, [C.berry[300], C.berry[500], C.berry[700]]);
@@ -589,7 +588,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.quadraticCurveTo(-16, -24, -30, -30);
       g.closePath();
     }, rad(0, -20, 40, [C.berry[300], C.berry[500], C.berry[700]]), al(C.berry[500], 1));
-    g.strokeStyle = al(INK, 0.8);
+    g.strokeStyle = al(INK_HEX, 0.8);
     g.lineWidth = 3;
     g.beginPath();
     g.arc(0, -18, 10, 0.3, 4.5);
@@ -652,7 +651,7 @@ export function drawEmoteAtlas(): HTMLCanvasElement {
       g.translate(-14 + Math.cos(a) * r, 8 + Math.sin(a) * r);
       g.rotate(k * 1.3);
       g.fillStyle = cols[k % cols.length];
-      g.strokeStyle = INK;
+      g.strokeStyle = INK_HEX;
       g.lineWidth = 2;
       g.beginPath();
       if (k % 3 === 0) g.arc(0, 0, 4.5, 0, 7);

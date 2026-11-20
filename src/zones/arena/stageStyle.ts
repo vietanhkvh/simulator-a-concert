@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { BEVEL_MIN, INK, PAL, hypeColors, mixHex, smoothstep, toColor } from '../../world/style';
+import { BEVEL_MIN, INK, PAL, glShadow, hypeColors, mixHex, smoothstep, themed, toColor } from '../../world/style';
 
 // ───────── uniform dùng chung cho mọi vật liệu toy (đèn viền theo Hype) ─────────
 const shared = {
@@ -20,7 +20,7 @@ export function updateToyHype(hype: number): void {
   shared.uRim.value.copy(rimTmp);
   shared.uRimK.value = 0.35 + 0.15 * smoothstep(0.7, 0.9, hype);
 }
-updateToyHype(0.3);
+themed(() => { toColor(INK, shared.uInk.value); updateToyHype(0.3); });
 
 const TOY_VERT = /* glsl */ `
 #include <common>
@@ -36,7 +36,7 @@ void main(){
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
 }`;
-const TOY_FRAG = /* glsl */ `
+const TOY_FRAG = () => /* glsl */ `
 uniform vec3 uRim; uniform float uRimK; uniform vec3 uInk;
 varying vec3 vCol; varying float vTrim; varying vec3 vN; varying vec3 vV; varying vec3 vWN;
 #include <common>
@@ -45,7 +45,7 @@ void main(){
   vec3 n = normalize(vWN);
   float d = dot(n, normalize(vec3(0.35, 0.8, 0.4)));
   float lit = smoothstep(-0.02, 0.18, d);              // ngưỡng mềm đạo cụ ~8–12%
-  vec3 sh = vCol * vec3(0.60, 0.52, 0.92) + vec3(0.015, 0.0, 0.05); // bóng dịch về tím
+  vec3 sh = vCol * ${glShadow([0.6, 0.52, 0.92])} + ${glShadow([0.015, 0.0, 0.05])}; // bóng dịch về tím (chibi) / theo phong cách
   vec3 c = mix(sh, vCol, lit);
   c = mix(c, vec3(1.0, 0.96, 0.9), smoothstep(0.93, 0.97, d) * 0.22); // đốm highlight kem
   float ndv = clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0);
@@ -66,7 +66,7 @@ export function createToyMaterial(): ToyMaterial {
   const mat = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uRim: shared.uRim, uRimK: shared.uRimK, uInk: shared.uInk }]),
     vertexShader: TOY_VERT,
-    fragmentShader: TOY_FRAG,
+    fragmentShader: TOY_FRAG(),
     vertexColors: true,
     fog: true,
   });

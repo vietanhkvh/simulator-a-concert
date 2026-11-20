@@ -1,9 +1,28 @@
-// FORM — hằng số hình khối chibi (STYLE_GUIDE mục 3, 5). Không phụ thuộc three.js.
+// FORM — hằng số hình khối của PHONG CÁCH ĐANG BẬT (mặc định chibi, STYLE_GUIDE mục 3, 5). Không phụ thuộc three.js.
+// theme.ts gọi applyFormTokens(): số lẻ là `export let` (live binding), object được ghi đè tại chỗ — đừng chép vào
+// hằng cấp module ở nơi khác (docs/THEMES.md).
+import { chibi } from './themes/chibi';
+import type { OutlineRule, ShadingModel, Theme } from './themeTypes';
 
-export const HEADS_MESH = 2.3;
-export const HEADS_BILLBOARD = 2.1;
+const F0 = chibi.form;
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+/** Chép sâu src vào dst, giữ nguyên danh tính mọi object/mảng lồng nhau. */
+function deepAssign(dst: Record<string, unknown>, src: Record<string, unknown>): void {
+  for (const [k, v] of Object.entries(src)) {
+    const d = dst[k];
+    if (Array.isArray(v) && Array.isArray(d)) d.splice(0, d.length, ...v);
+    else if (v && typeof v === 'object' && d && typeof d === 'object') deepAssign(d as Record<string, unknown>, v as Record<string, unknown>);
+    else dst[k] = v;
+  }
+}
+
+export let HEADS_MESH = F0.headsMesh;
+export let HEADS_BILLBOARD = F0.headsBillboard;
 /** Chiều cao nhân vật (m). */
-export const CHAR_H = 1.5;
+export let CHAR_H = F0.charH;
+/** Quy tắc viền và mô hình tô bóng của phong cách (builder mặc định chỉ biết 'ink' + 'toy2'). */
+export let OUTLINE_RULE: OutlineRule = F0.outlineRule;
+export let SHADING: ShadingModel = F0.shading;
 /** Điểm mắt camera người chơi (m). */
 export const EYE_Y = 1.65;
 
@@ -16,12 +35,12 @@ export const BODY_RATIO = {
 export const CROWD = { headRadius: 0.24, heightMin: 1.25, heightMax: 1.45 } as const;
 
 /** Bo tròn tối thiểu = 12% cạnh ngắn nhất. */
-export const BEVEL_MIN = 0.12;
+export let BEVEL_MIN = F0.bevelMin;
 export const bevelMin = (shortestEdge: number) => shortestEdge * BEVEL_MIN;
 /** Chi tiết nhỏ nhất ≥ 6% chiều lớn nhất. */
-export const MIN_DETAIL = 0.06;
+export let MIN_DETAIL = F0.minDetail;
 
-export const OUTLINE = { width: 0.025, secret: 0.035, minPx: 1.5, maxPx: 3, cullPx: 24 } as const;
+export const OUTLINE = clone(F0.outline);
 /** Bề dày viền trên màn hình (px); 0 khi vật thể < 24 px. */
 export function outlinePx(objectPx: number, isSecret: boolean): number {
   if (!(objectPx >= OUTLINE.cullPx)) return 0;
@@ -30,27 +49,18 @@ export function outlinePx(objectPx: number, isSecret: boolean): number {
 }
 
 /** Phương tiện dài ≤ 2,2 × đường kính thân. */
-export const VEHICLE_MAX_ASPECT = 2.2;
+export let VEHICLE_MAX_ASPECT = F0.vehicleMaxAspect;
 export const vehicleLengthMax = (bodyDiameter: number) => bodyDiameter * VEHICLE_MAX_ASPECT;
 /** Khoảng cách LOD xa của khán giả (m, ±3). */
 export const LOD_FAR = 35;
 
-export const TOY = { softChar: [0.12, 0.18], softProp: [0.08, 0.12], rim: 0.35, rimHigh: 0.5, hi: 0.4, hiHigh: 0.3, hiArea: 0.08 } as const;
-export const EMISSIVE = { arch: 0.15, trim: 0.6, stick: 1.0, secret: 1.6, outline: 0 } as const;
+export const TOY = clone(F0.toy);
+export const EMISSIVE = clone(F0.emissive);
 
 /** Squash & stretch: cặp [x, y] (scale ngang, dọc). */
-export const SQUASH = {
-  beat: { down: [0.94, 1.03], up: [1.05, 0.975] },
-  jump: { crouch: [0.85, 1.08], stretch: [1.12, 0.94], land: [0.82, 1.1] },
-  /** Mỗi pha (s). Nhảy khi Hype > jumpHype. */
-  phase: 0.12,
-  jumpHype: 0.6,
-  headLagMs: [60, 80],
-  headSwayDeg: 8,
-  vehicleStretch: 1.1,
-} as const;
+export const SQUASH = clone(F0.squash);
 
-export const POP = { peak: 1.15, sec: 0.25, peakAt: 0.15 } as const;
+export const POP = clone(F0.pop);
 /** Xuất hiện bằng "pop": 0 → 1,15 → 1,0 trong 0,25 s (t tính bằng giây). */
 export function popScale(t: number): number {
   if (!(t > 0)) return 0;
@@ -85,4 +95,14 @@ export const FACE = {
 export type Expression = (typeof FACE.expressions)[number];
 
 /** Giới hạn chói. */
-export const GLARE = { lyricsAdditiveMax: 0.35, flashPerSecMax: 3 } as const;
+export const GLARE = clone(F0.glare);
+
+/** (nội bộ — chỉ theme.ts gọi) Ghi token hình khối của `t`, giữ nguyên danh tính các object. */
+export function applyFormTokens(t: Theme): void {
+  const f = t.form;
+  HEADS_MESH = f.headsMesh; HEADS_BILLBOARD = f.headsBillboard; CHAR_H = f.charH;
+  OUTLINE_RULE = f.outlineRule; SHADING = f.shading;
+  BEVEL_MIN = f.bevelMin; MIN_DETAIL = f.minDetail; VEHICLE_MAX_ASPECT = f.vehicleMaxAspect;
+  const pairs: [object, object][] = [[OUTLINE, f.outline], [TOY, f.toy], [EMISSIVE, f.emissive], [SQUASH, f.squash], [POP, f.pop], [GLARE, f.glare]];
+  for (const [dst, src] of pairs) deepAssign(dst as Record<string, unknown>, src as Record<string, unknown>);
+}

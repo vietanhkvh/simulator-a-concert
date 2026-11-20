@@ -29,7 +29,7 @@ const EY = new THREE.Vector3(0, Math.cos(TILT), Math.sin(TILT));
 /** Pháp tuyến mặt phẳng tim, hướng về phía ca sĩ. */
 const EN = EX.clone().cross(EY);
 const T_IN = 0;
-const JET_COL = [PAL.berry[500], PAL.honey[500], PAL.soda[500]];
+const JET_COL = () => [PAL.berry[500], PAL.honey[500], PAL.soda[500]];
 const SMOKE_LIFE = 15;
 const JET_SCALE = 2.4;
 const OBJ_H = 2.6 * JET_SCALE;
@@ -123,7 +123,7 @@ function buildJets(): THREE.BufferGeometry {
       h.setAttribute('aJ', new THREE.BufferAttribute(aj, 4));
       parts.push(h);
     };
-    const main = JET_COL[j]!;
+    const main = JET_COL()[j]!;
     const trim = PAL.cream[500];
     // thân: lathe siêu-elip, mũi mập tròn, đuôi hơi bằng
     const prof: THREE.Vector2[] = [];
