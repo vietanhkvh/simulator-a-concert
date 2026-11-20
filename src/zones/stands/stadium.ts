@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
-import { STADIUM_CENTRE, STANDS_ARC, STANDS_TIERS } from '../../world/layout';
+import { FIELD_Y, STADIUM_CENTRE, STANDS_ARC, STANDS_TIERS } from '../../world/layout';
 import { addGlow, type GlowBuf, type Uniforms } from '../../world/shared/glowPoints';
 import { PAL, ZONE_SAT, hexToRgb, hslToRgb, hypeColors, rgbToHsl, shade, shadowOf, type Rgb } from '../../world/style';
 import { CROWD_FRAG, CROWD_VERT, DECOR_FRAG, STRUCT_FRAG, STRUCT_VERT, decorVert } from './stadiumShaders';
@@ -152,9 +152,12 @@ export function createStadium(scene: THREE.Scene, uniforms: Uniforms, glow: Glow
     const L = new THREE.Vector3(nx * 0.45, 0.88, nz * 0.45).normalize();
     const T4 = (px: number, py: number, pz: number, sx = 1, sy = 1, sz = 1) =>
       new THREE.Matrix4().makeTranslation(px, py, pz).multiply(new THREE.Matrix4().makeScale(sx, sy, sz));
-    part(new THREE.CylinderGeometry(0.9, 1.5, H, 16), T4(x, H / 2, z), PAL.night[300], L);
-    for (const yy of [9, 21, 33]) { const rr = 1.5 - 0.6 * (yy / H) + 0.08; part(new THREE.CylinderGeometry(rr, rr + 0.04, 1.4, 16), T4(x, yy, z), PAL.grape[500], L); }
-    part(new THREE.SphereGeometry(2.3, 16, 10), T4(x, 0.6, z), PAL.night[300], L);
+    const GY = FIELD_Y; // chân cột đứng trên mặt đất ở cao độ sân (FIELD_Y), không lơ lửng / không chìm
+    const HB = H - GY; // cao từ chân tới đỉnh cột
+    part(new THREE.CylinderGeometry(0.9, 1.5, HB, 16), T4(x, GY + HB / 2, z), PAL.night[300], L);
+    part(new THREE.CylinderGeometry(3.4, 3.8, 0.7, 24), T4(x, GY + 0.35, z), PAL.night[100], L); // bệ tròn
+    for (const yy of [9, 21, 33]) { const rr = 1.5 - 0.6 * ((yy - GY) / HB) + 0.08; part(new THREE.CylinderGeometry(rr, rr + 0.04, 1.4, 16), T4(x, yy, z), PAL.grape[500], L); }
+    part(new THREE.SphereGeometry(2.3, 16, 10), T4(x, GY + 1.2, z, 1, 0.8, 1), PAL.night[300], L);
     part(new THREE.SphereGeometry(5.5, 24, 14), T4(x, HY, z, 1, 0.75, 1), PAL.night[100], L); // đầu nấm
     for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
       const ox = (i - 1) * 3.3, oy = (j - 0.5) * 3.2;

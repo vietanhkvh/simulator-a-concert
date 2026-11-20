@@ -96,20 +96,34 @@ function fadeTo(opacity: number, ms: number): Promise<void> {
 /** Đang trong màn chào sân thật (state 'intro'): hạn chót an toàn (performance.now ms). */
 let introDeadline = 0;
 let introKind: LobbyEntrance | null = null;
-// Góc máy cho sự kiện bí mật: lùi về cuối sân, ngẩng lên để thấy cả sân khấu lẫn bầu trời.
-const secretCamPos = new THREE.Vector3(0, 62, -112);
-const secretCamTarget = new THREE.Vector3(0, 22, -20);
-const secretCamPose = { position: secretCamPos, target: secretCamTarget, fov: 60 };
+// Góc máy cho sự kiện bí mật: trên cao phía sau sân (z = -108), đủ xa để cả vùng diễn ra sự kiện (x ±45, y 22–60,
+// z −15…−66) nằm trước ống kính. FOV giữ ≤ 52° để hai màn LED lớn (z = -75, y 15) nằm dưới mép khung, không lộ lưng màn hình.
+const SECRET_CAM_HOME = new THREE.Vector3(0, 66, -108);
+const SECRET_STAGE_AIM = new THREE.Vector3(0, 12, 0); // giữ sân khấu / khán giả một phần trong khung
+const SECRET_EVENT_SIZE = 55; // kích thước điển hình của sự kiện (m)
+const secretCamPos = SECRET_CAM_HOME.clone();
+const secretCamTarget = new THREE.Vector3(0, 30, -30);
+const secretCamPose = { position: secretCamPos, target: secretCamTarget, fov: 55 };
+const secretGoal = new THREE.Vector3();
+let secretViewAt = 0;
 function secretView(): typeof secretCamPose | null {
-  if (!secretPrevViewActive()) return null;
+  if (!secretPrevViewActive()) { secretViewAt = 0; return null; }
+  const now = performance.now();
+  const dt = secretViewAt ? Math.min(0.1, (now - secretViewAt) / 1000) : 0.016;
+  secretViewAt = now;
+  const k = 1 - Math.exp(-dt * 2.2); // làm mượt mọi thay đổi
   const focus = world.outside.getSecretFocus();
-  // Camera trên cao phía sau khán đài (cao hơn khinh khí cầu), nhìn vào điểm giữa sân khấu và tâm sự kiện.
-  const tx = focus ? focus.x * 0.5 : 0;
-  const ty = focus ? (focus.y + 10) * 0.5 : 22;
-  const tz = focus ? Math.max(-60, Math.min(20, (focus.z - 10) * 0.5)) : -20;
-  secretCamTarget.x += (tx - secretCamTarget.x) * 0.05;
-  secretCamTarget.y += (ty - secretCamTarget.y) * 0.05;
-  secretCamTarget.z += (tz - secretCamTarget.z) * 0.05;
+  // Điểm ngắm: nghiêng 70% về tâm sự kiện, 30% về sân khấu.
+  if (focus) secretGoal.copy(focus).multiplyScalar(0.8).addScaledVector(SECRET_STAGE_AIM, 0.2);
+  else secretGoal.set(0, 30, -30);
+  secretCamTarget.lerp(secretGoal, k);
+  // Máy lệch ngang ngược phía tâm sự kiện một chút để có góc chéo, không bao giờ lùi ra sau hàng màn LED.
+  const homeX = focus ? THREE.MathUtils.clamp(-focus.x * 0.35, -14, 14) : 0;
+  secretGoal.set(homeX, SECRET_CAM_HOME.y, SECRET_CAM_HOME.z);
+  secretCamPos.lerp(secretGoal, k * 0.6);
+  const d = focus ? secretCamPos.distanceTo(focus) : 60;
+  const fovGoal = THREE.MathUtils.clamp(2 * Math.atan((0.7 * SECRET_EVENT_SIZE) / Math.max(d, 1)) * 180 / Math.PI, 38, 52);
+  secretCamPose.fov += (fovGoal - secretCamPose.fov) * k;
   return secretCamPose;
 }
 controls?.setViewProvider((m) => entrance.getView() ?? (m === 'wide' ? secretView() : null) ?? crew.getView(m), stage.scene);
@@ -354,7 +368,22 @@ const lookHint = document.createElement('div');
 lookHint.className = 'cs-look-hint';
 lookHint.textContent = 'Chuột tự do — bấm M hoặc Esc để thoát';
 lookHint.hidden = true;
-uiRoot.append(topBar, lookHint);
+// Chip gợi ý điều khiển camera khi không ở góc ca sĩ (cạnh nút góc máy).
+const viewHint = document.createElement('div');
+viewHint.className = 'cs-view-hint';
+viewHint.hidden = true;
+uiRoot.append(topBar, lookHint, viewHint);
+let hintMode = 'singer';
+let hintFly = false;
+function updateViewHint(): void {
+  const on = hintMode !== 'singer' && state === 'playing';
+  viewHint.hidden = !on;
+  if (!on) return;
+  const txt = 'Kéo chuột: xoay · Lăn: zoom · R/F: cao/thấp · 0: đặt lại' + (hintFly ? ' · WASD: bay · Shift: nhanh · G: thoát flycam' : ' · G: bay tự do');
+  if (viewHint.textContent !== txt) viewHint.textContent = txt;
+}
+window.addEventListener('cs-view', (e) => { hintMode = String((e as CustomEvent<{ mode: string }>).detail?.mode ?? 'singer'); if (hintMode === 'singer') hintFly = false; updateViewHint(); });
+window.addEventListener('cs-freefly', (e) => { hintFly = !!(e as CustomEvent<{ on: boolean }>).detail?.on; updateViewHint(); });
 const VIEW_LABEL: Record<string, string> = Object.fromEntries(VIEW_MODES.map((v) => [v.id, v.label]));
 function showView(mode: string): void {
   viewBtn.textContent = `Góc máy: ${VIEW_LABEL[mode] ?? mode} (V)`;
@@ -765,8 +794,11 @@ function finish(score: ScoreState): void {
 }
 
 let lastRenderAt = 0;
+let lastHudOverride = '';
 function tick(dt: number): void {
   topBar.hidden = state !== 'playing';
+  hintMode = controls?.getViewMode() ?? hintMode;
+  updateViewHint();
   if (paused && (state !== 'playing' || !lastFrame)) setPaused(false); // trạng thái đổi (hết bài, chơi lại)
   micPanel.setVisible(state === 'menu' || state === 'result' || paused);
   if (state === 'countdown' || state === 'playing') hudMicMeter.update(mic);
@@ -860,6 +892,12 @@ function tick(dt: number): void {
   }
   // Chế độ developer: khóa Hype hiển thị (hình + âm thanh); f.score (điểm, Hype của điểm) giữ nguyên.
   if (devHype !== null) f = { ...f, hype: devHype, waveMode: devHype > 0.7 || (state === 'playing' && performance.now() < waveUntil) ? 1 : 0 };
+  // HUD: thanh Hype hiển thị giá trị đang bị khóa (dev) / xem trước (menu tạm dừng) kèm nhãn, không phải Hype thật.
+  const hudOverride = devHype !== null ? `DEV|${devHype}` : paused ? `XEM|${previewHype}` : '';
+  if (hudOverride !== lastHudOverride) {
+    lastHudOverride = hudOverride;
+    hud.setHypeOverride(devHype !== null ? devHype : paused ? previewHype : null, devHype !== null ? 'DEV' : 'XEM');
+  }
   if (devCrowdSing && crowdSing) crowdSing.update(SING_TEST_NOTES[Math.floor(performance.now() / 500) % SING_TEST_NOTES.length], 0.8);
   dev.tick(dt);
   dev.setLobby(devLobbyLink && screens.isLobby());

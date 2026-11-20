@@ -97,7 +97,12 @@ export const SKY_RADIUS = 185;
  * đủ để cả vỏ lẫn băng rôn treo dưới (~35 m) ló trên mép khán đài từ mắt ca sĩ.
  */
 export const BALLOON_Y = { min: 70, max: 84 } as const;
-/** Máy bay kéo băng rôn bay ngang sân ở độ cao/độ sâu này (thấp hơn cụm khinh khí cầu, lọt khung nhìn mặc định của ca sĩ). */
-export const FLYBY = { y: 38, z: -66 } as const;
+/**
+ * Hai máy bay kéo băng rôn (flyby.ts), bay đội hình so le cùng chiều TRÁI → PHẢI (ca sĩ): chiếc chính ở (y, z),
+ * chiếc thứ hai theo sau `gap` m ở (y2, z2) — gần hơn một chút. Cả hai thấp, trước khán đài và DƯỚI dải băng rôn khinh khí cầu,
+ * nên mỗi băng rôn có một khoảnh khắc riêng giữa khung nhìn, không che nhau. Khi qua khán đài (|x| lớn) cả hai leo lên
+ * climbY để băng rôn vượt mép trên khán đài; bay đều speed (m/s) cho tới khi cách gốc > exitR (m) rồi mới ẩn.
+ */
+export const FLYBY = { y: 14, z: -52, y2: 13, z2: -40, gap: 75, climbY: 58, speed: 27, exitR: 360 } as const;
 /** Tâm bầu trời phía trên sân nơi các sự kiện bí mật diễn ra (pháo hoa tên lửa, trái tim khói…). */
 export const SKY_SHOW_CENTRE = { x: 0, y: 50, z: -30 } as const;

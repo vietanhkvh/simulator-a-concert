@@ -10,7 +10,12 @@ function div(cls: string, parent?: HTMLElement): HTMLDivElement {
   return e;
 }
 
-export function createHud(root: HTMLElement): Hud {
+/** Hud có thêm: ghi đè Hype hiển thị (khóa Hype của developer / Hype xem trước trong menu tạm dừng) kèm nhãn khóa. */
+export interface HudWithOverride extends Hud {
+  setHypeOverride(v: number | null, label?: string): void;
+}
+
+export function createHud(root: HTMLElement): HudWithOverride {
   const wrap = div('cs-hud');
   root.appendChild(wrap);
 
@@ -23,6 +28,9 @@ export function createHud(root: HTMLElement): Hud {
   hypeLabel.textContent = 'HYPE';
   const hypeTrack = div('cs-hud-hype-track', hypeBox);
   const hypeFill = div('cs-hud-hype-fill', hypeTrack);
+  const hypeLock = div('cs-hud-hype-lock', hypeBox);
+  hypeLock.hidden = true;
+  hypeLock.title = 'Hype hiển thị đang bị khóa / ghi đè (không phải Hype thật của điểm)';
 
   const mic = div('cs-hud-mic', wrap);
   const micDot = div('cs-hud-mic-dot', mic);
@@ -36,8 +44,31 @@ export function createHud(root: HTMLElement): Hud {
   let lastHype = -1;
   let hot = false;
   let pitchScore = true;
+  let override: number | null = null;
+
+  const showHype = (v: number) => {
+    const h = Math.max(0, Math.min(1, v));
+    if (Math.abs(h - lastHype) <= 0.002) return;
+    lastHype = h;
+    hypeFill.style.transform = `scaleX(${h.toFixed(3)})`;
+    hypeBox.dataset.stage = h >= 0.8 ? '2' : h >= 0.4 ? '1' : '0'; // lạnh / ấm dần / rực (STYLE_GUIDE 2.3)
+    const nowHot = h > 0.7;
+    if (nowHot !== hot) {
+      hot = nowHot;
+      hypeBox.classList.toggle('hot', hot);
+    }
+  };
 
   return {
+    setHypeOverride(v, label = 'DEV') {
+      override = v;
+      hypeLock.hidden = v === null;
+      hypeBox.classList.toggle('locked', v !== null);
+      if (v !== null) {
+        hypeLock.textContent = `🔒 ${label} ${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
+        showHype(v);
+      }
+    },
     update(f) {
       const s = f.score;
       if (!pitchScore) {
@@ -59,17 +90,7 @@ export function createHud(root: HTMLElement): Hud {
         scoreSub.textContent = `${pct}%` + (s.combo >= 3 ? ` · x${s.combo}` : '');
       }
       }
-      const h = Math.max(0, Math.min(1, f.hype));
-      if (Math.abs(h - lastHype) > 0.002) {
-        lastHype = h;
-        hypeFill.style.transform = `scaleX(${h.toFixed(3)})`;
-        hypeBox.dataset.stage = h >= 0.8 ? '2' : h >= 0.4 ? '1' : '0'; // lạnh / ấm dần / rực (STYLE_GUIDE 2.3)
-        const nowHot = h > 0.7;
-        if (nowHot !== hot) {
-          hot = nowHot;
-          hypeBox.classList.toggle('hot', hot);
-        }
-      }
+      showHype(override ?? f.hype);
     },
     setNotice(text) {
       mic.style.visibility = 'visible';

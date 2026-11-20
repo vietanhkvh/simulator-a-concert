@@ -37,10 +37,10 @@ export function makeSignAtlas(): THREE.CanvasTexture | null {
     rr(ox + 20, oy + 20, CELL_W - 40, CELL_H - 40, 50);
     g.lineWidth = 4; g.strokeStyle = PAL_HEX.cream[500]; g.globalAlpha = 0.55; g.stroke(); g.globalAlpha = 1;
     g.fillStyle = PAL_HEX.cream[100]; g.globalAlpha = 0.4; g.beginPath(); g.ellipse(ox + 58, oy + 50, 16, 9, -0.5, 0, 6.3); g.fill(); g.globalAlpha = 1;
-    g.font = '800 150px "Baloo 2", "Arial Rounded MT Bold", system-ui, sans-serif';
+    g.font = '900 172px "Baloo 2", "Arial Rounded MT Bold", system-ui, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.lineJoin = 'round'; g.lineWidth = 22; g.strokeStyle = INK_HEX; g.strokeText(LETTERS[k], ox + CELL_W / 2, oy + CELL_H / 2 + 6);
-    g.fillStyle = PAL_HEX.cream[500]; g.fillText(LETTERS[k], ox + CELL_W / 2, oy + CELL_H / 2 + 6);
+    g.lineJoin = 'round'; g.lineWidth = 34; g.strokeStyle = INK_HEX; g.strokeText(LETTERS[k], ox + CELL_W / 2, oy + CELL_H / 2 + 8);
+    g.fillStyle = PAL_HEX.cream[500]; g.fillText(LETTERS[k], ox + CELL_W / 2, oy + CELL_H / 2 + 8);
   }
   const tex = new THREE.CanvasTexture(cv);
   tex.anisotropy = 4;
@@ -83,8 +83,9 @@ export function buildDecor(o: DecorOpts): THREE.BufferGeometry {
   // 2) biển khu A–H trên mặt trước từng tầng
   const dA = arc / o.signSections;
   o.tiers.forEach((T, ti) => {
-    const big = ti === 0, w = big ? SIGN_W * 1.7 : SIGN_W, h = big ? SIGN_H * 1.7 : SIGN_H;
-    const r = o.signR(T), top = T.y0 - 0.95, bot = top - h;
+    // biển lớn hơn ở mọi tầng (tầng 2/3 ở xa hơn nên to hơn nữa); nhô khỏi gờ tầng ~0,5 m để không dính tường
+    const w = SIGN_W * (ti === 0 ? 2.1 : ti === 1 ? 2.3 : 2.5), h = SIGN_H * (ti === 0 ? 1.6 : ti === 1 ? 1.5 : 1.5);
+    const r = o.signR(T) - 0.5, top = T.y0 - 0.7, bot = top - h;
     for (let k = 0; k < o.signSections; k++) {
       const ac = A0 + dA * (k + 0.5), half = w / 2 / r;
       const u0 = (k % 4) / 4, u1 = u0 + 0.25, vb = 1 - (Math.floor(k / 4) + 1) / 2, vt = vb + 0.5;

@@ -2,7 +2,7 @@
 // sân, xoay một vòng dễ thương rồi nổ thành pháo hoa chibi nhiều tầng (sao / tim / chấm tròn, chớp kem, kim tuyến).
 // Thân kem mập 2,2 : 1, mũi + 3 vây mập hồng dâu, dải mật ong đinh tán sao, cửa sổ tròn có phi hành gia (chớp mắt,
 // giơ ngón cái), lửa 3 lớp hình giọt viền sò, khói là cục bông tròn. Chữ ký secret (halo) khi bay.
-// Draw call: giàn phóng + thân + viền ink + lửa + khói + pháo hoa/tia + halo = 7. Quỹ đạo Bézier tính cả ở CPU lẫn shader.
+// Draw call: giàn phóng + thân + viền ink + lửa + khói + pháo hoa/tia + halo + phi hành gia nhảy dù (thân + viền) = 9. Quỹ đạo Bézier tính cả ở CPU lẫn shader.
 import { SKY_SHOW_CENTRE } from '../../world/layout';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
@@ -12,6 +12,8 @@ import { PART, PartBuilder, SHAPE_FRAG, createSecretHalo, makeToon, raw, starGeo
 
 const D = 22;
 const T_IGN = 2.5, T_BURST = 10.0, T_SPIN = 1.1;
+/** Phi hành gia nhảy dù ra khỏi tên lửa ngay trước khi nổ; dù mở sau 0,45 s, trôi xuống chậm rồi co lại. */
+const T_EJECT = T_BURST - 0.9, EJECT_LIFE = 6.5, PILOT_S = 3.0;
 const PAD = new THREE.Vector3(-110, 0, 230);
 const CTRL = new THREE.Vector3(-60, 135, 80);
 /** Điểm nổ chính = tâm màn pháo hoa. */
@@ -108,8 +110,13 @@ void main() {
     if (kind > 0.5 && cls < 3.5) {
       // pháo hình trái tim: hướng theo đường cong tim trong mặt XY (nhìn được cả từ ca sĩ và từ camera toàn cảnh)
       float a = aSeed.y * 6.2832;
-      vec2 h = vec2(16.0 * pow(sin(a), 3.0), 13.0 * cos(a) - 5.0 * cos(2.0 * a) - 2.0 * cos(3.0 * a) - cos(4.0 * a)) / 16.0;
-      dir = vec3(h, (aSeed.x - 0.5) * 0.25);
+      float sa = sin(a); // pow(âm, 3.0) không xác định trong GLSL → nửa trái của trái tim mất; dùng sa*sa*sa
+      vec2 h = vec2(16.0 * sa * sa * sa, 13.0 * cos(a) - 5.0 * cos(2.0 * a) - 2.0 * cos(3.0 * a) - cos(4.0 * a)) / 16.0;
+      // trái tim nằm trong mặt phẳng vuông góc hướng nhìn (quay mặt về camera) nên là hình tim ở cả góc ca sĩ lẫn góc toàn cảnh
+      vec3 toCam = normalize(cameraPosition - sh.xyz);
+      vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), toCam));
+      vec3 upv = cross(toCam, rt);
+      dir = rt * h.x + upv * (h.y + 0.04) + toCam * (aSeed.x - 0.5) * 0.12;
     }
     if (cls < 3.5) {
       // vòng chính (cls 2) + vòng trong trễ 0,15 s (cls 3)
@@ -179,9 +186,10 @@ function buildRocket(): THREE.BufferGeometry {
   // thân kem mập (lathe, đáy bo tròn)
   b.add(new THREE.LatheGeometry([V(0.5, -0.05), V(0.82, 0.08), V(0.98, 0.4), V(1.06, 1.0), V(1.07, 1.7), V(1.02, 2.4), V(0.93, 2.92)], 40), PAL.cream[500]);
   // mũi hồng dâu (gần bán cầu)
-  b.add(new THREE.LatheGeometry([V(0.94, 2.9), V(0.88, 3.25), V(0.74, 3.6), V(0.52, 3.88), V(0.26, 4.04), V(0.01, 4.1)], 40), PAL.berry[500]);
-  const tip = new THREE.SphereGeometry(0.13, 10, 8);
-  tip.translate(0, 4.12, 0);
+  const NK = 0.8; // mũi hồng dâu ngắn lại ~20% (trước đây hơi to so với thân)
+  b.add(new THREE.LatheGeometry([V(0.94, 2.9), V(0.88, 2.9 + 0.35 * NK), V(0.74, 2.9 + 0.7 * NK), V(0.52, 2.9 + 0.98 * NK), V(0.26, 2.9 + 1.14 * NK), V(0.01, 2.9 + 1.2 * NK)], 40), PAL.berry[500]);
+  const tip = new THREE.SphereGeometry(0.12, 10, 8);
+  tip.translate(0, 2.9 + 1.22 * NK, 0);
   b.add(tip, PAL.honey[500]);
   // 2 dải sơn: dải mật ong (đinh tán sao) + viền hồng ở cổ mũi
   const band = new THREE.TorusGeometry(1.06, 0.14, 10, 48);
@@ -319,6 +327,66 @@ function buildGantry(): THREE.BufferGeometry {
   return b.build();
 }
 
+
+/** Phi hành gia chibi + dù mật ong tí hon (1 mesh toon, đơn vị local: cao ~3,2 gồm dù, gốc ở chân). */
+function buildPilot(): THREE.BufferGeometry {
+  const b = new PartBuilder();
+  const V = (x: number, y: number) => new THREE.Vector2(x, y);
+  const body = new THREE.CapsuleGeometry(0.27, 0.28, 4, 12);
+  body.translate(0, 0.62, 0);
+  b.add(body, PAL.cream[300]);
+  const helmet = new THREE.SphereGeometry(0.4, 18, 12);
+  helmet.translate(0, 1.2, 0);
+  b.add(helmet, PAL.cream[300]);
+  const face = new THREE.SphereGeometry(0.28, 16, 12);
+  face.scale(1, 0.95, 0.5);
+  face.translate(0, 1.18, 0.3);
+  b.add(face, SKIN[0]!);
+  for (const sx of [-1, 1]) {
+    const c = new THREE.Vector3(sx * 0.1, 1.2, 0.46);
+    const e = new THREE.CircleGeometry(0.045, 10);
+    e.scale(0.8, 1.3, 1);
+    e.translate(c.x, c.y, c.z);
+    b.add(e, PAL.night[700], PART.flat);
+    const ck = new THREE.CircleGeometry(0.05, 10);
+    ck.translate(sx * 0.19, 1.09, 0.45);
+    b.add(ck, PAL.berry[300], PART.flat);
+    const leg = new THREE.SphereGeometry(0.15, 10, 8);
+    leg.translate(sx * 0.14, 0.2, 0);
+    b.add(leg, PAL.berry[500]);
+    const hand = new THREE.SphereGeometry(0.11, 10, 8);
+    hand.translate(sx * 0.4, 1.0, 0);
+    b.add(hand, PAL.cream[300]);
+  }
+  // dù: vỏ dày hai mặt (nhìn từ dưới lên vẫn thấy), viền hồng dâu, 1 ngôi sao trên đỉnh
+  const prof = [V(1.7, 0), V(1.66, 0.42), V(1.42, 0.86), V(0.95, 1.2), V(0.4, 1.36), V(0.01, 1.4)];
+  const canopy = new THREE.LatheGeometry(prof, 28);
+  canopy.translate(0, 2.0, 0);
+  b.add(canopy, PAL.honey[500]);
+  const inner = new THREE.LatheGeometry(prof.slice().reverse().map((q) => V(q.x * 0.94, q.y * 0.94)), 28);
+  inner.translate(0, 2.0, 0);
+  b.add(inner, PAL.honey[700]);
+  const rim = new THREE.TorusGeometry(1.68, 0.1, 8, 36);
+  rim.rotateX(Math.PI / 2);
+  rim.translate(0, 2.02, 0);
+  b.add(rim, PAL.berry[500]);
+  const st = starGeo(0.22, 0.08);
+  st.rotateX(-Math.PI / 2);
+  st.translate(0, 3.42, 0);
+  b.add(st, PAL.cream[300]);
+  // 4 dây
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  for (const [ax, az, bx, bz] of [[1.55, 0, 0.3, 0.05], [-1.55, 0, -0.3, 0.05], [0, 1.55, 0.05, 0.2], [0, -1.55, 0.05, -0.2]] as const) {
+    A.set(ax, 2.05, az); B.set(bx, 1.2, bz);
+    const len = A.distanceTo(B);
+    const g = new THREE.CapsuleGeometry(0.025, len, 2, 4);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, B.clone().sub(A).normalize()));
+    g.translate((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+    b.add(g, PAL.cream[500]);
+  }
+  return b.build();
+}
+
 export function createRocket(scene: THREE.Scene): SecretAct {
   const root = new THREE.Group();
   root.visible = false;
@@ -414,6 +482,15 @@ export function createRocket(scene: THREE.Scene): SecretAct {
   const halo = createSecretHalo();
   root.add(halo.group);
 
+  // phi hành gia nhảy dù
+  const pilotToon = makeToon(buildPilot(), 3.2 * OUTLINE.secret);
+  const pilot = new THREE.Group();
+  pilot.add(pilotToon.outline, pilotToon.body);
+  pilot.visible = false;
+  root.add(pilot);
+  const pilotP0 = new THREE.Vector3();
+  const pilotLook = new THREE.Vector3(0, 1.65, 0);
+
   const q = new THREE.Vector3();
   const tan = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
@@ -427,10 +504,41 @@ export function createRocket(scene: THREE.Scene): SecretAct {
     tan.copy(CTRL).sub(PAD).multiplyScalar(2 * m).addScaledVector(want.copy(TOP).sub(CTRL), 2 * s).normalize();
   };
 
+  // vị trí tên lửa (tâm thân) tại thời điểm te, dùng làm điểm nhảy dù
+  const rocketPosAt = (te: number, out: THREE.Vector3) => {
+    const u = Math.min(1, Math.max(0, (te - T_IGN) / (T_BURST - T_IGN)));
+    bezAt(u * u);
+    return out.copy(q).addScaledVector(tan, 2.0 * S);
+  };
+  const updatePilot = (t: number, f: FrameState) => {
+    const tau = t - T_EJECT;
+    pilot.visible = tau > 0 && tau < EJECT_LIFE;
+    if (!pilot.visible) return;
+    if (tau < 0.06 || pilotP0.lengthSq() === 0) rocketPosAt(T_EJECT, pilotP0);
+    const open = smooth(0.35, 0.6, tau);
+    // bật ra khỏi cửa sổ: vọt lên + về phía ca sĩ, rồi dù mở và trôi xuống chậm, đung đưa
+    const toward = pilotLook.clone().sub(pilotP0).setY(0).normalize();
+    const out = (1 - Math.exp(-tau * 2.4)) * 7;
+    const fall = open * Math.max(0, tau - 0.45) * 1.5 + 0.6 * Math.max(0, tau - 0.45) * (1 - open);
+    pilot.position.copy(pilotP0).addScaledVector(toward, out * 1.1);
+    pilot.position.y += (1 - Math.exp(-tau * 3)) * 5.5 - fall * 1.6;
+    pilot.position.x += Math.sin(tau * 1.7) * 0.9 * open;
+    const sway = Math.sin(tau * 2.1) * 0.16 * open;
+    pilot.rotation.set(0, Math.atan2(toward.x, toward.z), sway);
+    const pop = popScale(tau) * (1 - smooth(EJECT_LIFE - 0.8, EJECT_LIFE, tau));
+    const sq = 1 + 0.12 * Math.exp(-Math.max(0, tau - 0.45) * 7) * smooth(0.4, 0.5, tau); // dù bung: giãn nhẹ
+    pilot.scale.set(PILOT_S * pop / Math.sqrt(sq), PILOT_S * pop * sq, PILOT_S * pop / Math.sqrt(sq));
+    // dù chưa mở thì dù co lại phía trên đầu (thu nhỏ theo trục y quanh gốc → chỉ còn phi hành gia)
+    if (open < 1) pilot.scale.y *= 0.65 + 0.35 * open;
+    const tu = pilotToon.uniforms;
+    tu.uTime.value = t; tu.uPulse.value = f.beatPulse; tu.uViewH.value = pxScale();
+    tu.uBlink.value = 1;
+  };
+
   return {
     duration: D,
     start() { root.visible = true; },
-    stop() { root.visible = false; halo.group.visible = false; },
+    stop() { root.visible = false; halo.group.visible = false; pilot.visible = false; pilotP0.set(0, 0, 0); },
     update(t: number, f: FrameState) {
       smokeU.uT.value = sparkU.uT.value = flameU.uT.value = t;
       smokeU.uPx.value = sparkU.uPx.value = pxScale();
@@ -477,6 +585,7 @@ export function createRocket(scene: THREE.Scene): SecretAct {
       halo.group.position.copy(rocket.position);
       const appear = smooth(T_IGN, T_IGN + 0.5, t) * (1 - smooth(T_BURST - 0.15, T_BURST, t));
       halo.update(t, (LEN_LOCAL / 2) * S, appear);
+      updatePilot(t, f);
     },
     focus(t: number, out: THREE.Vector3) {
       if (t >= T_BURST - 0.5) { out.copy(ROCKET_BURST); return; }

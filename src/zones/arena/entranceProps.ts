@@ -601,15 +601,40 @@ export function createCable(): Cable {
 }
 
 // ---------------------------------------------------------------- Bục nâng sân khấu (4 draw call)
+const SHAFT_VERT = /* glsl */ `
+attribute float aK;
+varying vec2 vUv;
+varying float vK;
+varying float vFace;
+void main() {
+  vUv = uv; vK = aK;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  // mặt nhìn nghiêng (mép cột) mờ hơn → cột tròn mềm, không thành tấm sáng đặc khi nhiều lớp chồng
+  vec3 n = normalize(normalMatrix * normal);
+  vFace = abs(dot(n, normalize(-mv.xyz)));
+  gl_Position = projectionMatrix * mv;
+}`;
+// Cột sáng (aK = 0: kem → nho nhạt) + 6 tia (aK = 1 honey, 2 berry). Additive nên mỗi lớp chỉ ~0,1–0,25:
+// chồng 3–4 lớp vẫn ra màu kẹo, không cháy trắng (lỗi cũ: kem + soda gần trắng, cắt về 0,05 thì mất hẳn).
 const SHAFT_FRAG = /* glsl */ `
 uniform float uOpacity;
 uniform float uTime;
 varying vec2 vUv;
+varying float vK;
+varying float vFace;
 void main() {
   float v = vUv.y; // 0 = chân, 1 = ngọn
-  float a = pow(1.0 - v, 1.8) * uOpacity * (0.85 + 0.15 * sin(vUv.x * 30.0 + uTime * 3.0));
-  vec3 c = mix(${glsl(PAL.cream[300])}, ${glsl(PAL.soda[300])}, v);
-  gl_FragColor = vec4(c * a, 1.0);
+  float flick = 0.85 + 0.15 * sin(vUv.x * 30.0 + uTime * 3.0);
+  vec3 c;
+  float a;
+  if (vK < 0.5) {
+    c = mix(${glsl(PAL.cream[300])}, ${glsl(PAL.grape[300])}, smoothstep(0.0, 0.7, v)) * 0.8;
+    a = pow(1.0 - v, 1.6) * 0.16 * (0.35 + 0.65 * vFace);
+  } else {
+    c = vK < 1.5 ? ${glsl(PAL.honey[500])} : ${glsl(PAL.berry[500])};
+    a = pow(1.0 - v, 1.3) * 0.3 * (0.4 + 0.6 * vFace);
+  }
+  gl_FragColor = vec4(c * a * uOpacity * flick, 1.0);
 }`;
 
 const LIFTP_VERT = /* glsl */ `
@@ -633,8 +658,9 @@ void main() {
     float rr = (0.3 + aSeed.z * 0.8) * (0.4 + ph);
     p += vec3(cos(ang) * rr, ph * (2.5 + aSeed.w * 2.0), sin(ang) * rr);
     size = 0.7 + ph * 2.2;
-    vA = sin(ph * 3.14159) * 0.2 * uSmoke;
-    vColor = mix(${glsl(PAL.grape[300])}, ${glsl(PAL.berry[100])}, aSeed.w);
+    // additive: ~10–20 cục chồng nhau ở tâm → mỗi cục chỉ ~0,05 và màu kẹo đậm, tránh cháy trắng
+    vA = sin(ph * 3.14159) * 0.055 * uSmoke;
+    vColor = mix(${glsl(PAL.grape[500])}, ${glsl(PAL.berry[300])}, aSeed.w);
   } else if (aType < 1.5) { // cột CO2 ở bốn góc
     float L = 0.7;
     float ph = fract((uLock + aSeed.x * L) / L);
@@ -642,8 +668,8 @@ void main() {
     float ang = aSeed.y * 6.2831853;
     p += vec3(cos(ang) * ph * 0.5, ph * (4.5 + aSeed.z * 2.0), sin(ang) * ph * 0.5);
     size = 0.3 + ph * 1.5;
-    vA = (1.0 - ph) * 0.4 * on;
-    vColor = ${glsl(PAL.soda[100])};
+    vA = (1.0 - ph) * 0.13 * on;
+    vColor = mix(${glsl(PAL.soda[300])}, ${glsl(PAL.cream[300])}, aSeed.w * 0.5);
   } else { // tia lửa
     float t = uLock;
     float a = aSeed.x * 6.2831853;
@@ -707,19 +733,23 @@ export function createLiftFx(land: THREE.Vector3): LiftFx {
   const plat = new THREE.Mesh(platGeo, platMat);
   disposables.push(platGeo, platMat);
 
-  const sg: THREE.BufferGeometry[] = [new THREE.CylinderGeometry(1.7, R, 8, 32, 1, true).translate(0, 4, 0).toNonIndexed()];
+  const tagK = (g: THREE.BufferGeometry, k: number) => {
+    g.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count).fill(k), 1));
+    return g;
+  };
+  const sg: THREE.BufferGeometry[] = [tagK(new THREE.CylinderGeometry(1.7, R, 8, 32, 1, true).translate(0, 4, 0).toNonIndexed(), 0)];
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2 + 0.3;
     const g = new THREE.CylinderGeometry(0.4, 0.04, 10, 10, 1, true).translate(0, 5, 0);
     g.applyMatrix4(new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(Math.sin(a), 0, -Math.cos(a)), 0.38));
     g.translate(Math.cos(a) * R, 0, Math.sin(a) * R);
-    sg.push(g.toNonIndexed());
+    sg.push(tagK(g.toNonIndexed(), 1 + (i % 2)));
     g.dispose();
   }
   const shaftGeo = mergeGeometries(sg)!;
   for (const g of sg) g.dispose();
   const shaftMat = new THREE.ShaderMaterial({
-    vertexShader: ROTOR_VERT, fragmentShader: SHAFT_FRAG, uniforms: { uOpacity: { value: 0 }, uTime: { value: 0 } },
+    vertexShader: SHAFT_VERT, fragmentShader: SHAFT_FRAG, uniforms: { uOpacity: { value: 0 }, uTime: { value: 0 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
   const shaft = new THREE.Mesh(shaftGeo, shaftMat);
@@ -760,7 +790,7 @@ export function createLiftFx(land: THREE.Vector3): LiftFx {
       hatch.visible = open > 0.01 && lockAge < 0;
       hatch.scale.setScalar(Math.max(0.001, open * 1.28));
       plat.position.y = deckY;
-      shaftMat.uniforms.uOpacity.value = 0.05 * light; // cột sáng kem mềm, không trắng xoá
+      shaftMat.uniforms.uOpacity.value = light; // cường độ từng lớp nằm trong SHAFT_FRAG (màu kẹo, không trắng xoá)
       shaftMat.uniforms.uTime.value = time;
       shaft.visible = light > 0.01;
       shaft.position.y = Math.min(0, deckY);

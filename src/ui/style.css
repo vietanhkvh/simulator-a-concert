@@ -103,6 +103,10 @@ input[type='range']:focus-visible { outline-offset: 0; border-radius: var(--cs-r
 .cs-hud-hype-track::after { content: ''; position: absolute; top: 0; bottom: 0; left: 10%; width: 80%; pointer-events: none;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M5 .8 6.3 3.6 9.3 4 7.1 6.1 7.7 9.1 5 7.6 2.3 9.1 2.9 6.1.7 4 3.7 3.6Z' fill='%23ffd45a' stroke='%232b1d5c' stroke-width='.9' stroke-linejoin='round'/%3E%3C/svg%3E") 0 50% / 25% 10px repeat-x; }
 .cs-hud-hype.hot .cs-hud-hype-track { box-shadow: 0 0 0 2px var(--cs-honey-500), 0 3px 0 var(--cs-ink); }
+.cs-hud-hype-lock { font: 800 11px var(--cs-font-display); letter-spacing: 0.06em; padding: 1px 8px; border-radius: var(--cs-r-pill); white-space: nowrap;
+  color: var(--cs-ink); background: var(--cs-honey-500); border: 2px solid var(--cs-ink); }
+.cs-hud-hype-lock[hidden] { display: none; }
+.cs-hud-hype.locked .cs-hud-hype-track { border-style: dashed; }
 /* Chip trạng thái micro: luôn có biểu tượng + màu */
 .cs-hud-mic { justify-self: end; display: flex; align-items: center; gap: 6px; box-sizing: border-box; min-height: 30px; padding: 0 12px;
   font: 700 13px var(--cs-font-display); border-radius: var(--cs-r-pill); color: var(--cs-btn-fg); border: 2px solid var(--cs-ink);
@@ -298,6 +302,11 @@ input[type='range']:focus-visible { outline-offset: 0; border-radius: var(--cs-r
 .cs-topbar[hidden] { display: none; }
 .cs-pill { font-size: 13px; padding: 0 14px; pointer-events: auto; }
 .cs-topbar .cs-pause-btn { position: static; font-size: 13px; padding: 0 14px; }
+.cs-view-hint { position: fixed; right: 16px; top: 92px; z-index: 25; pointer-events: none; max-width: min(calc(100vw - 32px), 520px); text-align: right;
+  font: 700 12px var(--cs-font-display); color: var(--cs-cream-500); background: var(--cs-night-500); border: 2px solid var(--cs-grape-500);
+  border-radius: var(--cs-r-pill); padding: 3px 12px; }
+.cs-view-hint[hidden] { display: none; }
+body:has(.cs-pm:not([hidden])) .cs-view-hint { visibility: hidden; }
 .cs-look-hint { position: fixed; left: 50%; top: 104px; transform: translateX(-50%); z-index: 25; pointer-events: none;
   display: inline-flex; align-items: center; gap: 6px; font: 700 13px var(--cs-font-display); color: var(--cs-cream-500); background: var(--cs-night-500);
   border: 2px solid var(--cs-soda-500); border-radius: var(--cs-r-pill); padding: 4px 14px; }

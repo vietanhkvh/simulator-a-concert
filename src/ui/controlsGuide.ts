@@ -16,6 +16,12 @@ export const CONTROLS: ControlGroup[] = [
       { label: 'Xoay góc nhìn', keys: 'Kéo chuột / [Q][E]' },
       { label: 'Chuột tự do', keys: '[M] / nhấp đúp' },
       { label: 'Đổi góc máy', keys: '[V]' },
+      { label: 'Xoay góc máy', keys: 'Kéo chuột' },
+      { label: 'Phóng to / thu nhỏ', keys: 'Lăn chuột' },
+      { label: 'Nâng / hạ máy quay', keys: '[R] / [F]' },
+      { label: 'Flycam bay tự do', keys: '[G]' },
+      { label: 'Bay flycam', keys: '[W][A][S][D][R][F] + [Shift]' },
+      { label: 'Đặt lại góc máy', keys: '[0]' },
     ],
   },
   {

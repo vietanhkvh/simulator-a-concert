@@ -92,8 +92,15 @@ export function createLedScreens(scene: THREE.Scene): LedScreens {
   const mats: { dispose(): void }[] = [];
   const toyM = createToyMaterial();
   // alphaTest: góc bo của màn canvas trong suốt → lộ thân khung phía sau
-  const screenMat = new THREE.MeshBasicMaterial({ map: canvasTex, fog: false, toneMapped: false, alphaTest: 0.5 });
-  mats.push(toyM, screenMat);
+  // alphaMap bo góc (cùng bán kính R_PX với canvas) → cả chế độ VIDEO cũng có góc bo, không phụ thuộc alpha của map.
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = W / 4; maskCanvas.height = H / 4;
+  const mctx = maskCanvas.getContext('2d')!;
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+  mctx.fillStyle = '#fff'; rr(mctx, 0, 0, maskCanvas.width, maskCanvas.height, R_PX / 4); mctx.fill();
+  const maskTex = new THREE.CanvasTexture(maskCanvas);
+  const screenMat = new THREE.MeshBasicMaterial({ map: canvasTex, alphaMap: maskTex, fog: false, toneMapped: false, alphaTest: 0.5 });
+  mats.push(toyM, screenMat, maskTex);
   const planeGeo = new THREE.PlaneGeometry(SCREEN_W, SCREEN_H);
 
   // Khung: thân night-300 bo + vành nho phát sáng quanh màn + 2 cột kẹo sọc berry/kem + sao trên đỉnh

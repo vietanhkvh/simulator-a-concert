@@ -24,7 +24,7 @@ export interface OutsideZone extends Zone {
   /** Tâm sự kiện bí mật đang diễn ra (để camera nhìn theo), null khi không có. */
   getSecretFocus: typeof getSecretFocus;
   triggerMeteors(count: number): void;
-  /** Debug (chế độ developer): ẩn/hiện cả khu hoặc từng lớp ('sky', 'balloons', 'flyby', 'secrets'). */
+  /** Debug (chế độ developer): ẩn/hiện cả khu hoặc từng lớp ('sky', 'aurora', 'stars', 'meteors', 'balloons', 'flyby', 'secrets'). */
   setVisible?(on: boolean): void;
   debugLayers?(): string[];
   setLayerVisible?(name: string, on: boolean): boolean;
@@ -37,12 +37,16 @@ export function createOutsideZone(ctx: ZoneContext): OutsideZone {
   const sky = layers.track('sky', () => createSky(scene, uniforms, glow)); // vòm trời, sao, sao băng, trăng, cực quang, máy bay chở khách
   const balloons = layers.track('balloons', () => createBalloons(scene, uniforms)); // khinh khí cầu + băng rôn cổ vũ
   const flyby = layers.track('flyby', () => createFlyby(scene, uniforms)); // máy bay kéo băng rôn khi Hype đạt đỉnh
-  const secrets = layers.track('secrets', () => createSecretEvents(scene)); // UFO, tên lửa, rồng, máy bay phản lực
+  const secrets = layers.track('secrets', () => createSecretEvents(scene)); // UFO, tên lửa, rồng, máy bay phản lực (tạo lười khi cần)
+  // Chế độ developer: tách vài vật thể của sky ra lớp riêng, nhận theo renderOrder cố định trong sky.ts (không sửa module).
+  layers.split('sky', 'aurora', (o) => o.renderOrder === -5);
+  layers.split('sky', 'stars', (o) => o.renderOrder === -15);
+  layers.split('sky', 'meteors', (o) => o.renderOrder === -14);
   return {
     update(f: FrameState, t: number) {
       sky.update(t);
       flyby.update(f, t);
-      secrets.update(f);
+      layers.watch('secrets', () => secrets.update(f)); // sự kiện bí mật tạo vật thể lúc chạy → gán vào lớp 'secrets'
     },
     dispose() {
       sky.dispose();

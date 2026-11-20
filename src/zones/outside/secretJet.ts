@@ -1,9 +1,11 @@
 // ★ Phi đội phản lực chibi (STYLE_GUIDE · SECRET OBJECT): 3 máy bay đồ chơi mập (dài ≤ 2,2 × đường kính thân,
 // mũi tròn, cánh + 2 đuôi bo tròn, vòm kính thấy phi công chibi đội mũ, viền kem + phù hiệu sao, lửa đuôi tròn),
-// màu berry / honey / soda. Bay đúng quỹ đạo cũ: 2 chiếc vẽ TRÁI TIM khổng lồ trên trời, chiếc soda bắn "mũi tên".
-// Khói là dải mập mép gợn mây (berry-300 / cream / soda-300) + sao nhỏ rơi; tim hoàn thành thì đập nhẹ + tim mini bay lên.
-// Bay đội hình nhún nhảy, chào cánh khi qua sân, lộn vòng đồng bộ trước khi tách đội. Viền ink (inverted hull) + tô 2 bậc.
-// Draw call: máy bay (3 chiếc gộp) + viền + ribbon + 1 Points + vành secret = 5. Mỗi frame chỉ đổi uniform/transform.
+// màu berry / honey / soda. 2 chiếc vẽ TRÁI TIM khổng lồ (từ mũi dưới lên khe trên, tốc độ đều), chiếc soda bắn
+// "mũi tên" có đầu chữ V + lông đuôi. Khói tim/mũi tên + màng tô bên trong = 1 quad trong mặt phẳng tim, vẽ bằng SDF
+// (secretJetHeart.ts): nét đều, viền mực/berry khử răng cưa, đường sáng bên trong kiểu sticker, thân phồng mây mịn,
+// tan từ mép vào trong ~15 s. Xong tim: đập nhẹ, màng tô hiện dần + tim mini bay lên. Hết màn, máy bay KHÔNG dừng:
+// tách đội vút đi tăng tốc tới ≥ 350 m (thu nhỏ dần theo khoảng cách camera trước mặt cắt xa) rồi mới ẩn.
+// Draw call: máy bay (3 chiếc gộp) + viền + quad tim + 1 Points + vành secret = 5. Mỗi frame chỉ đổi uniform/transform.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../../core/types';
@@ -12,35 +14,57 @@ import { type SecretAct, disposeTree, pxScale, seededRnd } from './secretShared'
 import { createSecretHalo } from './secretHalo';
 import { DRAGON_PTS_FRAG } from './secretDragonShaders';
 import { JET_GLSL } from './secretJetShaders';
+import {
+  ARROW_DIR, ARROW_SLOPE, ARROW_SPD, ARROW_U0, ARROW_U1, ARROW_V0, HEART_HALF_LEN, HEART_SPD, SDF_BOX, T_C0, T_HEART, T_MEET,
+  arrowTimeAtU, buildHeartSdf, heartAt,
+} from './secretJetHeart';
 
 const D = 24;
 const TILT = (50 * Math.PI) / 180;
 /** Tâm trái tim (điểm nhìn chính). */
 export const JET_HEART_CENTER = new THREE.Vector3(0, 48, -34);
-const K = 1.35; // tỉ lệ trái tim (đơn vị công thức → m)
 const EX = new THREE.Vector3(1, 0, 0);
 // mặt phẳng tim ngả về phía ca sĩ (pháp tuyến hướng xuống giữa ca sĩ và camera wide)
 const EY = new THREE.Vector3(0, Math.cos(TILT), Math.sin(TILT));
-const T_IN = 0, T_HEART = 2.6, T_MEET = 8.6, T_OUT = 11.2;
-const T_C0 = 3.4, T_C1 = 9.8; // mũi tên
+/** Pháp tuyến mặt phẳng tim, hướng về phía ca sĩ. */
+const EN = EX.clone().cross(EY);
+const T_IN = 0;
 const JET_COL = [PAL.berry[500], PAL.honey[500], PAL.soda[500]];
-const SMOKE_COL = [PAL.berry[300], PAL.berry[300], PAL.soda[300]];
-const SMOKE_EDGE = [PAL.berry[500], PAL.berry[500], PAL.soda[500]];
 const SMOKE_LIFE = 15;
 const JET_SCALE = 2.4;
 const OBJ_H = 2.6 * JET_SCALE;
+/** Máy bay ẩn khi đã cách gốc sân khấu quá mức này (m) — lúc đó đã ra khỏi khung nhìn / thu nhỏ hết. */
+const EXIT_R = 360;
 
-const heartPt = (tau: number, out: THREE.Vector3) => {
-  const x = 16 * Math.sin(tau) ** 3;
-  const y = 13 * Math.cos(tau) - 5 * Math.cos(2 * tau) - 2 * Math.cos(3 * tau) - Math.cos(4 * tau);
-  return out.copy(JET_HEART_CENTER).addScaledVector(EX, x * K).addScaledVector(EY, y * K);
-};
-const TIP = heartPt(Math.PI, new THREE.Vector3());
-const DIMPLE = heartPt(0, new THREE.Vector3());
+const plane = (u: number, v: number, out: THREE.Vector3) =>
+  out.copy(JET_HEART_CENTER).addScaledVector(EX, u).addScaledVector(EY, v);
+const hp = { u: 0, v: 0 };
+const TIP = plane(0, heartAt(0, 1, hp).v, new THREE.Vector3());
+const DIMPLE = plane(0, heartAt(HEART_HALF_LEN, 1, hp).v, new THREE.Vector3());
 const ease = (u: number) => u * u * (3 - 2 * u);
 const sm = (a: number, b: number, x: number) => ease(Math.min(1, Math.max(0, (x - a) / (b - a))));
 
-/** Vị trí jet i tại thời điểm t (giải tích). */
+// Đường thoát (tích phân sẵn): từ khe trên, đang lao xuống theo -EY, bẻ lái ra ngoài + lên cao + ra xa, tăng tốc.
+const EXIT_DT = 1 / 60, EXIT_N = 60 * 12;
+const EXIT_PATH = [0, 1].map((i) => {
+  const s = i === 0 ? 1 : -1;
+  const out = new Float32Array((EXIT_N + 1) * 3);
+  const pos = DIMPLE.clone(), v = new THREE.Vector3();
+  const d0 = EY.clone().negate();
+  const d1 = new THREE.Vector3(s * 0.78, 0.42, -0.46).normalize();
+  const dir = new THREE.Vector3();
+  for (let k = 0; k <= EXIT_N; k++) {
+    out.set([pos.x + EN.x * s * 0.6, pos.y + EN.y * s * 0.6, pos.z + EN.z * s * 0.6], k * 3);
+    const e = k * EXIT_DT;
+    dir.copy(d0).lerp(d1, sm(0, 1.3, e)).normalize();
+    const spd = Math.min(HEART_SPD + 38 * e, 85);
+    v.copy(dir).multiplyScalar(spd);
+    pos.addScaledVector(v, EXIT_DT);
+  }
+  return out;
+});
+
+/** Vị trí jet i tại thời điểm t (giải tích + bảng đường thoát). */
 function jetPos(i: number, t: number, out: THREE.Vector3): THREE.Vector3 {
   if (i < 2) {
     const s = i === 0 ? 1 : -1;
@@ -57,19 +81,22 @@ function jetPos(i: number, t: number, out: THREE.Vector3): THREE.Vector3 {
       );
     }
     if (t < T_MEET) {
-      const u = ease((t - T_HEART) / (T_MEET - T_HEART));
-      const tau = i === 0 ? Math.PI * (1 - u) : Math.PI * (1 + u);
-      return heartPt(tau, out);
+      heartAt((t - T_HEART) * HEART_SPD, s, hp);
+      return plane(hp.u, hp.v, out).addScaledVector(EN, s * 0.6 * sm(T_MEET - 1.5, T_MEET, t));
     }
-    // thoát: vút lên cao và ra xa phía khán đài đối diện
-    const u = Math.min(1, (t - T_MEET) / (T_OUT - T_MEET));
-    return out.set(DIMPLE.x + s * 45 * u * u, DIMPLE.y + 55 * u, DIMPLE.z - 90 * u);
+    const f = Math.min((t - T_MEET) / EXIT_DT, EXIT_N - 1e-3), k = Math.floor(f), w = f - k;
+    const P = EXIT_PATH[i]!;
+    return out.set(
+      P[k * 3]! + (P[k * 3 + 3]! - P[k * 3]!) * w,
+      P[k * 3 + 1]! + (P[k * 3 + 4]! - P[k * 3 + 1]!) * w,
+      P[k * 3 + 2]! + (P[k * 3 + 5]! - P[k * 3 + 2]!) * w,
+    );
   }
-  // mũi tên: thẳng từ trái (-X) sang phải (+X), xuyên tâm tim, lệch chút về phía ca sĩ
-  const u = (t - T_C0) / (T_C1 - T_C0);
-  return out.set(-150 + 300 * u, JET_HEART_CENTER.y - 30 + 60 * u, JET_HEART_CENTER.z + 3 - 6 * u);
+  // mũi tên: thẳng trong mặt phẳng tim, trái → phải, lệch 2 m về phía ca sĩ; bay đều tới khi ra khỏi sân xa
+  const a = (t - T_C0) * ARROW_SPD - 150 * Math.hypot(1, ARROW_SLOPE);
+  const u = a * ARROW_DIR.u;
+  return plane(u, ARROW_V0 + ARROW_SLOPE * u, out).addScaledVector(EN, 2);
 }
-const EMIT: [number, number][] = [[1.2, T_MEET + 0.4], [1.2, T_MEET + 0.4], [5.0, 8.4]];
 
 // ───────────── Máy bay đồ chơi (mũi +Z, đơn vị: đường kính thân = 2) ─────────────
 function buildJets(): THREE.BufferGeometry {
@@ -180,52 +207,30 @@ export function createJet(scene: THREE.Scene): SecretAct {
   root.visible = false;
   scene.add(root);
 
-  // ── Ribbon khói tĩnh cho cả 3 jet
-  const NSEG = 300;
-  const pos: number[] = [], tan: number[] = [], colA: number[] = [], colE: number[] = [], info: number[] = [], idx: number[] = [];
-  const p = new THREE.Vector3(), q = new THREE.Vector3(), tv = new THREE.Vector3();
-  for (let j = 0; j < 3; j++) {
-    const [t0, t1] = EMIT[j]!;
-    const ca = hexToRgb(SMOKE_COL[j]!), ce = hexToRgb(SMOKE_EDGE[j]!);
-    const base = pos.length / 3;
-    let arc = 0;
-    jetPos(j, t0, q);
-    for (let k = 0; k <= NSEG; k++) {
-      const te = t0 + ((t1 - t0) * k) / NSEG;
-      jetPos(j, te, p);
-      arc += p.distanceTo(q);
-      jetPos(j, te + 0.02, q);
-      tv.copy(q).sub(p).normalize();
-      for (const side of [-1, 1]) {
-        pos.push(p.x, p.y, p.z);
-        tan.push(tv.x, tv.y, tv.z);
-        colA.push(...ca);
-        colE.push(...ce);
-        info.push(te, side, j, arc);
-      }
-      q.copy(p);
-      if (k < NSEG) {
-        const a = base + k * 2;
-        idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-      }
-    }
-  }
-  const tGeo = new THREE.BufferGeometry();
-  tGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  tGeo.setAttribute('aTan', new THREE.Float32BufferAttribute(tan, 3));
-  tGeo.setAttribute('aCol', new THREE.Float32BufferAttribute(colA, 3));
-  tGeo.setAttribute('aEdge', new THREE.Float32BufferAttribute(colE, 3));
-  tGeo.setAttribute('aInfo', new THREE.Float32BufferAttribute(info, 4));
-  tGeo.setIndex(idx);
-  const heartU = { uHeart: { value: JET_HEART_CENTER.clone() }, uBeat: { value: 0 }, uDone: { value: 0 } };
-  const trailU = { uT: { value: 0 }, uLife: { value: SMOKE_LIFE }, ...heartU };
-  const trail = new THREE.Mesh(tGeo, new THREE.ShaderMaterial({
-    vertexShader: JET_GLSL.trailVert, fragmentShader: JET_GLSL.trailFrag, uniforms: trailU,
-    transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
-  }));
-  trail.frustumCulled = false;
-  trail.renderOrder = 5;
-  root.add(trail);
+  // ── Quad trái tim + mũi tên + màng tô (SDF) trong mặt phẳng tim
+  const sdf = buildHeartSdf();
+  const qGeo = new THREE.PlaneGeometry(SDF_BOX.u1 - SDF_BOX.u0, SDF_BOX.v1 - SDF_BOX.v0, 1, 1);
+  qGeo.translate((SDF_BOX.u0 + SDF_BOX.u1) / 2, (SDF_BOX.v0 + SDF_BOX.v1) / 2, 0);
+  const tArrowDone = arrowTimeAtU(ARROW_U1) + 0.3;
+  const heartU = {
+    uSdf: { value: sdf },
+    uBox: { value: new THREE.Vector4(SDF_BOX.u0, SDF_BOX.v0, SDF_BOX.u1 - SDF_BOX.u0, SDF_BOX.v1 - SDF_BOX.v0) },
+    uC: { value: JET_HEART_CENTER.clone() }, uEX: { value: EX.clone() }, uEY: { value: EY.clone() },
+    uScale: { value: 1 }, uDrift: { value: new THREE.Vector3() },
+    uT: { value: 0 },
+    uSpd: { value: new THREE.Vector4(HEART_SPD, ARROW_SPD, T_MEET, tArrowDone) },
+    uDiss: { value: new THREE.Vector2() },
+    uFill: { value: 0 }, uWob: { value: 0 },
+  };
+  const heartMat = new THREE.ShaderMaterial({
+    vertexShader: JET_GLSL.heartVert, fragmentShader: JET_GLSL.heartFrag, uniforms: heartU,
+    transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const heartQuad = new THREE.Mesh(qGeo, heartMat);
+  heartQuad.frustumCulled = false;
+  heartQuad.renderOrder = 5;
+  root.add(heartQuad);
+  const p = new THREE.Vector3(), q = new THREE.Vector3();
 
   // ── 3 máy bay gộp 1 geometry; ma trận từng chiếc qua uniform
   const uM = [0, 1, 2].map(() => new THREE.Matrix4());
@@ -256,15 +261,24 @@ export function createJet(scene: THREE.Scene): SecretAct {
   const pp = new Float32Array((NSTAR + NHEART) * 3), sd4 = new Float32Array((NSTAR + NHEART) * 4), pc = new Float32Array((NSTAR + NHEART) * 3);
   for (let i = 0; i < NSTAR; i++) {
     const j = i % 3;
-    const [t0, t1] = EMIT[j]!;
-    const te = t0 + rnd() * (t1 - t0);
-    jetPos(j, te, p);
+    let te: number;
+    if (j < 2) {
+      const a = rnd() * HEART_HALF_LEN;
+      te = T_HEART + a / HEART_SPD;
+      heartAt(a, j === 0 ? 1 : -1, hp);
+    } else {
+      const u = ARROW_U0 + rnd() * (ARROW_U1 - ARROW_U0);
+      te = arrowTimeAtU(u);
+      hp.u = u; hp.v = ARROW_V0 + ARROW_SLOPE * u;
+    }
+    plane(hp.u, hp.v, p);
     pp.set([p.x, p.y, p.z], i * 3);
     sd4.set([te, 0, rnd(), rnd()], i * 4);
     pc.set(hexToRgb(rnd() < 0.6 ? PAL.honey[500] : PAL.cream[100]), i * 3);
   }
   for (let i = 0; i < NHEART; i++) {
-    heartPt(rnd() * Math.PI * 2, p).lerp(JET_HEART_CENTER, 0.15 + rnd() * 0.5);
+    heartAt(rnd() * HEART_HALF_LEN, rnd() < 0.5 ? 1 : -1, hp);
+    plane(hp.u, hp.v, p).lerp(JET_HEART_CENTER, 0.15 + rnd() * 0.5);
     const k = NSTAR + i;
     pp.set([p.x, p.y, p.z], k * 3);
     sd4.set([T_MEET + 0.2 + rnd() * 5, 1, rnd(), rnd()], k * 4);
@@ -274,7 +288,7 @@ export function createJet(scene: THREE.Scene): SecretAct {
   pGeo.setAttribute('position', new THREE.BufferAttribute(pp, 3));
   pGeo.setAttribute('aSeed', new THREE.BufferAttribute(sd4, 4));
   pGeo.setAttribute('aColor', new THREE.BufferAttribute(pc, 3));
-  const ptsU = { uT: { value: 0 }, uPx: { value: 720 }, ...heartU };
+  const ptsU = { uT: { value: 0 }, uPx: { value: 720 }, uHeart: { value: JET_HEART_CENTER.clone() }, uBeat: { value: 0 }, uDone: { value: 0 } };
   const pts = new THREE.Points(pGeo, new THREE.ShaderMaterial({
     vertexShader: JET_GLSL.ptsVert, fragmentShader: DRAGON_PTS_FRAG, uniforms: ptsU,
     transparent: true, depthWrite: false, fog: false,
@@ -290,51 +304,63 @@ export function createJet(scene: THREE.Scene): SecretAct {
   const mtx = new THREE.Matrix4(), rq = new THREE.Quaternion(), sc = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   const UPV = new THREE.Vector3(0, 1, 0);
-  const HEART_UP = EY.clone().cross(EX).negate();
-  const visRange = (j: number, t: number) => (j < 2 ? t >= 0 && t <= T_OUT : t >= T_C0 && t <= T_C1);
-  const visStart = [0, 0, T_C0];
+  const HEART_UP = EN.clone();
+  const ZAX = new THREE.Vector3(0, 0, 1);
+  const tArrowStart = T_C0 - 4; // xuất phát ngoài xa (thu nhỏ theo khoảng cách) rồi bay vào
+  const visStart = [0, 0, tArrowStart];
 
   return {
     duration: D,
     start() { root.visible = true; },
     stop() { root.visible = false; },
     update(t: number, f: FrameState) {
-      trailU.uT.value = ptsU.uT.value = jetU.uT.value = t;
+      heartU.uT.value = ptsU.uT.value = jetU.uT.value = t;
       ptsU.uPx.value = jetU.uViewH.value = pxScale();
-      heartU.uBeat.value = f.beatPulse;
-      heartU.uDone.value = sm(T_MEET + 0.2, T_MEET + 1.2, t);
+      ptsU.uBeat.value = f.beatPulse;
+      const done = sm(T_MEET + 0.2, T_MEET + 1.2, t);
+      ptsU.uDone.value = done;
+      // tim xong: đập nhẹ theo phách; trôi nhẹ theo gió; tan từ mép vào
+      heartU.uScale.value = 1 + done * (0.018 * Math.sin(t * 6) + 0.015 * f.beatPulse);
+      const drift = Math.max(0, t - T_HEART);
+      heartU.uDrift.value.set(0.12 * drift, 0.05 * drift, 0);
+      heartU.uWob.value = sm(T_MEET, T_MEET + 10, t);
+      heartU.uDiss.value.set(sm(T_MEET + 7, T_MEET + SMOKE_LIFE - 0.8, t), sm(tArrowDone + 7.5, tArrowDone + 13.5, t));
+      heartU.uFill.value = sm(T_MEET + 0.3, T_MEET + 2.2, t) * (1 - sm(T_MEET + 6, T_MEET + 11, t));
       for (let j = 0; j < 3; j++) {
-        const vis = visRange(j, t);
+        jetPos(j, t, p);
+        const vis = t >= visStart[j]! && (j < 2 ? t < T_MEET + 1 || p.length() < EXIT_R : t < T_C0 || p.length() < EXIT_R);
         uVis[j] = vis ? 1 : 0;
         if (!vis) continue;
-        jetPos(j, t, p);
-        jetPos(j, t + 0.03, q);
-        fwd.copy(q).sub(p).normalize();
+        // hướng mũi theo vận tốc trung bình ±0,12 s → bẻ lái mượt, không giật
+        jetPos(j, t - 0.12, q);
+        jetPos(j, t + 0.12, fwd);
+        fwd.sub(q).normalize();
         // cánh vuông góc mặt phẳng tim khi đang vẽ; bay ngang thì giữ cánh ngang
-        h.copy(Math.abs(fwd.y) > 0.6 ? HEART_UP : UPV);
+        const inHeart = j < 2 && t > T_HEART - 0.3 && t < T_MEET + 0.6;
+        h.copy(inHeart ? HEART_UP : UPV);
         r.crossVectors(h, fwd);
         if (r.lengthSq() < 1e-6) r.set(1, 0, 0);
         r.normalize();
         u.crossVectors(fwd, r);
         mtx.makeBasis(r, u, fwd);
         quat.setFromRotationMatrix(mtx);
-        // roll: chào cánh khi qua sân · lộn vòng đồng bộ trước khi tách đội · mũi tên lộn khi ra
+        // roll: chào cánh khi qua sân · lộn vòng đồng bộ khi tách đội · mũi tên lộn khi ra
         let roll = 0;
         if (j < 2) {
           roll = Math.sin(t * 9) * 0.45 * sm(0.8, 1.2, t) * (1 - sm(1.9, 2.3, t));
-          roll += Math.PI * 2 * sm(T_MEET + 0.1, T_MEET + 1.4, t) * (j === 0 ? 1 : -1);
-        } else roll = Math.PI * 2 * sm(7.6, 8.8, t);
-        quat.multiply(rq.setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll));
-        // nhún nhảy đội hình
-        const bob = Math.sin(t * 3.2 + j * 1.7) * 0.45;
+          roll += Math.PI * 2 * sm(T_MEET + 0.3, T_MEET + 1.8, t) * (j === 0 ? 1 : -1);
+        } else roll = Math.PI * 2 * sm(arrowTimeAtU(ARROW_U1) + 0.6, arrowTimeAtU(ARROW_U1) + 1.8, t);
+        quat.multiply(rq.setFromAxisAngle(ZAX, roll));
+        // nhún nhảy đội hình (tắt khi đang vẽ để nét khói khớp đường bay)
+        const bob = Math.sin(t * 3.2 + j * 1.7) * 0.45 * (inHeart ? 0 : 1);
         p.addScaledVector(u, bob);
-        const pop = popScale(t - visStart[j]!);
-        const stretch = t < T_HEART && j < 2 ? 1.06 : 1;
+        const pop = j < 2 ? popScale(t - visStart[j]!) : 1;
+        const stretch = (t < T_HEART && j < 2) || (j < 2 && t > T_MEET + 0.5) ? 1.08 : 1;
         sc.set(pop, pop, pop * stretch).multiplyScalar(JET_SCALE);
         uM[j]!.compose(p, quat, sc);
         if (j === 0) halo.group.position.copy(p);
       }
-      const appear = sm(0.05, 0.5, t) * (1 - sm(T_OUT - 0.8, T_OUT, t));
+      const appear = sm(0.05, 0.5, t) * (1 - sm(T_MEET + 0.8, T_MEET + 2.2, t));
       halo.update(t, 2.4 * JET_SCALE, appear);
     },
     focus(t: number, out: THREE.Vector3) {
@@ -343,6 +369,7 @@ export function createJet(scene: THREE.Scene): SecretAct {
     },
     dispose() {
       halo.dispose();
+      sdf.dispose();
       disposeTree(root);
     },
   };

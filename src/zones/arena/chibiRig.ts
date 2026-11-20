@@ -180,7 +180,7 @@ void main() {
   vec3 v = normalize(cameraPosition - vWP);
   float ndl = dot(n, uKey);
   float lit = smoothstep(-0.09, 0.09, ndl);           // 2 bậc, ngưỡng mềm ~15%
-  vec3 c = mix(mix(vShade, vCol * 0.8, 0.3), vCol, lit);   // bóng 700 dịch tím, dịu 30% để tóc sáng không ngả đỏ
+  vec3 c = mix(vShade, vCol, lit);   // bóng: shadowOf (tối hơn, ngả lavender, không ngả đỏ/cam)
   float hi = smoothstep(0.985, 0.992, dot(n, normalize(uKey + v)));   // đốm highlight cố định
   c = mix(c, uHi, hi * uHiK * lit);
   float rim = smoothstep(0.62, 0.9, 1.0 - max(dot(n, v), 0.0));

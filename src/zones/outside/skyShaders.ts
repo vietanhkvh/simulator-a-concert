@@ -228,30 +228,34 @@ export const MET_FRAG = /* glsl */ `
 varying vec2 vQ; varying float vA; varying float vFlare; varying float vBr; varying float vT; varying float vSpin;
 ${SDF_STAR}
 void main(){
-  float L = vQ.x, Y = vQ.y;
+  float L = vQ.x, Y = vQ.y; // đơn vị = nửa rộng đầu sao; quad rộng ±3 để chứa quầng + lấp lánh
   float x = clamp(L / vT, 0.0, 1.0);
-  // ruy băng thon: kem → mật ong
-  float hw = 0.36 * pow(1.0 - x, 0.9) + 0.02;
-  float rib = smoothstep(hw + 0.05, hw - 0.05, abs(Y)) * step(0.0, L) * pow(1.0 - x, 1.1);
-  vec3 rc = mix(${v3(PAL.cream[100])}, ${v3(PAL.honey[300])}, smoothstep(0.0, 0.6, x));
-  // vài chấm lấp lánh
+  // ruy băng thon sạch: kem → mật ong đậm (màu thô, không giảm bão hoà để không ngả be-xám trên nền tối)
+  float hw = 0.42 * pow(1.0 - x, 0.85) + 0.03;
+  float tl = step(0.0, L) * pow(1.0 - x, 0.9);
+  float rib = smoothstep(hw + 0.07, hw - 0.07, abs(Y)) * tl;
+  float aura = exp(-pow(abs(Y) / (hw * 2.6 + 0.2), 2.0)) * step(0.0, L) * pow(1.0 - x, 1.4) * 0.38;
+  vec3 rc = mix(${v3(PAL.cream[100], true)}, ${v3(PAL.honey[500], true)}, smoothstep(0.0, 0.5, x));
+  // 3 ngôi sao lấp lánh 4 cánh nằm lệch khỏi trục đuôi — đủ to để thấy ở khoảng cách bình thường
   float sp = 0.0;
   for (int k = 0; k < 3; k++) {
     float fk = float(k);
-    vec2 c = vec2(vT * (0.28 + 0.22 * fk), (mod(fk, 2.0) - 0.5) * 0.9);
+    vec2 c = vec2(vT * (0.26 + 0.2 * fk), (fk < 1.5 ? (fk < 0.5 ? 1.5 : -1.4) : 0.95));
     vec2 dq = vec2(L, Y) - c;
-    float r = 0.17 * (1.0 - 0.2 * fk) * (0.8 + 0.4 * sin(vSpin * 1.7 + fk * 2.0));
-    sp += smoothstep(r, r * 0.3, length(dq)) * (1.0 - 0.25 * fk);
+    float r = 0.8 * (0.65 + 0.35 * sin(vSpin * 1.7 + fk * 2.0));
+    float core = exp(-dot(dq, dq) / (r * r * 0.3));
+    float cross = exp(-abs(dq.x) / (r * 1.7)) * exp(-abs(dq.y) / (r * 0.16)) + exp(-abs(dq.y) / (r * 1.7)) * exp(-abs(dq.x) / (r * 0.16));
+    sp += (core + 0.85 * cross) * (1.0 - 0.3 * fk) * step(0.0, L) * (1.0 - 0.6 * x);
   }
   // đầu ngôi sao tròn
   float c = cos(vSpin), s = sin(vSpin);
   vec2 q = vec2(c * L - s * Y, s * L + c * Y) * (1.0 - 0.25 * vFlare);
   float dd = sdStar5(q, 0.6, 0.55) - 0.12;
   float star = smoothstep(0.05, -0.05, dd);
-  float halo = exp(-max(dd, 0.0) * 10.0) * 0.3 * smoothstep(1.0, 0.7, abs(Y));
-  vec3 col = rc * rib * 0.8 + ${v3(PAL.honey[300])} * sp * 0.9;
-  vec3 sc = mix(${v3(PAL.honey[300])}, ${v3(PAL.cream[100])}, smoothstep(-0.05, -0.3, dd));
-  col = mix(col, sc, star) + ${v3(PAL.honey[500])} * halo * (1.0 - star);
+  float halo = exp(-max(dd, 0.0) * 8.0) * 0.4 * smoothstep(2.6, 1.2, abs(Y));
+  vec3 col = rc * rib * 1.05 + ${v3(PAL.honey[500], true)} * aura + ${v3(PAL.cream[100], true)} * min(sp, 1.4) * 0.9;
+  vec3 sc = mix(${v3(PAL.honey[300], true)}, ${v3(PAL.cream[100], true)}, smoothstep(-0.05, -0.3, dd));
+  col = mix(col, sc, star) + ${v3(PAL.honey[500], true)} * halo * (1.0 - star);
   float a = vA * min(vBr * (1.0 + 0.3 * vFlare), 1.0);
   gl_FragColor = vec4(col * a, 1.0);
 }`;
@@ -281,20 +285,20 @@ void main(){
     float cell = fract(u * 34.0) - 0.5;
     float r = mix(0.32, 0.12, u);
     float dot0 = smoothstep(r, r - 0.08, length(vec2(cell, (vUv2.y - 0.5) * 0.9)));
-    float a = dot0 * 0.45 * pow(1.0 - u, 1.3) * smoothstep(0.0, 0.03, u) * vA;
+    float a = dot0 * 0.55 * pow(1.0 - u, 1.3) * smoothstep(0.0, 0.03, u) * vA;
     if (a < 0.01) discard;
     gl_FragColor = vec4(${v3(PAL.soda[100])}, a);
     return;
   }
   vec3 n = normalize(vN);
   float lit = smoothstep(0.05, 0.25, n.y * 0.8 + 0.2);
-  vec3 col = mix(${v3(PAL.night[300])}, ${v3(PAL.night[100])}, lit);
+  vec3 col = mix(${v3(PAL.night[100])}, ${v3(PAL.grape[700], true)} * 1.1, lit);
   // viền sáng nhẹ phía trên (đọc được hình trên nền trời tối)
-  col += ${v3(PAL.grape[300])} * 0.18 * smoothstep(0.6, 0.95, n.y);
+  col += ${v3(PAL.grape[300])} * 0.34 * smoothstep(0.45, 0.95, n.y) + ${v3(PAL.cream[300])} * 0.07 * (1.0 - abs(n.y));
   if (vBody > 0.5) {
     float win = step(abs(vL.y - 0.25), 0.22) * step(abs(vL.x), 1.6) * step(0.5, abs(n.z));
     float w = smoothstep(0.35, 0.2, length(vec2(fract(vL.x * 1.4) - 0.5, (vL.y - 0.25) * 2.0)));
-    col = mix(col, ${v3(PAL.honey[300])} * 0.8, win * w);
+    col = mix(col, ${v3(PAL.honey[300], true)} * 0.95, win * w);
   }
   gl_FragColor = vec4(col, vA);
 }`;

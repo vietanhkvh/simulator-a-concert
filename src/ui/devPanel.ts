@@ -107,6 +107,7 @@ export function installDevLog(): void {
 // ───────────── Bật/tắt chế độ developer ─────────────
 const DEV_KEY = 'cs-dev';
 const POS_KEY = 'cs-dev-pos';
+const COLLAPSE_KEY = 'cs-dev-collapsed'; // '1' thu gọn, '0' mở; trống = lần đầu (mở ở dạng thu gọn)
 function lsGet(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k: string, v: string | null): void {
   try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* ignore */ }
@@ -144,14 +145,40 @@ const isTyping = (t: EventTarget | null) => {
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const midiName = (m: number) => `${NOTE_NAMES[((Math.round(m) % 12) + 12) % 12]}${Math.floor(Math.round(m) / 12) - 1}`;
-const SECRET_LABEL: Record<string, string> = { ufo: 'UFO', rocket: 'Tên lửa', dragon: 'Rồng', jet: 'Máy bay phản lực' };
+const SECRET_LABEL: Record<string, string> = { ufo: 'UFO', rocket: 'Tên lửa', dragon: 'Rồng', jet: 'Máy bay phản lực', plane: 'Máy bay' };
 const ENTRANCE_LABEL: Record<DevEntrance, string> = { jump: 'Nhảy trực thăng', lift: 'Bục nâng', cable: 'Thả cáp' };
 const ZONE_LABEL: Record<DevZone, string> = { outside: 'Ngoài sân', stands: 'Khán đài', arena: 'Sân trung tâm', glow: 'Điểm sáng chung' };
-/** Module có trong bản thiết kế nhưng không tách lớp riêng được nếu không sửa module. */
+/** Còn chưa bật/tắt riêng được (lý do kèm theo). Cực quang, sao, sao băng, khán giả chấm sáng ở khán đài, laser, sự kiện bí mật đã có lớp riêng. */
 export const DEV_NOT_TOGGLEABLE = [
-  'aurora (nằm trong sky)', 'lasers (nằm trong stageFx)', 'sao + khán giả chấm sáng (một draw call chung "glow")',
-  'vật thể tạo muộn (pháo hoa/sự kiện bí mật tạo khi chạy)',
+  'đèn nhà / đèn pha khán đài / đèn hàng không (chung một draw call "glow": chỉ tắt cả cụm bằng "Điểm sáng chung")',
+  'cường độ cực quang / ánh sáng khán giả theo Hype (uniform trong shader dùng chung, chỉ ẩn cả lớp)',
 ];
+
+// Điều khiển camera mới của khu sân trung tâm lộ qua window.__csControls (có thể chưa có → nút bị vô hiệu).
+type CsControls = Record<string, unknown>;
+const csControls = (): CsControls | null => (window as unknown as { __csControls?: CsControls }).__csControls ?? null;
+const csFn = (names: string[]): ((...a: unknown[]) => unknown) | null => {
+  const c = csControls();
+  if (!c) return null;
+  for (const n of names) if (typeof c[n] === 'function') return (c[n] as (...a: unknown[]) => unknown).bind(c);
+  return null;
+};
+const RESET_FN = ['resetViewOffsets', 'resetView'];
+const FLY_SET = ['setFreeFly', 'setFlycam', 'setFreeCam', 'setDrone'];
+const FLY_GET = ['isFreeFly', 'isFlycam', 'isFreeCam', 'isDrone'];
+const FLY_TOGGLE = ['toggleFreeFly', 'toggleFlycam', 'toggleFreeCam', 'toggleDrone'];
+function csFreeFly(): boolean {
+  const get = csFn(FLY_GET), set = csFn(FLY_SET), tog = csFn(FLY_TOGGLE);
+  if (set && get) { set(!get()); return true; }
+  if (tog) { tog(); return true; }
+  return false;
+}
+function csResetView(): boolean {
+  const f = csFn(RESET_FN);
+  if (!f) return false;
+  f();
+  return true;
+}
 
 export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
   let enabled = false;
@@ -219,7 +246,7 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
       <label class="cs-dev-row">Băng rôn <input type="text" class="cs-dev-banner" placeholder="khẩu hiệu; cách nhau bằng |">${btn('data-act="banner"', 'Đặt')}</label>`)}
     ${sec('cam', 'Camera', `
       <div class="cs-dev-btns">${host.views().map((v) => btn(`data-view="${v.id}"`, v.label)).join('')}
-        ${btn('data-act="look"', 'Chuột tự do')}</div>
+        ${btn('data-act="look"', 'Chuột tự do')}${btn('data-act="csfly"', 'Flycam bay tự do (G)')}${btn('data-act="csreset"', 'Đặt lại góc máy (0)')}</div>
       <div class="cs-dev-btns">${host.teleportTargets().map((t) => btn(`data-tp="${t}"`, `⇢ ${t}`)).join('')}</div>
       <label class="cs-dev-row">Độ nhạy nhìn <input type="range" class="cs-dev-look" min="3" max="200" step="1"><span class="cs-dev-lookv"></span></label>
       <label class="cs-dev-chk"><input type="checkbox" class="cs-dev-fly"> Camera bay tự do (WASD, Q/E lên xuống, kéo chuột nhìn, Shift nhanh)</label>`)}
@@ -360,6 +387,16 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
     applyFly();
   };
 
+  // Thu gọn: nhớ trong localStorage; lần đầu mở ở dạng thu gọn để không che HUD / thẻ ở sảnh.
+  const collapseBtn = q<HTMLButtonElement>('[data-act="collapse"]');
+  const setCollapsed = (on: boolean, remember = true) => {
+    el.classList.toggle('collapsed', on);
+    collapseBtn.textContent = on ? '+' : '–';
+    collapseBtn.title = on ? 'Mở rộng' : 'Thu gọn';
+    if (remember) lsSet(COLLAPSE_KEY, on ? '1' : '0');
+  };
+  setCollapsed(lsGet(COLLAPSE_KEY) !== '0', false);
+
   // ── Bấm nút ──
   el.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
@@ -368,7 +405,7 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
     b.blur(); // để Space/Enter không bấm lại nút
     if (d.act) {
       switch (d.act) {
-        case 'collapse': el.classList.toggle('collapsed'); break;
+        case 'collapse': setCollapsed(!el.classList.contains('collapsed')); break;
         case 'close': hide(); break;
         case 'copy': void navigator.clipboard?.writeText(JSON.stringify(stats(), null, 2)).catch(() => {}); break;
         case 'instant': host.startInstant(); break;
@@ -385,6 +422,13 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
         case 'flyby': host.flyby(); break;
         case 'meteors': host.meteors(12); break;
         case 'banner': host.banners(q<HTMLInputElement>('.cs-dev-banner').value.split('|').map((s) => s.trim()).filter(Boolean)); break;
+        case 'csfly': { // flycam chỉ bay tự do được ở góc 'flycam': chuyển góc máy trước
+          const gm = csFn(['getViewMode']);
+          if (gm && gm() !== 'flycam') host.setView('flycam');
+          csFreeFly();
+          break;
+        }
+        case 'csreset': csResetView(); break;
         case 'look': host.setMouseLook(!host.isMouseLook()); break;
         case 'clearlog': log.length = 0; errors.length = 0; renderLog(); break;
       }
@@ -432,7 +476,11 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
   });
   try {
     const p = JSON.parse(lsGet(POS_KEY) ?? 'null') as { x: string; y: string } | null;
-    if (p?.x && p?.y) { el.style.left = p.x; el.style.top = p.y; }
+    if (p?.x && p?.y) {
+      // Giữ trong khung nhìn (cửa sổ có thể đã nhỏ hơn lần trước).
+      el.style.left = `${Math.max(0, Math.min(window.innerWidth - 60, parseFloat(p.x) || 0))}px`;
+      el.style.top = `${Math.max(0, Math.min(window.innerHeight - 30, parseFloat(p.y) || 0))}px`;
+    }
   } catch { /* ignore */ }
 
   // ── Nhật ký ──
@@ -490,6 +538,8 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
     const qv = host.getCrowdQuality();
     if (qv !== null && document.activeElement !== quality) { quality.value = String(Math.round(qv * 100)); qualityV.textContent = `${Math.round(qv * 100)}%`; }
     if (hlock.checked !== (host.getHypeLock() !== null)) hlock.checked = host.getHypeLock() !== null;
+    q<HTMLButtonElement>('[data-act="csfly"]').disabled = !((csFn(FLY_SET) && csFn(FLY_GET)) || csFn(FLY_TOGGLE));
+    q<HTMLButtonElement>('[data-act="csreset"]').disabled = !csFn(RESET_FN);
     for (const b of el.querySelectorAll<HTMLButtonElement>('[data-view]')) b.classList.toggle('on', b.dataset.view === s.view);
   }
 
@@ -535,6 +585,7 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
     isFreeFly: () => flyState.on,
     show, hide, toggle: () => (visible ? hide() : show()), enable, disable,
     notToggleable: DEV_NOT_TOGGLEABLE,
+    csFreeFly, csResetView,
   };
   if (startEnabled) { enable(); show(); }
   return {

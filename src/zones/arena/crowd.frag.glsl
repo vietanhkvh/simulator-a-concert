@@ -116,8 +116,17 @@ float sph(vec2 n, vec3 l) {
 }
 
 // Bậc bóng: tối hơn, dịch về tím (grape-700), không bao giờ đen.
+// Giống palette.shadowOf: tối đều (giữ tỉ lệ kênh → không ngả cam/đỏ), rồi phủ nhẹ lavender cùng độ sáng.
 vec3 shadowOf(vec3 c) {
-  return mix(c * vec3(0.62, 0.56, 0.8), uShadowTint, 0.2) + vec3(0.02, 0.012, 0.05);
+  vec3 d = c * 0.72;
+  const vec3 LUM = vec3(0.3, 0.59, 0.11);
+  vec3 lav = min(uShadowTint * (dot(d, LUM) / max(dot(uShadowTint, LUM), 1e-3)), vec3(1.0));
+  return mix(d, lav, 0.24) + vec3(0.015, 0.01, 0.04);
+}
+// Hợp mềm (iq) — gộp tay + bàn tay để viền ink chỉ chạy quanh bóng ngoài.
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
 }
 
 // Vùng tóc (x) và phụ kiện mũ / nơ (y) trong hệ đầu chuẩn hóa (bán kính đầu = 1). back = 1 → nhìn từ sau.
@@ -215,6 +224,16 @@ void main() {
   float head = 0.0;
   bool hit = false;
 
+  // Tay + bàn tay (dùng chung cho lớp 4 và để bàn tay nằm đè lên cán que).
+  float dH1 = length(p - hand) - 0.065 * u;
+  float dH2 = length(p - hand2) - 0.065 * u;
+  float dHands = min(dH1, dH2);
+  float dA1 = sdCapsule(p, sh1, hand, 0.052 * u);
+  float dA2 = sdCapsule(p, sh2, hand2, 0.052 * u);
+  // Bóng ngoài của cả cánh tay (vai → bàn tay), hợp mềm: không còn vòng ink chỗ cổ tay.
+  float kArm = 0.03 * u;
+  float dLimb = min(smin(dA1, dH1, kArm), smin(dA2, dH2, kArm));
+
   // ── Lớp 5 (trước nhất): lightstick (que + đầu sao / tim) hoặc điện thoại.
   vec2 sPerp = vec2(sDir.y, -sDir.x);
   vec3 stickC = vStickColV.rgb;
@@ -233,23 +252,22 @@ void main() {
       hit = true; dl = dHd; alb = stickC; emissive = 1.0;
       // Đốm highlight kem trên đầu que.
       alb = mix(alb, uCreamHi, 0.55 * (1.0 - smoothstep(0.16, 0.24, length(sl - vec2(-0.3, 0.35)))));
-    } else if (dWand < 0.0) {
+    } else if (dWand < 0.0 && dHands > 0.0) {
+      // Cán que: bàn tay nắm phía trước cán (không vẽ cán / viền cán đè lên bàn tay).
       hit = true; dl = dWand; alb = uCream; ndl = 0.5;
     }
   }
 
   // ── Lớp 4: tay 1 đoạn + bàn tay tròn.
   if (!hit) {
-    float dH1 = length(p - hand) - 0.065 * u;
-    float dH2 = length(p - hand2) - 0.065 * u;
-    float dHands = min(dH1, dH2);
     if (dHands < 0.0) {
-      hit = true; dl = dHands; alb = vSkinV.rgb;
+      // dl = bóng gộp tay+bàn tay → viền chỉ ở mép ngoài, đường nối cổ tay không bị khoanh tròn.
+      hit = true; dl = min(dLimb, dHands); alb = vSkinV.rgb;
       vec2 hcN = dH1 < dH2 ? hand : hand2;
       ndl = sph((p - hcN) / (0.065 * u), L3);
     } else {
-      float dArm = min(sdCapsule(p, sh1, hand, 0.052 * u), sdCapsule(p, sh2, hand2, 0.052 * u));
-      if (dArm < 0.0) { hit = true; dl = dArm; alb = vClothV.rgb; ndl = 0.3; }
+      float dArm = min(dA1, dA2);
+      if (dArm < 0.0 || dLimb < 0.0) { hit = true; dl = dLimb; alb = vClothV.rgb; ndl = 0.3; }
     }
   }
 
@@ -398,14 +416,17 @@ void main() {
   vec2 q = vMetric;
   float s = vGlowScale;
   if (vPhone > 0.5) {
-    // Đèn flash điện thoại (cream): lõi nhỏ + quầng mềm.
+    // Điện thoại giơ cao: màn hình kem bo góc phát sáng (~10×16 cm, to dần theo khoảng cách để còn đọc được)
+    // + quầng mềm. Quầng chia theo diện tích (ss²) → biển flash xa không cháy trắng.
     float ss = 0.6 + 0.4 * s;
-    float r = length(q) / ss;
-    float pcore = 1.0 - smoothstep(0.022, 0.042, r);
-    float halo = exp(-r * 16.0) * 0.55 + exp(-r * 6.0) * 0.12;
+    vec2 qq = q / ss;
+    float dR = sdRoundBox(qq, vec2(0.05, 0.08), 0.028);
+    float pcore = 1.0 - smoothstep(-0.004, 0.01, dR);
+    float dd = max(dR, 0.0);
+    float halo = (exp(-dd * 26.0) * 0.5 + exp(-dd * 9.0) * 0.14) / (ss * ss);
     vec2 pe = abs(vUv - vec2(0.5)) * 2.0;
     float pedge = 1.0 - smoothstep(0.75, 1.0, max(pe.x, pe.y));
-    vec3 pc = vColor * (pcore * 1.6 + halo) * pedge;
+    vec3 pc = vColor * (pcore * mix(1.15, 0.8, clamp(s - 1.0, 0.0, 1.0)) + halo * (1.0 - pcore)) * pedge;
     pc *= 1.0 - 0.7 * fogAmount();
     gl_FragColor = vec4(pc, 1.0);
     return;

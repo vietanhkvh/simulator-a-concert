@@ -44,11 +44,25 @@ describe('palette', () => {
     for (const c of inputs) {
       const o = shadowOf(c);
       expect(lum(o)).toBeGreaterThanOrEqual(lum(PAL.night[700]));
-      expect(rgbToHsl(hexToRgb(o))[1]).toBeGreaterThanOrEqual(rgbToHsl(hexToRgb(c))[1] - 0.02);
+      // "không xám hơn" đo bằng HSV-S (sắc độ / độ sáng). HSL-S cũ buộc màu nhạt (kem, tóc vàng) thành cam rực trong bóng.
+      expect(hsvS(o)).toBeGreaterThanOrEqual(hsvS(c) - 0.02);
     }
     expect(lum(shadowOf(PAL.peach[500]))).toBeLessThan(lum(PAL.peach[500]));
+    // màu ấm không bị xoay về đỏ / cam (lỗi "mật ong → đỏ", "tóc vàng ngả cam"); màu lạnh / hồng ngả về tím.
+    const hue = (x: number) => rgbToHsl(hexToRgb(x))[0];
+    const towardRed = (c: number) => { const d = ((hue(c) - hue(shadowOf(c)) + 540) % 360) - 180; return d; };
+    for (const c of [PAL.honey[500], PAL.honey[700], PAL.peach[500]]) expect(towardRed(c)).toBeLessThan(6);
+    // màu nhạt: bóng ngả lavender (xanh tím tăng so với đỏ), không ngả cam
+    const br = (x: number) => { const v = hexToRgb(x); return v[2] / Math.max(v[0], 1e-3); };
+    for (const c of [PAL.honey[300], PAL.cream[500], PAL.cream[300], 0xf6e0a8]) expect(br(shadowOf(c))).toBeGreaterThanOrEqual(br(c) - 0.005);
+    for (const c of [PAL.soda[500], PAL.mint[500]]) expect(hue(shadowOf(c))).toBeGreaterThan(hue(c));
+    // L ≈ 0,72 × gốc
+    const L = (x: number) => rgbToHsl(hexToRgb(x))[2];
+    expect(L(shadowOf(PAL.honey[500])) / L(PAL.honey[500])).toBeCloseTo(0.72, 1);
   });
 });
+
+function hsvS(x: number): number { const c = hexToRgb(x); const mx = Math.max(...c), mn = Math.min(...c); return mx > 0 ? (mx - mn) / mx : 0; }
 
 describe('form', () => {
   it('popScale curve', () => {

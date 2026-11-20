@@ -1,4 +1,7 @@
-// GLSL cho rồng chibi (secretDragon.ts). Đường bay = DataTexture, thân tham số hoá theo khoảng cách s sau đầu.
+// GLSL cho ĐÔI rồng chibi (secretDragon.ts). Đường bay = DataTexture (4 hàng: [vị trí A, up A, vị trí B, up B]);
+// up đã được "vận chuyển song song" + nghiêng (bank) giới hạn ±35° trên CPU ⇒ đầu/thân không bao giờ lộn ngược.
+// Thân tham số hoá theo khoảng cách s sau đầu; id rồng (0/1) đi theo instance.
+// Defines từ TS: SC (tỉ lệ, float), NSF (số mẫu − 1, float), NSEG, LEG1, LEG2, NSLOT.
 import { PAL, hexToRgb } from '../../world/style';
 
 const g3 = (hex: number) => `vec3(${hexToRgb(hex).map((x) => x.toFixed(4)).join(', ')})`;
@@ -7,58 +10,58 @@ const COMMON = /* glsl */ `
 uniform sampler2D uPath;
 uniform float uLen;
 uniform float uSpeed;
-uniform float uLoopD;
 uniform float uLb;
 uniform float uT;
 uniform float uPop;
-float sm01(float a, float b, float x) { return smoothstep(a, b, x); }
-vec3 pathAt(float d) {
-  float x = clamp(d / uLen, 0.0, 1.0) * 511.0;
+vec3 rowAt(int row, float d) {
+  float x = clamp(d / uLen, 0.0, 1.0) * NSF;
   int a = int(floor(x));
-  int b = min(a + 1, 511);
-  return mix(texelFetch(uPath, ivec2(a, 0), 0).xyz, texelFetch(uPath, ivec2(b, 0), 0).xyz, fract(x));
+  int b = min(a + 1, int(NSF));
+  return mix(texelFetch(uPath, ivec2(a, row), 0).xyz, texelFetch(uPath, ivec2(b, row), 0).xyz, fract(x));
 }
-void pathFrame(float d, out vec3 T, out vec3 sd, out vec3 up) {
-  T = normalize(pathAt(d + 1.0) - pathAt(d - 1.0) + vec3(1e-4, 0.0, 0.0));
-  sd = normalize(cross(vec3(0.0, 1.0, 0.0), T) + vec3(0.0, 0.0, 1e-4));
+vec3 pathAt(float id, float d) { return rowAt(int(id + 0.5) * 2, d); }
+vec3 upAt(float id, float d) { return rowAt(int(id + 0.5) * 2 + 1, d); }
+void pathFrame(float id, float d, out vec3 T, out vec3 sd, out vec3 up) {
+  T = normalize(pathAt(id, d + 1.0) - pathAt(id, d - 1.0) + vec3(1e-4, 0.0, 0.0));
+  up = upAt(id, d);
+  sd = normalize(cross(up, T) + vec3(0.0, 0.0, 1e-5));
   up = cross(T, sd);
 }
 float radAt(float s) {
-  return 1.3 * (0.8 + 0.2 * smoothstep(0.0, 3.0, s)) * (1.0 - 0.66 * smoothstep(uLb * 0.3, uLb, s));
+  return SC * 1.3 * (0.8 + 0.2 * smoothstep(0.0, 3.0 * SC, s)) * (1.0 - 0.66 * smoothstep(uLb * 0.3, uLb, s));
 }
-vec3 bodyPos(float s, float t) {
+vec3 bodyPos(float id, float s, float t) {
   float d = uSpeed * t - s;
   vec3 T, sd, up;
-  pathFrame(d, T, sd, up);
-  float env = 0.25 + 0.75 * smoothstep(0.0, 6.0, s);
-  float ph = s * 0.42 - t * 4.2;
-  vec3 p = pathAt(d) + sd * sin(ph) * 1.6 * env + up * cos(ph * 0.7 + 1.0) * 0.9 * env;
-  float u = clamp((d - uLoopD) / 18.0, 0.0, 1.0);
-  float th = 6.2831853 * u * u * (3.0 - 2.0 * u);
-  return p - T * 5.5 * sin(th) + up * 5.5 * (1.0 - cos(th));
+  pathFrame(id, d, T, sd, up);
+  float env = 0.25 + 0.75 * smoothstep(0.0, 6.0 * SC, s);
+  float ph = s * 0.42 / SC - t * 4.2 + id * 1.9;
+  return pathAt(id, d) + (sd * sin(ph) * 1.6 + up * cos(ph * 0.7 + 1.0) * 0.9) * SC * env;
 }
-void frameAt(float s, float t, out vec3 P, out vec3 T, out vec3 sd, out vec3 up) {
-  P = bodyPos(s, t);
-  T = normalize(bodyPos(s - 0.5, t) - bodyPos(s + 0.5, t) + vec3(1e-5, 0.0, 0.0));
-  vec3 pT, psd, pup;
-  pathFrame(uSpeed * t - s, pT, psd, pup);
-  sd = normalize(cross(vec3(0.0, 1.0, 0.0), pT) + vec3(0.0, 0.0, 1e-4));
+void frameAt(float id, float s, float t, out vec3 P, out vec3 T, out vec3 sd, out vec3 up) {
+  P = bodyPos(id, s, t);
+  T = normalize(bodyPos(id, s - 0.5, t) - bodyPos(id, s + 0.5, t) + vec3(1e-5, 0.0, 0.0));
+  vec3 u0 = upAt(id, uSpeed * t - s);
+  sd = normalize(cross(u0, T) + vec3(0.0, 0.0, 1e-5));
   up = normalize(cross(T, sd));
-  sd = normalize(cross(up, T));
 }
 `;
 
 const VERT = /* glsl */ `
 ${COMMON}
 uniform float uViewH;
-uniform float uMouth;
-uniform float uBlink;
+uniform vec2 uMouth;
+uniform vec2 uBlink;
 uniform float uOutW;
 uniform float uObjH;
+#ifdef HEAD
+uniform mat4 uHeadM[2];
+attribute float aId;
+#endif
 attribute vec4 aC;
 attribute vec4 aS;
 #ifdef BODY
-attribute vec2 aInst;
+attribute vec3 aInst;
 #endif
 varying vec3 vN;
 varying vec3 vW;
@@ -66,6 +69,7 @@ varying vec3 vLN;
 varying vec4 vS;
 varying float vSeg;
 varying float vKind;
+varying float vId;
 void main() {
   vec3 l = position;
   vec3 n = normal;
@@ -74,13 +78,14 @@ void main() {
 #ifdef BODY
   float s = aInst.x;
   float k = aInst.y;
+  float id = aInst.z;
   float part = aS.y;
   float r = radAt(s) * uPop;
   if (part > 0.5 && part < 1.5) show = (mod(k, 2.0) < 0.5 && k > 0.5 && k < float(NSEG) - 3.5) ? 1.0 : 0.0;
   else if (part > 1.5 && part < 3.5) {
     show = (abs(k - float(LEG1)) < 0.5 || abs(k - float(LEG2)) < 0.5) ? 1.0 : 0.0;
     float side = sign(aC.x);
-    float a = sin(uT * 7.0 + k * 0.7 + side * 1.6) * 0.55;
+    float a = sin(uT * 7.0 + k * 0.7 + side * 1.6 + id * 2.0) * 0.55;
     float c = cos(a), sn = sin(a);
     vec3 q = l - aC.xyz;
     q.yz = vec2(c * q.y - sn * q.z, sn * q.y + c * q.z);
@@ -90,45 +95,51 @@ void main() {
   if (part > 0.5 && part < 1.5) l.z += sin(uT * 5.0 - k * 0.6) * 0.08 * l.y;
   l *= show;
   if (part > 3.5) {
-    l *= uPop * 0.95;
-    l.x += sin(uT * 4.0 + l.z) * 0.12 * l.z;
+    l *= uPop * 0.95 * SC;
+    l.x += sin(uT * 4.0 + l.z / SC + id) * 0.12 * l.z;
   } else l *= r;
   float d = uSpeed * uT - s;
-  vec3 c0 = pathAt(d);
-  float turn = length(normalize(pathAt(d + 4.0) - c0) - normalize(c0 - pathAt(d - 4.0)));
+  vec3 c0 = pathAt(id, d);
+  float turn = length(normalize(pathAt(id, d + 4.0 * SC) - c0) - normalize(c0 - pathAt(id, d - 4.0 * SC)));
   float sq = min(0.2, turn * 0.3);
   l.z *= 1.0 - sq;
   l.xy *= 1.0 + sq * 0.5;
   vec3 P, T, sd, up;
-  frameAt(s, uT, P, T, sd, up);
+  frameAt(id, s, uT, P, T, sd, up);
   vec3 w = P + sd * l.x + up * l.y + T * l.z;
   vec3 N = normalize(sd * n.x + up * n.y + T * n.z);
-  vSeg = s - l.z;
+  vSeg = (s - l.z) / SC;
+  float mouth = 0.0;
 #else
+  float id = aId;
+  bool b1 = id > 0.5;
+  float blink = b1 ? uBlink.y : uBlink.x;
+  float mouth = b1 ? uMouth.y : uMouth.x;
+  mat4 M = b1 ? uHeadM[1] : uHeadM[0];
   vec3 cc = aC.xyz;
-  if (kind > 0.5 && kind < 1.5) l.y = cc.y + (l.y - cc.y) * (1.0 - 0.9 * uBlink);
-  else if (kind > 1.5 && kind < 2.5) l = cc + (l - cc) * max(uMouth, 0.001);
+  if (kind > 0.5 && kind < 1.5) l.y = cc.y + (l.y - cc.y) * (1.0 - 0.9 * blink);
+  else if (kind > 1.5 && kind < 2.5) l = cc + (l - cc) * max(mouth, 0.001);
   else if (kind > 2.5 && kind < 3.5) {
     float side = sign(cc.x);
-    float a = (sin(uT * 4.0 + side) * 0.22 + 0.1) * side;
+    float a = (sin(uT * 4.0 + side + id * 1.3) * 0.22 + 0.1) * side;
     vec3 q = l - cc;
     float c = cos(a), sn = sin(a);
     q.xy = vec2(c * q.x - sn * q.y, sn * q.x + c * q.y);
     l = cc + q;
   } else if (kind > 3.5 && kind < 4.5) {
     float dd = length(l - cc);
-    l.y += sin(uT * 5.0 - dd * 2.2) * 0.16 * dd;
+    l.y += sin(uT * 5.0 - dd * 2.2 + id) * 0.16 * dd;
     l.z += cos(uT * 4.0 - dd * 2.0) * 0.08 * dd;
-  } else if (kind > 4.5) l.y += sin(uT * 3.0) * 0.12;
-  vec3 w = (modelMatrix * vec4(l, 1.0)).xyz;
-  vec3 N = normalize(mat3(modelMatrix) * n);
+  } else if (kind > 4.5) l.y += sin(uT * 3.0 + id * 1.5) * 0.12;
+  vec3 w = (M * vec4(l, 1.0)).xyz;
+  vec3 N = normalize(mat3(M) * n);
   vSeg = 0.0;
 #endif
 #ifdef HULL
   vec4 mv0 = viewMatrix * vec4(w, 1.0);
   float pix = 2.0 * max(-mv0.z, 0.1) / (projectionMatrix[1][1] * uViewH);
   float ow = clamp(uOutW, 1.5 * pix, 3.0 * pix) * step(24.0, uObjH / pix) * show;
-  if (kind > 1.5 && kind < 2.5) ow *= uMouth;
+  if (kind > 1.5 && kind < 2.5) ow *= mouth;
   w += N * ow;
 #endif
   vN = N;
@@ -136,26 +147,28 @@ void main() {
   vLN = n;
   vS = aS;
   vKind = kind;
+  vId = id;
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 
 const FRAG = /* glsl */ `
 uniform float uT;
 uniform float uPulse;
-uniform vec3 uCol[11];
-uniform vec3 uSh[11];
+uniform vec3 uCol[NSLOT * 2];
+uniform vec3 uSh[NSLOT * 2];
 uniform vec3 uRimC;
 uniform vec3 uInk;
 uniform vec3 uCore;
 uniform vec3 uRimS;
-uniform vec2 uLook;
-uniform float uBlink;
+uniform vec4 uLook;
+uniform vec2 uBlink;
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vLN;
 varying vec4 vS;
 varying float vSeg;
 varying float vKind;
+varying float vId;
 const vec3 L = normalize(vec3(0.35, 0.85, 0.4));
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 toy(vec3 base, vec3 sh, vec3 n, vec3 v) {
@@ -174,9 +187,10 @@ void main() {
   vec3 n = normalize(vN);
   vec3 v = normalize(cameraPosition - vW);
   if (!gl_FrontFacing) n = -n;
+  int o = vId > 0.5 ? NSLOT : 0;
   int slot = int(vS.x + 0.5);
-  vec3 base = uCol[slot];
-  vec3 sh = uSh[slot];
+  vec3 base = uCol[slot + o];
+  vec3 sh = uSh[slot + o];
   vec3 c;
 #ifdef BODY
   if (vS.y < 0.5) {
@@ -193,31 +207,31 @@ void main() {
     vec2 id = floor(g2);
     vec2 c2 = fract(g2) - 0.5 - (vec2(hash(id + 3.1), hash(id + 7.7)) - 0.5) * 0.3;
     float spot = step(0.42, hash(id)) * (1.0 - smoothstep(0.2, 0.25, length(c2 * vec2(1.0, 1.2)))) * smoothstep(-0.2, 0.05, ln.y);
-    base = mix(base, uCol[2], spot);
-    sh = mix(sh, uSh[2], spot);
+    base = mix(base, uCol[2 + o], spot);
+    sh = mix(sh, uSh[2 + o], spot);
     // bụng kem có vạch
     float belly = smoothstep(-0.32, -0.5, ln.y);
     float line = 1.0 - smoothstep(0.05, 0.1, abs(fract(vSeg * 1.4) - 0.5));
-    base = mix(base, mix(uCol[1], uSh[1], line * 0.6), belly);
-    sh = mix(sh, mix(uSh[1], uCol[1], 0.5), belly);
+    base = mix(base, mix(uCol[1 + o], uSh[1 + o], line * 0.6), belly);
+    sh = mix(sh, mix(uSh[1 + o], uCol[1 + o], 0.5), belly);
   }
   c = toy(base, sh, n, v);
 #else
   if (vKind > 0.5 && vKind < 1.5) {
     // mắt: lòng trắng kem, tròng to, đồng tử, 2 đốm sáng
-    vec2 e = vS.zw - uLook;
+    vec2 e = vS.zw - (vId > 0.5 ? uLook.zw : uLook.xy);
     float di = length(e * vec2(1.0, 0.92));
-    vec3 iris = mix(uCol[7], ${g3(PAL.grape[500])}, smoothstep(0.0, -0.7, e.y) * 0.75);
-    c = mix(uCol[10], iris, 1.0 - smoothstep(0.7, 0.74, di));
+    vec3 iris = mix(uCol[7 + o], ${g3(PAL.grape[500])}, smoothstep(0.0, -0.7, e.y) * 0.75);
+    c = mix(uCol[10 + o], iris, 1.0 - smoothstep(0.7, 0.74, di));
     c = mix(c, ${g3(PAL.night[700])}, 1.0 - smoothstep(0.34, 0.38, length(e)));
     float h1 = 1.0 - smoothstep(0.17, 0.2, length(e - vec2(-0.24, 0.27)));
     float h2 = 1.0 - smoothstep(0.08, 0.1, length(e - vec2(0.24, -0.26)));
-    c = mix(c, uCol[10], max(h1, h2));
-    c = mix(c, uCol[7], smoothstep(0.5, 0.7, uBlink));
+    c = mix(c, uCol[10 + o], max(h1, h2));
+    c = mix(c, uCol[7 + o], smoothstep(0.5, 0.7, vId > 0.5 ? uBlink.y : uBlink.x));
     c += uRimC * pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.2;
   } else if (vKind > 1.5 && vKind < 2.5) {
     // miệng há: lòng berry-700, lưỡi berry-500
-    c = mix(uCol[8], ${g3(PAL.berry[500])}, smoothstep(-0.2, -0.45, vS.w));
+    c = mix(uCol[8 + o], ${g3(PAL.berry[500])}, smoothstep(-0.2, -0.45, vS.w));
   } else if (vKind > 4.5) {
     // ngọc phát sáng: lõi SECRET_CORE (emissive 1,6), vành SECRET_RIM
     float fr = max(dot(n, v), 0.0);
@@ -233,70 +247,112 @@ void main() {
   gl_FragColor = vec4(c, 1.0);
 }`;
 
+// Hạt (1 Points cho cả đôi): aSeed.x < 0,5 ⇒ rồng 0, ngược lại rồng 1 (rx = fract(2x) là số ngẫu nhiên).
+// aSeed.w: < 0,5 lấp lánh rơi từ thân · < 0,86 hơi thở → trái tim lớn trên trời (luồng chéo nhau)
+// · < 0,96 lấp lánh "chào nhau" khi hai rồng lướt qua · < 0,99 sao quanh ngọc · còn lại quầng ngọc.
 const PTS = /* glsl */ `
 ${COMMON}
 uniform float uPx;
 uniform float uBreathT;
-uniform vec3 uPearl;
+uniform vec3 uHeart;
+uniform vec4 uCross;
+uniform vec3 uPearl[2];
 attribute vec4 aSeed;
 attribute vec3 aColor;
 varying vec3 vColor;
 varying float vAlpha;
 varying float vShape;
 varying float vRot;
+vec2 heartXY(float th) {
+  float s = sin(th);
+  return vec2(16.0 * s * s * s, 13.0 * cos(th) - 5.0 * cos(2.0 * th) - 2.0 * cos(3.0 * th) - cos(4.0 * th) + 4.0);
+}
 void main() {
-  vec3 p; float alpha = 0.0; float size = 0.5;
-  vec3 rd = normalize(aSeed.xyz - 0.5 + 1e-4);
+  vec3 p = vec3(0.0); float alpha = 0.0; float size = 0.5;
+  float id = step(0.5, aSeed.x);
+  float rx = fract(aSeed.x * 2.0);
+  vec3 rd = normalize(vec3(rx, aSeed.y, aSeed.z) - 0.5 + 1e-4);
   vColor = aColor;
-  vRot = (aSeed.x - 0.5) * 1.2;
-  if (aSeed.w < 0.55) {
+  vRot = (rx - 0.5) * 1.2;
+  vShape = 0.0;
+  if (aSeed.w < 0.5) {
     // lấp lánh rơi từ thân
-    float te = aSeed.w / 0.55 * 24.0;
+    float te = aSeed.w / 0.5 * 24.0;
     float age = uT - te;
-    float life = 1.1 + aSeed.x * 1.3;
+    float life = 1.1 + rx * 1.3;
     float s = aSeed.y * uLb;
-    p = bodyPos(s, te) + rd * (radAt(s) * 1.05 + age * 0.9) - vec3(0.0, 0.7 * age * age, 0.0);
+    p = bodyPos(id, s, te) + rd * (radAt(s) * 1.05 + age * 0.9) - vec3(0.0, 0.7 * age * age, 0.0);
     alpha = (age < 0.0 || age > life) ? 0.0 : 1.0 - smoothstep(life * 0.5, life, age);
     alpha *= 0.65 + 0.35 * sin(age * 20.0 + aSeed.z * 30.0);
-    size = 0.35 + 0.4 * aSeed.z;
+    size = (0.35 + 0.4 * aSeed.z) * SC;
     vShape = aSeed.z < 0.4 ? 1.0 : 0.0;
     if (vShape > 0.5) vColor = ${g3(PAL.honey[500])};
     vRot += age * 2.0;
-  } else if (aSeed.w < 0.97) {
-    // hơi thở: tim / sao / lấp lánh, bắn tới trước + chếch lên
-    float te = uBreathT + (aSeed.w - 0.55) / 0.42 * 2.0;
+  } else if (aSeed.w < 0.86) {
+    // hơi thở: bắn từ miệng lên trời, hai luồng chéo nhau thành một trái tim lớn (mặt XY, nhìn được từ cả hai phía)
+    float f = (aSeed.w - 0.5) / 0.36;
+    float te = uBreathT + f * 1.5;
     float age = uT - te;
     vec3 P, T, sd, up;
-    frameAt(-0.6, te, P, T, sd, up);
-    vec3 mouth = P + T * 2.6 - up * 0.95;
-    vec3 dir = normalize(T + up * 0.6 + rd * 0.6);
-    float sp = 8.0 + aSeed.z * 7.0;
-    p = mouth + dir * sp * (1.0 - exp(-age * 1.6)) / 1.6 + vec3(0.0, 0.7 * age, 0.0);
-    p += vec3(sin(age * 3.0 + aSeed.x * 20.0), 0.0, cos(age * 2.5 + aSeed.y * 20.0)) * 0.4 * age;
-    float life = 2.4 + aSeed.x * 1.2;
-    alpha = (age < 0.0 || age > life) ? 0.0 : 1.0 - smoothstep(life * 0.6, life, age);
-    float grow = smoothstep(0.0, 0.25, age);
-    float kx = fract(aSeed.y * 7.13);
-    if (kx < 0.4) { vShape = 2.0; size = 1.0 + 0.6 * aSeed.z; vColor = mix(${g3(PAL.berry[500])}, ${g3(PAL.berry[300])}, step(0.5, aSeed.z)); }
-    else if (kx < 0.75) { vShape = 1.0; size = 0.9 + 0.5 * aSeed.z; vColor = mix(${g3(PAL.honey[500])}, ${g3(PAL.honey[300])}, step(0.5, aSeed.z)); }
-    else { vShape = 0.0; size = 0.6 + 0.3 * aSeed.z; }
+    frameAt(id, -0.6 * SC, te, P, T, sd, up);
+    vec3 mouth = P + (T * 2.6 - up * 0.95) * SC;
+    float side = mouth.x < uHeart.x ? 1.0 : -1.0; // rồng bên trái vẽ nửa phải ⇒ luồng chéo
+    float th = aSeed.y * 3.14159;
+    bool edge = aSeed.z < 0.8;
+    vec2 hx = heartXY(th);
+    hx.x *= side;
+    if (!edge) hx *= 0.25 + 0.6 * sqrt(aSeed.z);
+    vec3 tgt = uHeart + vec3(hx * 0.62, (rx - 0.5) * 1.5);
+    float fl = 1.15 + rx * 0.3;
+    float u = clamp(age / fl, 0.0, 1.0);
+    u = 1.0 - (1.0 - u) * (1.0 - u);
+    vec3 ctrl = mix(mouth, tgt, 0.5) + vec3(-side * 6.0, 4.0, 0.0) + rd * 2.0;
+    p = mix(mix(mouth, ctrl, u), mix(ctrl, tgt, u), u);
+    float hold = uBreathT + 4.4;
+    float gone = max(0.0, uT - hold);
+    p += vec3(sin(uT * 2.0 + rx * 20.0), cos(uT * 1.7 + aSeed.y * 20.0), 0.0) * 0.18 * u;
+    p += (normalize(tgt - uHeart + rd) * 4.0 * gone - vec3(0.0, 1.2 * gone * gone, 0.0));
+    float life = 6.2 + rx * 0.6 - f * 1.5;
+    alpha = (age < 0.0 || age > life) ? 0.0 : 1.0 - smoothstep(life - 1.2, life, age);
+    float grow = smoothstep(0.0, 0.3, age) * (1.0 + 0.12 * sin(uT * 6.0 + aSeed.y * 9.0) * u);
+    float kx = fract(aSeed.y * 7.13 + rx);
+    if (edge && kx < 0.62) { vShape = 2.0; size = 1.25 + 0.5 * aSeed.z; vColor = mix(${g3(PAL.berry[500])}, ${g3(PAL.berry[300])}, step(0.5, rx)); }
+    else if (kx < 0.85) { vShape = 1.0; size = 1.0 + 0.5 * aSeed.z; vColor = mix(${g3(PAL.honey[500])}, ${g3(PAL.honey[300])}, step(0.5, rx)); }
+    else { vShape = 0.0; size = 0.8 + 0.4 * aSeed.z; vColor = ${g3(PAL.cream[100])}; }
     size *= grow;
-    vRot += sin(age * 3.0 + aSeed.x * 6.0) * 0.4;
-  } else if (aSeed.w < 0.985) {
+    vRot += sin(age * 3.0 + rx * 6.0) * 0.4;
+  } else if (aSeed.w < 0.96) {
+    // chào nhau: chùm lấp lánh nổ ra giữa hai đầu khi lướt qua
+    float f = (aSeed.w - 0.86) / 0.1;
+    int ci = int(min(3.0, floor(f * 4.0)));
+    float tc = ci == 0 ? uCross.x : ci == 1 ? uCross.y : ci == 2 ? uCross.z : uCross.w;
+    float age = uT - tc + 0.15;
+    float d = uSpeed * tc + 0.6 * SC;
+    vec3 c = (pathAt(0.0, d) + pathAt(1.0, d)) * 0.5;
+    float sp = 6.0 + 6.0 * aSeed.z;
+    p = c + rd * sp * (1.0 - exp(-age * 2.2)) / 2.2 + vec3(0.0, 0.6 * age, 0.0);
+    float life = 1.4 + rx * 0.8;
+    alpha = (age < 0.0 || age > life) ? 0.0 : 1.0 - smoothstep(life * 0.45, life, age);
+    alpha *= 0.7 + 0.3 * sin(age * 18.0 + rx * 20.0);
+    vShape = aSeed.y < 0.5 ? 0.0 : 1.0;
+    size = (0.7 + 0.6 * aSeed.z) * smoothstep(0.0, 0.12, age);
+    vRot += age * 3.0;
+  } else if (aSeed.w < 0.99) {
     // sao nhỏ quay quanh ngọc
-    float a = uT * 2.4 + aSeed.x * 6.2832;
-    float rr = 1.15 + 0.15 * sin(uT * 3.0 + aSeed.y * 9.0);
-    p = uPearl + vec3(cos(a) * rr, sin(a * 2.0 + aSeed.z * 6.0) * 0.35, sin(a) * rr);
+    vec3 pc = id > 0.5 ? uPearl[1] : uPearl[0];
+    float a = uT * 2.4 * (id > 0.5 ? -1.0 : 1.0) + rx * 6.2832;
+    float rr = (1.15 + 0.15 * sin(uT * 3.0 + aSeed.y * 9.0)) * SC;
+    p = pc + vec3(cos(a) * rr, sin(a * 2.0 + aSeed.z * 6.0) * 0.35, sin(a) * rr);
     alpha = uPop;
-    size = 0.38;
+    size = 0.38 * SC;
     vShape = 1.0;
     vColor = ${g3(PAL.honey[500])};
     vRot = a;
   } else {
     // quầng ngọc
-    p = uPearl;
+    p = id > 0.5 ? uPearl[1] : uPearl[0];
     alpha = 0.55 * uPop;
-    size = 3.4 + 0.4 * sin(uT * 4.0);
+    size = (3.4 + 0.4 * sin(uT * 4.0)) * SC;
     vShape = 3.0;
     vColor = ${g3(PAL.honey[300])};
   }

@@ -21,12 +21,18 @@ const AUR_ON = 0.4, AUR_OFF = 0.37, AUR_UNFURL_SEC = 3, AUR_FADE_SEC = 1.6;
 const WAKE_ON = 0.8, WAKE_OFF = 0.76;
 
 // Đường bay (từ → tới), độ cao lớn, trong tầm far=220 của camera.
-const PATHS: [THREE.Vector3, THREE.Vector3][] = [
+// Mỗi đường được kéo dài thêm PATH_EXT m ở hai đầu: máy bay vào/ra ở > CAMERA_FAR (ngoài khung nhìn của cả camera ca sĩ
+// lẫn camera toàn cảnh) nên bay RA khỏi bản đồ rồi mới biến mất, không nhá/mờ giữa trời.
+const PATH_EXT = 150;
+const PATHS: [THREE.Vector3, THREE.Vector3][] = ([
   [new THREE.Vector3(-125, 112, -85), new THREE.Vector3(125, 112, -25)],
   [new THREE.Vector3(95, 125, 55), new THREE.Vector3(-70, 125, -120)],
   [new THREE.Vector3(120, 105, -100), new THREE.Vector3(-120, 118, -40)],
   [new THREE.Vector3(-90, 130, 60), new THREE.Vector3(60, 120, -130)],
-];
+] as [THREE.Vector3, THREE.Vector3][]).map(([a, b]) => {
+  const d = b.clone().sub(a).normalize().multiplyScalar(PATH_EXT);
+  return [a.clone().sub(d), b.clone().add(d)];
+});
 
 /** Màu token → THREE.Color giữ nguyên số sRGB (shader dùng thẳng, không chuyển không gian màu). */
 const rawColor = (hex: number, zoned = true) => {
@@ -175,7 +181,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   const XS = [-1, 0, 0.08, 0.2, 0.38, 0.6, 0.8, 1];
   const mPos: number[] = [], mIdx: number[] = [];
   XS.forEach((x, i) => {
-    mPos.push(x, -1, 0, x, 1, 0);
+    mPos.push(x, -3, 0, x, 3, 0);
     if (i > 0) { const k = (i - 1) * 2; mIdx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
   });
   mGeo.setAttribute('position', new THREE.Float32BufferAttribute(mPos, 3));
@@ -221,7 +227,7 @@ export function createSky(scene: THREE.Scene, uniforms: Uniforms, glow: GlowBuf)
   (window as unknown as { __csSky?: unknown }).__csSky = { triggerMeteors };
 
   // 4) Máy bay chở khách mập (cục bộ: mũi +X, cánh ±Z) + vệt khói chấm (1 mesh)
-  const S = 1.7; // tỉ lệ chung
+  const S = 3.0; // tỉ lệ chung (≈1,75× bản cũ để thấy rõ dáng mập + đèn từ sân khấu)
   const BODY_R = 1.3, BODY_LEN = 2 * BODY_R * VEHICLE_MAX_ASPECT - 2 * BODY_R; // tổng dài = 2,2 × đường kính
   const parts: THREE.BufferGeometry[] = [];
   const addPart = (g: THREE.BufferGeometry, id: number, trail: number, body: number) => {

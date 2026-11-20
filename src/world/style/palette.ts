@@ -106,20 +106,47 @@ export const toonRamp = {
   floorL: rgbToHsl(hexToRgb(PAL.night[700]))[2] + 0.06,
   /** Bóng dịch hue về tím (độ) và tối thiểu bão hoà khi màu gốc xám. */
   hueTarget: GRAPE_HUE,
-  hueShiftDeg: 40,
+  /** Xoay hue tối đa (độ), chỉ một phần, theo cung ngắn nhất; màu ấm xa tím gần như không xoay. */
+  hueShiftDeg: 10,
   minSat: 0.25,
+  /** Lượng phủ lavender (RGB) lên bậc bóng: màu nhạt nhận đủ, màu bão hoà gần như không. */
+  tint: 0.3,
   /** Ngưỡng mềm (tỉ lệ) nhân vật / đạo cụ. */
   softChar: [0.12, 0.18] as const,
   softProp: [0.08, 0.12] as const,
 } as const;
 
-/** Màu bậc bóng: tối hơn, dịch về tím, không xám hơn gốc, không tối hơn night-700. */
+/** Màu bậc bóng: tối hơn (L × 0,72), ngả nhẹ về tím, không xám hơn gốc, không tối hơn night-700.
+ * Hue chỉ xoay một phần (≤ hueShiftDeg) theo cung ngắn nhất về grape và giảm dần về 0 với các màu ấm
+ * nằm xa tím (vàng / cam / xanh lá: xoay kiểu gì cũng ra đỏ hoặc xanh rêu). Sắc tím "lavender" đến từ
+ * một lớp trộn RGB nhẹ về grape, mạnh hơn với màu nhạt (kem, tóc vàng nhạt) vốn còn nhiều chỗ cho sắc độ.
+ * "Không xám hơn" đo bằng độ bão hoà HSV (sắc độ / độ sáng): giữ HSV-S thì bản tối là "cùng màu, tối hơn";
+ * giữ HSL-S như trước khiến màu nhạt (kem, mật ong nhạt) thành cam rực trong bóng. */
 export function shadowOf(hex: number | string): number {
-  const [h, s, l] = rgbToHsl(hexToRgb(hex));
-  const h2 = s > 0 ? hueToward(h, toonRamp.hueTarget, toonRamp.hueShiftDeg) : toonRamp.hueTarget;
-  const s2 = Math.min(1, Math.max(s, toonRamp.minSat));
+  const rgb = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(rgb);
+  const mx = Math.max(...rgb), mn = Math.min(...rgb);
+  const sv = mx > 0 ? (mx - mn) / mx : 0;
   const l2 = Math.max(toonRamp.floorL, l * toonRamp.shadow);
-  return rgbToHex(hslToRgb([h2, s2, l2]));
+  // 1) hue: xoay một phần về grape, tắt dần khi cách tím > 60° (màu ấm: 0 từ 120°)
+  let h2: number = toonRamp.hueTarget;
+  if (s > 0) {
+    const d = Math.abs(((toonRamp.hueTarget - h + 540) % 360) - 180);
+    const w = 1 - smoothstep(60, 120, d);
+    h2 = hueToward(h, toonRamp.hueTarget, Math.min(d * 0.3, toonRamp.hueShiftDeg) * w);
+  }
+  // 2) bản tối cùng sắc độ tương đối (HSV-S = sv), độ sáng l2; màu xám thuần nhận sắc tím tối thiểu
+  const svT = s > 0 ? sv : toonRamp.minSat;
+  const toHslS = (svv: number) => { const v = l2 / (1 - svv / 2); return Math.min(l2, 1 - l2) > 1e-6 ? Math.min(1, (v - l2) / Math.min(l2, 1 - l2)) : 0; };
+  let out = hslToRgb([h2, toHslS(svT), l2]);
+  // 3) phủ lavender nhẹ (cùng độ sáng), rồi trả lại sắc độ nếu lớp phủ làm xám đi
+  const tint = hslToRgb([toonRamp.hueTarget - 15, 0.5, l2]);
+  const k = toonRamp.tint * (0.05 + 0.95 * Math.pow(1 - sv, 1.5));
+  out = [out[0] + (tint[0] - out[0]) * k, out[1] + (tint[1] - out[1]) * k, out[2] + (tint[2] - out[2]) * k];
+  const omx = Math.max(...out), omn = Math.min(...out);
+  const osv = omx > 0 ? (omx - omn) / omx : 0;
+  if (osv < svT && omx > omn) { const nmn = omx * (1 - svT); out = out.map((c) => omx - (omx - c) * (omx - nmn) / (omx - omn)) as Rgb; }
+  return rgbToHex(out);
 }
 
 // ───────────── Hype ─────────────

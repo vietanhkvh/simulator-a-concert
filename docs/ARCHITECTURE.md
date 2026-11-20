@@ -48,6 +48,7 @@ Quy tắc 1 và 2 được kiểm bằng `src/world/zones.test.ts` (chạy cùng
 | `cs-entrance` | `{ kind: 'jump'｜'lift'｜'cable', phase: 'start'｜'land'｜'end' }` | arena (`entrance.ts`) | `main.ts` (bắt đầu nhạc, reo hò) |
 | `cs-view` | `{ mode }` | arena (`stageControls.ts`) | `main.ts` (nhãn góc máy) |
 | `cs-mouselook` | `{ on }` | arena (`stageControls.ts`) | `main.ts` (gợi ý chuột tự do) |
+| `cs-freefly` | `{ on }` (tùy chọn) | arena (`stageControls.ts`) | `main.ts` (chip gợi ý flycam) |
 
 ## Vật thể → khu → file
 
@@ -79,4 +80,4 @@ Các chỗ còn số cứng (cần rà khi đổi) được liệt kê ở đầ
 `src/ui/devPanel.ts` (bảng + `window.__dev`) chỉ gọi các hành động `main.ts` cung cấp (`DevHost`). Ẩn/hiện khu và lớp dùng
 các hàm debug tùy chọn `setVisible` / `debugLayers` / `setLayerVisible` trên handle mỗi khu, dựa trên `core/debugLayers.ts`:
 index.ts của khu bọc mỗi lời gọi `createX(scene)` bằng `layers.track(tên, …)` để ghi nhận vật thể được thêm vào scene, rồi
-gỡ/gắn lại chúng. `World.setZoneVisible(zone, on)` và `World.stats()` (số liệu renderer) ở `world/world.ts`. Xem README.
+gỡ/gắn lại chúng (khỏi cha của chúng, vì nhiều module tự ghi đè `visible`). `layers.split(từ, tới, pred)` tách lớp con (cực quang, sao, laser, khán giả chấm sáng…) theo `renderOrder`/uniform; `layers.watch(tên, fn)` bọc lời gọi tạo vật thể lười (sự kiện bí mật). `World.setZoneVisible(zone, on)` và `World.stats()` (số liệu renderer) ở `world/world.ts`. Xem README.

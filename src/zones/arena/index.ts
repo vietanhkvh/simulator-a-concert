@@ -15,7 +15,7 @@ import { createLedWall } from './ledWall';
 import { createLights } from './lights';
 import { createSinger } from './singer';
 import { createStageBase } from './stageBase';
-import { createControls, VIEW_MODES, VIEW_ORDER, type StageControls, type ViewMode } from './stageControls';
+import { createControls, VIEW_CONTROL_HINTS, VIEW_MODES, VIEW_ORDER, type StageControls, type ViewControlState, type ViewMode } from './stageControls';
 import { createStageDeco } from './stageDeco';
 import { createStageFx, type StageFx } from './stageFx';
 import { createRunway } from './stageRunway';
@@ -24,6 +24,9 @@ import { PLATFORMS } from './walkLayout';
 export { ENTRANCE_SEC };
 /** Debug/chế độ developer: thứ tự góc máy (phím V) và tâm các bục (để dịch chuyển nhanh). */
 export { VIEW_ORDER, VIEW_MODES, PLATFORMS };
+/** Hướng dẫn điều khiển góc máy ngoài (xoay, zoom, nâng/hạ, flycam bay tự do, đặt lại) cho bảng phím tắt. */
+export { VIEW_CONTROL_HINTS };
+export type { ViewControlState };
 export type { EntranceKind, ViewMode, StageControls, Crowd, Emotes, Confetti, StageFx, LedScreens, Entrance, CameraCrew };
 
 export interface ArenaOptions {
@@ -68,6 +71,8 @@ export function createArenaZone(ctx: ZoneContext, opts: ArenaOptions): ArenaZone
   const confetti = layers.track('confetti', () => createConfetti(scene));
   const emotes = layers.track('emotes', () => createEmotes(scene)); // biểu tượng cảm xúc
   const stageFx = layers.track('stageFx', () => createStageFx(scene)); // laser, pháo hoa, đèn chớp, khói
+  // Laser nằm trong nhóm stageFx: nhận theo uniform uSpread của vật liệu (không sửa module).
+  layers.split('stageFx', 'lasers', (o) => !!((o as unknown as { material?: { uniforms?: Record<string, unknown> } }).material?.uniforms?.uSpread));
   const singer = layers.track('singer', () => createSinger(scene)); // hình ca sĩ (chỉ hiện ở góc máy ngoài)
   const crew = layers.track('crew', () => createCameraCrew(scene)); // đội quay phim + flycam
   const entrance = layers.track('entrance', () => createEntrance(scene)); // màn chào sân

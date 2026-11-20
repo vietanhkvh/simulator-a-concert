@@ -15,6 +15,10 @@ export interface SingerAvatar {
 }
 
 const EYE = EYE_HEIGHT;
+
+/** Squash tiếp đất do màn chào sân (entrance.ts) đặt mỗi frame, 0..1: 1 = ngồi thụp (thấp 35%, bè 20%).
+ * Kênh phụ cùng khu, giữ nguyên chữ ký update(); entrance.update chạy trước singer.update. */
+export const singerSquash = { amount: 0 };
 const SCALE = 1.04; // ≈ 1,67 m tính cả nơ
 
 function poolTexture(): THREE.CanvasTexture {
@@ -102,7 +106,8 @@ export function createSinger(scene: THREE.Scene): SingerAvatar {
       c.root.position.set(pos.x, floorY, pos.z);
       c.root.rotation.y = yaw;
       c.body.position.y = jy / SCALE;
-      c.body.scale.set(sx, sy, sx);
+      const sq = THREE.MathUtils.clamp(singerSquash.amount, 0, 1);
+      c.body.scale.set(sx * (1 + 0.2 * sq), sy * (1 - 0.35 * sq), sx * (1 + 0.2 * sq));
       const sway = Math.sin(b * Math.PI) * 0.07 * groove;
       c.body.rotation.set(0, 0, sway);
       c.upper.rotation.set(-0.03 - f.beatPulse * 0.04 * hype + walk * 0.08, Math.sin(b * Math.PI * 0.5) * 0.2 * hype, sway * 0.4);

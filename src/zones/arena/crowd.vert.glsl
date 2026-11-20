@@ -386,6 +386,11 @@ void main() {
   vec2 shear = oDir * (-oC * 0.14 * wm);
   vec3 world = aPos + right * local.x + up * local.y + vec3(shear.x * local.y, 0.0, shear.y * local.y);
   vec4 mvPosition = viewMatrix * vec4(world, 1.0);
+#ifdef STICK
+  // Quầng / điện thoại nằm cùng mặt billboard với thân → đẩy nhẹ về phía camera để không bị chính
+  // đầu / tay người cầm che (z-fight). Điện thoại cầm trước mặt nên đẩy nhiều hơn.
+  mvPosition.xyz += normalize(-mvPosition.xyz) * (isPhone > 0.5 ? 0.3 : 0.08);
+#endif
   gl_Position = projectionMatrix * mvPosition;
 #ifdef USE_FOG
   vFogDepth = -mvPosition.z;

@@ -13,7 +13,8 @@ const D = 20;
 const T_HOVER = 4.5, T_BEAM_ON = 5.2, T_BEAM_OFF = 15.4, T_TILT = 16, T_ZIP = 17, ZIP_DUR = 1.1;
 const START = new THREE.Vector3(34, 62, -100);
 const HOVER = new THREE.Vector3(0, 18, -40);
-const AWAY = new THREE.Vector3(-150, 70, -170);
+// điểm đến của cú vút: rất xa về bên trái, ngoài khung nhìn (> CAMERA_FAR và lệch > nửa FOV) để UFO bay RA khỏi cảnh rồi mới tắt
+const AWAY = new THREE.Vector3(-320, 60, -110);
 const LIGHTS = 12;
 /** Tỉ lệ model (đơn vị local → m). Đĩa bán kính ~6,1 local ⇒ ~8,8 m. */
 const S = 1.45;
@@ -439,7 +440,7 @@ export function createUfo(scene: THREE.Scene): SecretAct {
         pos.lerpVectors(zipA, AWAY, k * k);
       }
       ufo.position.copy(pos);
-      ufo.visible = t < T_ZIP + ZIP_DUR * 0.8;
+      ufo.visible = t < T_ZIP + ZIP_DUR; // tắt chỉ khi đã ra tới AWAY (ngoài khung nhìn)
       // quay mặt phi công về phía sân khấu (≈ +z), lắc nhẹ
       ufo.rotation.order = 'YXZ';
       ufo.rotation.y = Math.atan2(-pos.x, -pos.z) + Math.sin(t * 0.6) * 0.35;

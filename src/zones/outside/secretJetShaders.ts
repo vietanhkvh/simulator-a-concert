@@ -33,15 +33,18 @@ void main() {
   }
   vec3 w = (M * vec4(l, 1.0)).xyz;
   vec3 N = normalize(mat3(M) * normal);
+  // xa dần: thu nhỏ quanh tâm máy bay trước khi chạm mặt cắt xa của camera (không "pop")
+  float kd = 1.0 - smoothstep(150.0, 205.0, length(cameraPosition - M[3].xyz));
+  w = M[3].xyz + (w - M[3].xyz) * kd;
 #ifdef HULL
   vec4 mv0 = viewMatrix * vec4(w, 1.0);
   float pix = 2.0 * max(-mv0.z, 0.1) / (projectionMatrix[1][1] * uViewH);
-  float ow = clamp(uOutW, 1.5 * pix, 3.0 * pix) * step(24.0, uObjH / pix);
+  float ow = clamp(uOutW * kd, 1.5 * pix, 3.0 * pix) * step(24.0, kd * uObjH / pix);
   if (aJ.y > 0.5 && aJ.y < 1.5) ow = 0.0;
   w += N * ow;
 #endif
   vN = N; vW = w; vLN = normal; vCol = aCol; vShc = aSh; vJ = aJ;
-  gl_Position = vis < 0.5 ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * viewMatrix * vec4(w, 1.0);
+  gl_Position = (vis < 0.5 || kd < 0.002) ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 
 const frag = /* glsl */ `
@@ -119,53 +122,104 @@ void main() {
   gl_FragColor = vec4(c, 1.0);
 }`;
 
-const trailVert = /* glsl */ `
-uniform float uT;
-uniform float uLife;
-uniform vec3 uHeart;
-uniform float uBeat;
-uniform float uDone;
-attribute vec3 aTan; attribute vec3 aCol; attribute vec3 aEdge; attribute vec4 aInfo; // emit, side, jet, arc
-varying vec3 vCol; varying vec3 vEdge; varying float vFade; varying float vSide; varying float vArc; varying float vAge;
+// Quad trái tim + mũi tên trong mặt phẳng tim (SDF, xem secretJetHeart.ts). Xuất màu premultiplied.
+const heartVert = /* glsl */ `
+uniform vec3 uC; uniform vec3 uEX; uniform vec3 uEY;
+uniform float uScale; uniform vec3 uDrift;
+uniform vec4 uBox; // u0, v0, u1-u0, v1-v0
+varying vec2 vP; varying vec2 vUv;
 void main() {
-  float age = uT - aInfo.x;
-  vec3 c = position;
-  float a = max(age, 0.0);
-  c += vec3(0.3 + 0.2 * sin(aInfo.x * 3.1 + aInfo.z), -0.1 + 0.08 * cos(aInfo.x * 2.3), 0.15 * sin(aInfo.x * 1.7)) * a;
-  // tim hoàn thành: đập nhẹ theo phách
-  if (aInfo.z < 1.5) c = uHeart + (c - uHeart) * (1.0 + uDone * (0.025 * sin(uT * 6.0) + 0.02 * uBeat));
-  float w = 1.25 + a * 0.32;
-  vec3 vd = normalize(cameraPosition - c);
-  vec3 sd = cross(aTan, vd);
-  float l = length(sd);
-  sd = l > 1e-4 ? sd / l : vec3(0.0, 1.0, 0.0);
-  c += sd * aInfo.y * w * 1.25;
-  vSide = aInfo.y * 1.25;
-  vArc = aInfo.w / w;
-  vAge = age;
-  vFade = age < 0.0 ? 0.0 : smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(uLife * 0.45, uLife, age));
-  vCol = aCol; vEdge = aEdge;
-  gl_Position = projectionMatrix * viewMatrix * vec4(c, 1.0);
+  vP = position.xy;
+  vUv = (position.xy - uBox.xy) / uBox.zw;
+  vec3 w = uC + (uEX * position.x + uEY * position.y) * uScale + uDrift;
+  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 
-const trailFrag = /* glsl */ `
-varying vec3 vCol; varying vec3 vEdge; varying float vFade; varying float vSide; varying float vArc; varying float vAge;
+const heartFrag = /* glsl */ `
+uniform sampler2D uSdf;
+uniform vec4 uBox;
+uniform float uT;
+uniform vec4 uSpd;   // tốc độ vẽ tim, tốc độ mũi tên, thời điểm "xong" của tim, của mũi tên
+uniform vec2 uDiss;  // mức tan (0..1) của tim, của mũi tên
+uniform float uFill; // độ hiện của màng tô
+uniform float uWob;
+varying vec2 vP; varying vec2 vUv;
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p) { return 0.6 * vnoise(p) + 0.4 * vnoise(p * 2.03 + 7.1); }
+// 1 lớp nét khói kiểu sticker: viền mực đều theo pixel + đường sáng bên trong + thân phồng mây.
+// trả về premultiplied rgba
+vec4 strokeLayer(float d, float te, float spd, float w0, float wg, float diss, vec3 fresh, vec3 body, vec3 deep, vec3 ink, vec2 p) {
+  float age = uT - te;
+  float ahead = max(-age, 0.0) * spd;          // đoạn chưa vẽ → đầu nét tròn
+  float w = (w0 + wg * clamp(age, 0.0, 12.0)) * (1.0 - 0.35 * diss);
+  float r = length(vec2(ahead, d)) / w;
+  float px = clamp(fwidth(r), 1e-4, 0.25); // kẹp: chỗ trường thời gian gián đoạn không được loang viền
+  float n = fbm(p * 0.22 + vec2(uT * 0.05, -uT * 0.03));
+  float edge = 1.0 - diss * (0.5 + 0.5 * n);    // tan từ mép vào
+  float a = 1.0 - smoothstep(edge - px, edge + px * 0.5, r);
+  if (a <= 0.0 || r > 2.0) return vec4(0.0);
+  float bw = clamp(2.6 * px, 0.06, 0.42);       // viền ~2,6 px, kẹp theo bề rộng nét
+  float inner = edge - bw;
+  float ol = smoothstep(inner - px, inner, r);
+  // thân: kem khi mới → màu khói, phồng mây mịn
+  float puff = fbm(p * 0.45 + vec2(uT * 0.12, uT * 0.04));
+  vec3 c = mix(fresh, body, smoothstep(0.15, 1.6, age));
+  c = mix(c, deep, smoothstep(0.35, 0.95, r / max(inner, 0.05)) * 0.35);
+  c = mix(c, fresh, (1.0 - r / max(inner, 0.05)) * (0.18 + 0.3 * smoothstep(0.45, 0.8, puff)));
+  // đường sáng mảnh bên trong viền
+  float hl = 1.0 - smoothstep(0.0, px * 1.3 + 0.025, abs(r - (inner - 0.13)));
+  c = mix(c, ${g3(PAL.cream[100])}, hl * 0.55);
+  c = mix(c, ink, ol);
+  float alpha = a * (1.0 - smoothstep(0.7, 1.0, diss)) * mix(0.93, 1.0, ol);
+  return vec4(c * alpha, alpha);
+}
 void main() {
-  if (vFade < 0.004) discard;
-  // mép gợn mây: bướu tròn nối tiếp
-  float ph = fract(vArc * 0.42);
-  float bump = sqrt(max(1.0 - pow(ph * 2.0 - 1.0, 2.0), 0.0));
-  float edge = (0.72 + 0.28 * bump) * (0.55 + 0.45 * vFade);
-  float d = abs(vSide);
-  float aa = fwidth(vSide) * 1.2;
-  float a = 1.0 - smoothstep(edge - aa, edge + aa, d);
-  if (a < 0.01) discard;
-  vec3 cream = ${g3(PAL.cream[300])};
-  vec3 col = mix(cream, vCol, smoothstep(0.2, 1.0, vAge));
-  // phồng: giữa sáng, mép đậm kiểu sticker
-  col = mix(col, cream, (1.0 - d / edge) * 0.35 * bump);
-  col = mix(col, vEdge, smoothstep(edge - 0.2, edge - 0.06, d) * 0.75);
-  gl_FragColor = vec4(col, a * (0.55 + 0.4 * vFade));
+  vec2 p = vP;
+  p += uWob * vec2(sin(p.y * 0.31 + uT * 0.7), cos(p.x * 0.27 + uT * 0.55)) * 0.35;
+  vec4 S = texture2D(uSdf, (p - uBox.xy) / uBox.zw);
+  vec4 res = vec4(0.0);
+  // ── màng tô bên trong tim: gradient berry-300 → kem ở tâm, chấm lấp lánh, vệt óng chậm
+  if (uFill > 0.001) {
+    float inside = 1.0 - smoothstep(-0.6, 0.0, S.r);
+    vec2 q = (p - vec2(0.0, -2.0)) / vec2(19.0, 17.0);
+    float g = smoothstep(0.05, 1.0, length(q));
+    vec3 fc = mix(${g3(PAL.cream[300])}, ${g3(PAL.berry[300])}, g);
+    float fa = mix(0.3, 0.4, g);
+    float band = p.x * 0.55 + p.y * 0.85 - (mod(uT * 7.0, 110.0) - 55.0);
+    float sh = exp(-band * band / 30.0) * 0.22;
+    fc = mix(fc, ${g3(PAL.cream[100])}, sh);
+    fa += sh * 0.25;
+    vec2 cell = floor(p / 2.4), fp = fract(p / 2.4) - 0.5;
+    float hsh = hash21(cell);
+    vec2 off = (vec2(hash21(cell + 3.1), hash21(cell + 9.7)) - 0.5) * 0.5;
+    float tw = (0.25 + 0.75 * pow(0.5 + 0.5 * sin(uT * (1.4 + hsh * 2.0) + hsh * 40.0), 2.0)) * step(0.5, hsh);
+    float dd = length(fp - off) * 2.4;
+    float spx = min(fwidth(dd), 0.15); // kẹp: không loang ở mép ô lưới
+    float dot0 = (1.0 - smoothstep(0.14, 0.14 + spx * 1.5, dd)) + 0.45 * (1.0 - smoothstep(0.0, 0.7, dd));
+    vec2 cr = abs(fp - off) * 2.4;
+    dot0 += (1.0 - smoothstep(0.0, spx * 1.5 + 0.03, min(cr.x, cr.y))) * (1.0 - smoothstep(0.0, 0.6, dd)) * 0.6;
+    fc = mix(fc, ${g3(PAL.honey[100])}, clamp(dot0 * tw, 0.0, 1.0));
+    fa = mix(fa, 0.85, clamp(dot0 * tw, 0.0, 1.0) * 0.6);
+    fa *= inside * uFill;
+    fa += (hash21(gl_FragCoord.xy) - 0.5) / 255.0;
+    fa = max(fa, 0.0);
+    res = vec4(fc * fa * 1.45, fa * 0.9); // hơi cộng sáng: màng hồng-kem nổi trên nền đêm, không cháy trắng
+  }
+  // ── nét tim
+  vec4 h = strokeLayer(abs(S.r), S.g, uSpd.x, 1.15, 0.07, uDiss.x,
+    ${g3(PAL.cream[300])}, ${g3(PAL.berry[300])}, ${g3(PAL.berry[500])}, ${g3(PAL.berry[700])}, p);
+  res = h + res * (1.0 - h.a);
+  // ── mũi tên
+  vec4 ar = strokeLayer(S.b, S.a, uSpd.y, 0.8, 0.05, uDiss.y,
+    ${g3(PAL.cream[300])}, ${g3(PAL.soda[300])}, ${g3(PAL.soda[500])}, ${g3(PAL.soda[700])}, p);
+  res = ar + res * (1.0 - ar.a);
+  if (res.a < 0.002) discard;
+  gl_FragColor = res;
 }`;
 
 const ptsVert = /* glsl */ `
@@ -205,6 +259,7 @@ void main() {
   vec4 mv = viewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   gl_PointSize = alpha < 0.004 ? 0.0 : clamp(uPx * projectionMatrix[1][1] * 0.5 * size / -mv.z, 1.5, 200.0);
+  if (alpha < 0.004) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 
-export const JET_GLSL = { vert, frag, trailVert, trailFrag, ptsVert };
+export const JET_GLSL = { vert, frag, heartVert, heartFrag, ptsVert };

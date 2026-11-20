@@ -6,6 +6,7 @@ import { EYE_HEIGHT } from '../../world/layout';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import { createCable, createHeli, createHeroFx, createLiftFx } from './entranceProps';
+import { singerSquash } from './singer';
 
 export type EntranceKind = 'jump' | 'lift' | 'cable';
 export const ENTRANCE_SEC: Record<EntranceKind, number> = { jump: 9.0, lift: 8.0, cable: 9.8 };
@@ -124,7 +125,10 @@ export function createEntrance(scene: THREE.Scene): Entrance {
     out.copy(LAND);
     const age = time - J.impact;
     const crouch = 0.65 + 0.18 * Math.exp(-age * 7) * Math.cos(age * 14) - 0.65 * smooth((time - J.rise) / (J.stood - 0.3 - J.rise));
-    out.y = EYE - Math.max(0, crouch);
+    // Thân chibi ngắn: lún 0,8 m vào sàn thì chỉ còn cái đầu → dùng squash-and-recover, chỉ hạ rất nhẹ.
+    const k = Math.max(0, crouch) / 0.83;
+    singerSquash.amount = k;
+    out.y = EYE - 0.08 * k;
     return 0;
   };
   const camJump = (time: number, sp: THREE.Vector3) => {
@@ -219,7 +223,8 @@ export function createEntrance(scene: THREE.Scene): Entrance {
     if (time >= CB.touch) {
       out.copy(LAND);
       const a = time - CB.touch;
-      out.y = EYE - 0.18 * Math.sin(clamp01(a / 0.45) * Math.PI);
+      singerSquash.amount = 0.45 * Math.sin(clamp01(a / 0.45) * Math.PI);
+      out.y = EYE;
       return lerp(-0.25, 0, smooth(a / 0.8));
     }
     const k = descK(time);
@@ -276,12 +281,14 @@ export function createEntrance(scene: THREE.Scene): Entrance {
     if (!playing) return;
     if (!landed) { landed = true; dispatch('land'); }
     playing = false;
+    singerSquash.amount = 0;
     setVisible(false);
     dispatch('end');
   };
 
   const evaluate = () => {
     const sp = pose.position;
+    singerSquash.amount = 0;
     if (kind === 'jump') evalJump(sp);
     else if (kind === 'lift') evalLift(sp);
     else evalCable(sp);

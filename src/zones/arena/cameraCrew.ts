@@ -3,11 +3,13 @@
 // Phong cách "Kẹo đêm": người quay phim chibi 2,3 đầu (mũ, tai nghe, mắt chấm, áo night-300 + điểm soda/berry),
 // máy quay đồ chơi bo tròn ống kính to + bóng tally, dolly bánh mập, tháp FOH ống tròn sọc grape, cần cẩu ống tròn +
 // đối trọng cầu, drone quadcopter mập (thân tròn, 4 rotor vòng, LED kẹo, mắt gimbal; phương tiện nên không có mặt).
-// Vẽ bằng 4 InstancedMesh (hộp bo / trụ bo / cầu / vòng xuyến, vật liệu toon + viền fresnel) + 1 Points phát sáng = 5 draw call.
+// Vẽ bằng 5 InstancedMesh (hộp bo / trụ bo / cầu / vòng xuyến mập / vòng mảnh, vật liệu toon + viền fresnel) + 1 Points phát sáng
+// = 6 draw call. Flycam bay tự do (phím G, stageControls): drone đi theo camera của người chơi.
 import { EYE_HEIGHT, FIELD_Y, GROUND_RISE, GROUND_RUN, GROUND_Y0, GROUND_Z0, STAGE_HEIGHT } from '../../world/layout';
 import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
-import { walkable, type ViewMode, type ViewPose } from './stageControls';
+import { getControls, walkable, type ViewMode, type ViewPose } from './stageControls';
+import { FOH_TOWER } from './viewControl';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { PAL, INK, SKIN as SKIN_TONES, HAIR, CHAR_H } from '../../world/style';
 import { createToonMaterial, roundedCylinder } from './cameraCrewToon';
@@ -28,7 +30,7 @@ const PIT_FLOOR = FIELD_Y;
 /** Mặt đất nền dưới khán giả (GROUND_Y0 tại z=-6, dốc lên phía sau). */
 const audienceFloor = (z: number) => (z > GROUND_Z0 ? PIT_FLOOR : GROUND_Y0 + ((GROUND_Z0 - z) * GROUND_RISE) / GROUND_RUN);
 
-type Kind = 0 | 1 | 2 | 3; // hộp bo, trụ bo, cầu, vòng xuyến
+type Kind = 0 | 1 | 2 | 3 | 4; // hộp bo, trụ bo, cầu, vòng xuyến mập, vòng mảnh
 interface Part { obj: THREE.Object3D; kind: Kind; idx: number }
 
 // Token "Kẹo đêm" (guide mục 6, khu 3: quay phim / drone / cần cẩu → night-100, grape-300, tally peach-500)
@@ -56,8 +58,8 @@ function aimAngles(from: THREE.Vector3, to: THREE.Vector3): [number, number] {
 
 export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   const parts: Part[] = [];
-  const counts = [0, 0, 0, 0];
-  const colors: number[][] = [[], [], [], []];
+  const counts = [0, 0, 0, 0, 0];
+  const colors: number[][] = [[], [], [], [], []];
   const world = new THREE.Object3D(); // cây tạm, không gắn vào scene
 
   const part = (parent: THREE.Object3D, kind: Kind, color: number,
@@ -171,8 +173,8 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   }
 
   // ── Tháp FOH giữa khán giả ──
-  const towerZ = -40;
-  const towerX = 7;
+  const towerZ = FOH_TOWER.z;
+  const towerX = FOH_TOWER.x;
   const towerFloor = audienceFloor(towerZ);
   const tower = node(world, towerX, towerFloor, towerZ);
   const TH = Math.max(4, 5 - towerFloor); // sàn tháp ở y ≈ 5 để góc 'wide' nhìn qua đầu khán giả
@@ -250,7 +252,8 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   const rotorPos: [number, number][] = [[0.33, 0.33], [-0.33, 0.33], [0.33, -0.33], [-0.33, -0.33]];
   for (const [x, z] of rotorPos) {
     part(droneBody, 2, PAL.cream[700], 0.1, 0.1, 0.1, x, 0.05, z);
-    part(droneBody, 3, PAL.soda[500], 0.17, 0.17, 0.07, x, 0.09, z, Math.PI / 2, 0, 0); // vòng bảo vệ rotor
+    // vòng bảo vệ rotor: vòng mảnh riêng (kind 4) ôm sát mép đĩa cánh quạt nhoè — vòng mập dùng chung (ống 0,42) bị "béo"
+    part(droneBody, 4, PAL.soda[500], 0.19, 0.19, 0.19, x, 0.09, z, Math.PI / 2, 0, 0);
     part(droneBody, 1, PAL.soda[100], 0.34, 0.008, 0.34, x, 0.09, z); // cánh quạt nhoè
   }
   const ledR = glow(droneBody, PAL.berry[500], -0.33, -0.03, -0.33, 0.6);
@@ -276,7 +279,8 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
     new RoundedBoxGeometry(1, 1, 1, 2, 0.2),
     roundedCylinder(14),
     new THREE.SphereGeometry(0.5, 16, 12),
-    new THREE.TorusGeometry(1, 0.42, 8, 18), // vòng mập (bánh xe, rotor, sọc quấn)
+    new THREE.TorusGeometry(1, 0.42, 8, 18), // vòng mập (bánh xe, sọc quấn)
+    new THREE.TorusGeometry(1, 0.1, 6, 28), // vòng mảnh (vòng bảo vệ rotor drone)
   ];
   const mat = createToonMaterial();
   disposables.push(mat, ...geos);
@@ -322,11 +326,11 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
 
   // ── Trạng thái góc nhìn ──
   const views: Record<Exclude<ViewMode, 'singer'>, ViewPose> = {
-    flycam: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 45 },
-    pit: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 30 },
-    crane: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 35 },
-    wide: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 30 },
-    aerial: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 50 },
+    flycam: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 45, rig: true },
+    pit: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 30, rig: true },
+    crane: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 35, rig: true },
+    wide: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 30, rig: true },
+    aerial: { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 50, rig: true },
   };
   // Góc 'aerial': trên không trước vòm mái, chúc xuống tâm sân khấu/ca sĩ (bám lỏng), lắc ±10°.
   const aerialTgt = new THREE.Vector3(0, 1, -3.5);
@@ -340,6 +344,12 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
   const tmp2 = new THREE.Vector3();
   let t = 0;
   let first = true;
+  let prevSongTime = 0;
+  // Drone theo lệnh người chơi (flycam bay tự do) rồi trượt mượt về đường bay tự động
+  let droneRet = 1;
+  const droneFrom = new THREE.Vector3();
+  let droneFromHeading = 0;
+  let wasFree = false;
 
   const damp = (v: THREE.Vector3, to: THREE.Vector3, rate: number, dt: number) => v.lerp(to, 1 - Math.exp(-rate * dt));
   const aimNode = (n: THREE.Object3D, yawNode: THREE.Object3D | null, target: THREE.Vector3) => {
@@ -363,6 +373,9 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
       if (dt > 0) vel.subVectors(singerPos, prevSinger).divideScalar(dt).setY(0).clampLength(0, 5);
       prevSinger.copy(singerPos);
       lead.copy(chest).addScaledVector(vel, 0.25);
+      // Bài mới bắt đầu (songTime nhảy về âm: đếm ngược) → đặt lại góc máy người chơi đã chỉnh
+      if (f.songTime < 0 && prevSongTime >= 0) getControls()?.resetViewOffsets();
+      prevSongTime = f.songTime;
       const k = first ? 1e6 : 1;
       const ddt = first ? 1 : dt;
       first = false;
@@ -463,12 +476,31 @@ export function createCameraCrew(scene: THREE.Scene): CameraCrew {
           }
         }
         dronePrev.copy(tmp);
-        drone.position.copy(tmp);
-        droneBody.rotation.set(-0.12, droneHeading, Math.sin(t * 1.3) * 0.04, 'YXZ');
-        gimbal.position.copy(tmp).y -= 0.22 * DS;
         damp(droneAim, lead, 3 * k, ddt);
-        const [yy, pp] = aimAngles(gimbal.position, droneAim);
-        gimbalAim.rotation.set(pp, yy, 0, 'YXZ');
+        const free = getControls()?.getFreeFlyCam() ?? null;
+        if (free) {
+          // ống kính gimbal trùng vị trí camera: thân drone ở trên + lùi sau ống kính
+          const fx = -Math.sin(free.yaw), fz = -Math.cos(free.yaw);
+          drone.position.set(free.pos.x - fx * 0.18, free.pos.y + 0.22 * DS + 0.02, free.pos.z - fz * 0.18);
+          droneFrom.copy(drone.position);
+          droneFromHeading = free.yaw;
+          droneRet = 0;
+          wasFree = true;
+          droneBody.rotation.set(-0.12, free.yaw, Math.sin(t * 1.3) * 0.04, 'YXZ');
+          gimbal.position.copy(drone.position).y -= 0.22 * DS;
+          gimbalAim.rotation.set(free.pitch, free.yaw, 0, 'YXZ');
+        } else {
+          if (wasFree) { wasFree = false; droneRet = 0; }
+          droneRet = Math.min(1, droneRet + dt / 0.6);
+          const e = droneRet * droneRet * (3 - 2 * droneRet);
+          drone.position.lerpVectors(droneFrom, tmp, droneRet < 1 ? e : 1);
+          let dh = droneHeading - droneFromHeading;
+          dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+          droneBody.rotation.set(-0.12, droneRet < 1 ? droneFromHeading + dh * e : droneHeading, Math.sin(t * 1.3) * 0.04, 'YXZ');
+          gimbal.position.copy(drone.position).y -= 0.22 * DS;
+          const [yy, pp] = aimAngles(gimbal.position, droneAim);
+          gimbalAim.rotation.set(pp, yy, 0, 'YXZ');
+        }
         const blink = Math.floor(t * 2) % 2 === 0;
         const strobe = (t * 1.1) % 1 < 0.08;
         // LED kẹo nhấp nháy mềm (không trắng): berry/mint xen kẽ, honey/soda chớp

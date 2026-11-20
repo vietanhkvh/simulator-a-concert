@@ -69,17 +69,20 @@ void main(){
     col = mix(col, mix(col * 0.22, pc, ph), uFlash);
     sz += uFlash * ph * (0.5 + 0.8 * tk);
   }
-  // 2: sóng sân vận động — đáy grape-700, sườn soda-500, bọt cream-100
+  // 2: sóng sân vận động — dải kem/soda cao, sáng, chạy quanh bowl; đáy grape tối để tương phản; chấm dâng lên và to ra
   if (uWave > 0.001) {
-    float dd = ang - uWavePos;
-    float crest = exp(-dd * dd / 0.0012);
-    float swell = exp(-dd * dd / 0.012);
-    vec3 deep = GRAPE700 * (0.75 + 0.3 * h11(sd * 9.0));
-    vec3 wc = mix(deep, SODA500 * 1.15, swell);
-    wc = mix(wc, CREAM100 * 1.2, crest);
-    col = mix(col, wc * hold, uWave);
-    p.y += uWave * (crest * 3.5 + swell * 0.8);
-    sz += uWave * (crest * 2.0 + swell * 0.6);
+    float dd = ang - uWavePos;          // > 0: phía trước đỉnh sóng (hướng chạy)
+    float sf = dd > 0.0 ? 0.02 : 0.036; // mặt trước dốc, đuôi thoai thoải
+    float crest = exp(-dd * dd / (sf * sf));
+    float swell = dd > 0.0 ? exp(-dd * dd / 0.0016) : exp(-dd * dd / 0.011);
+    float core = exp(-dd * dd / 0.00012);
+    vec3 deep = GRAPE700 * (0.45 + 0.2 * h11(sd * 9.0));            // đáy tối
+    vec3 wc = mix(deep, SODA500 * 1.0, swell);
+    wc = mix(wc, mix(HONEY300, CREAM100, 0.35 + 0.5 * core) * 0.82, crest);
+    float lit2 = step(0.04, fract(sd * 13.7));
+    col = mix(col, wc * lit2, uWave);
+        p.y += uWave * (crest * 5.0 + swell * 1.2);
+    sz += uWave * (crest * 2.5 + swell * 0.9 + core * 0.4);
   }
   // 3: thả tim — hồng dâu, nhịp tim đập đôi + 3 trái tim khổng lồ ghép bằng chấm
   if (uHeart > 0.001) {

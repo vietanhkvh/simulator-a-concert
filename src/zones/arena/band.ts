@@ -29,7 +29,7 @@ const HIHAT = new V3(-6.0, 1.15, 0.85);
 const KEYS = { x: 6.5, y: 1.27, z: 1.36 };
 const MIC = (x: number) => new V3(x, 1.6, -1.42);
 const STOOL_H = 0.34; // ghế trống (m, trên riser)
-const STEP_H = 0.24; // bục kê chân keyboard
+const STEP_H = 0.5; // bục kê chân keyboard: vai cao hơn đàn tầng trên (1,55 m) → tay / cẳng tay thấy được từ phía khán giả
 const POD_H = 0.55; // bục tròn vocal (miệng ngang mic stand)
 const SEAT = 0.34; // đáy thân chibi (khung gốc) ngồi lên mặt ghế
 
@@ -42,7 +42,7 @@ const SPECS: Spec[] = [
       accessory: 'cap', accColor: PAL.soda[500], motif: 'star', motifColor: PAL.berry[500] } },
   { kind: 'bass', x: 9.9, y: 0, z: 1.15, yaw: 0.32, mirror: -1, poolR: 3.0, poolCol: PAL.mint[500],
     look: { skin: SKIN[3]!, hair: HAIR[7]!, hairStyle: 'pony', top: PAL.soda[700], bottom: PAL.night[100], shoe: PAL.cream[500], trim: PAL.mint[300] } },
-  { kind: 'keys', x: 6.5, y: 0.3, z: 1.8, yaw: -0.08, poolR: 3.2, poolCol: PAL.grape[300],
+  { kind: 'keys', x: 6.5, y: 0.3, z: 1.74, yaw: -0.08, poolR: 3.2, poolCol: PAL.grape[300],
     look: { skin: SKIN[0]!, hair: HAIR[1]!, hairStyle: 'buns', top: PAL.peach[500], bottom: PAL.grape[700], shoe: PAL.cream[500], trim: PAL.cream[300],
       accessory: 'glasses', motif: 'heart', motifColor: PAL.berry[500] } },
   { kind: 'vocal', x: -2.8, y: 0, z: -0.82, yaw: 0.1, mirror: 1, poolR: 2.4, poolCol: PAL.berry[300],
@@ -239,8 +239,12 @@ export function createBand(scene: THREE.Scene): Band {
     c.legL.rotation.x = Math.max(0, Math.sin(Math.PI * b)) * 0.15;
     c.legR.rotation.x = Math.max(0, -Math.sin(Math.PI * b)) * 0.15;
     const sw = Math.sin(b * Math.PI * 0.5) * 0.25 * (0.4 + hype);
-    aimArmWorld(c, 0, _a.set(KEYS.x - 0.28 + sw, KEYS.y + 0.04 + 0.07 * (1 - pl), KEYS.z));
-    aimArmWorld(c, 1, _a.set(KEYS.x + 0.28 + sw, KEYS.y + 0.04 + 0.07 * (1 - pr), KEYS.z));
+    // Cổ tay cao, "gõ" phím rõ (bàn tay nhô trên mặt đàn); cuối mỗi 4 phách tay phải vung lên cao
+    // (glissando / cổ vũ) để khán giả và máy hố thấy tay qua đàn tầng trên.
+    aimArmWorld(c, 0, _a.set(KEYS.x - 0.26 + sw, KEYS.y + 0.08 + 0.1 * (1 - pl), KEYS.z + 0.02));
+    const bar = b % 4, fl = hype > 0.35 ? Math.sin(Math.PI * clamp((bar - 3) / 1, 0, 1)) : 0;
+    if (fl > 0.02) armDir(c, 1, 0.5, -0.2 + 2.2 * fl, 0.35);
+    else aimArmWorld(c, 1, _a.set(KEYS.x + 0.26 + sw, KEYS.y + 0.08 + 0.1 * (1 - pr), KEYS.z + 0.02));
     batch.setFace(c, exprByHype(hype, b, m.seed), dtLast);
   }
 

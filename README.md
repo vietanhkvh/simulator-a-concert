@@ -57,6 +57,12 @@ Bảng hướng dẫn phím hiện ở cạnh trái trong ~15 giây đầu của
 | Xoay góc nhìn | Kéo chuột / `Q` `E` |
 | Chuột tự do | `M` / nhấp đúp (bấm `M` hoặc `Esc` để thoát) |
 | Đổi góc máy | `V` (ca sĩ → flycam → hố → cần cẩu → toàn cảnh) |
+| Xoay góc máy | Kéo chuột (ở mọi góc máy khác ca sĩ) |
+| Phóng to / thu nhỏ | Lăn chuột |
+| Nâng / hạ máy quay | `R` / `F` |
+| Flycam bay tự do | `G` (bấm `G` lần nữa để thoát) |
+| Bay flycam | `W` `A` `S` `D` `R` `F` + giữ `Shift` để bay nhanh hơn |
+| Đặt lại góc máy | `0` |
 | Đưa micro cho khán giả | Giữ `C` (tối đa 10 giây, chỉ bài có nốt) |
 | Hò reo | `1` / `Space` |
 | Sóng lightstick | `2` |
@@ -99,25 +105,26 @@ Không đổi gameplay trừ khi bấm một nút trong bảng.
 
 - **Bật:** `?dev=1` (nhớ tới khi `?dev=0`), phím **`** (backquote) hoặc **F2** bất cứ lúc nào, link nhỏ "DEV" góc dưới trái
   ở sảnh, hoặc nút "Mở bảng developer" trong menu tạm dừng. Huy hiệu vàng "DEV" ở góc trên trái = đang bật (bấm để ẩn/hiện bảng).
-- **Bảng** (`src/ui/devPanel.ts`): kéo bằng thanh tiêu đề, thu gọn bằng "–"; phím game không bị chặn khi bảng không được focus,
+- **Bảng** (`src/ui/devPanel.ts`): kéo bằng thanh tiêu đề, thu gọn bằng "–" (vị trí và trạng thái thu gọn được nhớ; lần đầu mở ở dạng thu gọn); phím game không bị chặn khi bảng không được focus,
   và bị bỏ qua khi đang gõ trong ô nhập của bảng. Các mục:
   - *Số liệu* (~4 Hz): FPS / thời gian frame (trung bình + 1% thấp trong 3 s), draw call / tam giác / geometry / texture /
     program, số khán giả + chất lượng tự động, trạng thái, thời gian bài, Hype (hiển thị và của điểm), micro (chế độ, mức, nốt),
     góc máy, vị trí/hướng người chơi, sự kiện bí mật / chào sân đang chạy. Nút "Copy stats" chép JSON.
   - *Trạng thái game*: bắt đầu ngay (không chào sân) hoặc với từng kiểu chào sân, hát lại, kết thúc, màn kết quả, tua ±10/30 s,
     tới điệp khúc, tới 10 s trước khi hết bài.
-  - *Hype*: khóa Hype hiển thị (0–100 %) cho mọi module hình + âm thanh, **không** đổi điểm; nút nhanh 0/20/40/60/80/95/100 %;
+  - *Hype*: khóa Hype hiển thị (0–100 %) cho mọi module hình + âm thanh, **không** đổi điểm (thanh Hype trên HUD hiện giá trị khóa kèm nhãn "DEV"; xem trước trong menu tạm dừng hiện nhãn "XEM"); nút nhanh 0/20/40/60/80/95/100 %;
     quét 0→100 % trong 20 s (thử ngưỡng cực quang 40 %, sao băng 20/40/60/80 %…).
   - *Micro*: đổi micro giả lúc đang chạy (`real` / `perfect` / `off` / `octave` / `silent`), bù trễ, độ nhạy.
   - *Kích hoạt*: tương tác (hò reo, sóng, thả tim, flash, pháo hoa, hát theo), pyro, pháo giấy, đội hình tim, từng loại biểu tượng,
     laser (Hype 90 %), khán giả hát theo bật/tắt, sự kiện bí mật + tỉ lệ, máy bay kéo băng rôn, mưa sao băng, xem thử màn chào sân,
     đặt băng rôn (nhiều khẩu hiệu cách nhau bằng `|`).
   - *Camera*: mọi góc máy (theo `VIEW_MODES` của khu sân trung tâm), chuột tự do, dịch chuyển (sân khấu, cuối runway, bục trái/phải,
-    B-stage), độ nhạy nhìn, **camera bay tự do** (WASD, Q/E lên/xuống, kéo chuột để nhìn, giữ Shift để nhanh; không bị giới hạn lối đi).
+    B-stage), độ nhạy nhìn, nút Flycam (G) và Đặt lại góc máy (0) khi `window.__csControls` có, **camera bay tự do** (WASD, Q/E lên/xuống, kéo chuột để nhìn, giữ Shift để nhanh; không bị giới hạn lối đi).
   - *Khu & lớp*: ẩn/hiện từng khu (ngoài sân, khán đài, sân trung tâm, điểm sáng dùng chung) và từng lớp trong khu
     (vd. `crowd`, `lights`, `stageFx`, `emotes`, `confetti`, `led`, `band`, `crew`, `sky`, `balloons`, `stadium`…), chất lượng
-    vẽ khán giả, đổi số khán giả (tải lại với `?crowd=`). Chưa tách riêng được: cực quang (trong `sky`), laser (trong `stageFx`),
-    sao + khán giả chấm sáng (một draw call chung `glow`), vật thể module tạo muộn khi chạy.
+    vẽ khán giả, đổi số khán giả (tải lại với `?crowd=`). Đã tách thêm các lớp `aurora`, `stars`, `meteors` (trong `sky`), `crowdDots`
+    (khán giả chấm sáng ở khán đài), `lasers` (trong `stageFx`) và `secrets` (vật thể sự kiện bí mật, tạo lười lúc chạy). Chưa tách riêng
+    được: đèn nhà / đèn pha / đèn hàng không (chung một draw call `glow`, chỉ tắt cả cụm) và cường độ cực quang theo Hype (uniform trong shader).
   - *Nhật ký*: 30 sự kiện gần nhất (`cs-interact`, `cs-secret`, `cs-entrance`, `cs-view`, `cs-mouselook`) + lỗi/cảnh báo console
     từ lúc tải trang, kèm thời điểm (giây).
 
