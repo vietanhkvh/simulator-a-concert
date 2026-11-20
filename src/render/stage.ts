@@ -1,11 +1,10 @@
-// P6: sân khấu tối, camera góc nhìn ca sĩ (mouse-look ±15°), fog, giới hạn DPR 1,5.
+// P6: sân khấu tối, camera góc nhìn ca sĩ (đi lại + nhìn 360°), fog, giới hạn DPR 1,5.
 // Quy ước: ca sĩ ở gốc, nhìn -Z; sàn sân khấu y=0 (z từ +2 đến -5); khán giả ở z < -6 thấp hơn sàn.
 import * as THREE from 'three';
 import type { FrameState, Stage } from '../core/types';
-
-const MAX_YAW = THREE.MathUtils.degToRad(15);
-const MAX_PITCH = THREE.MathUtils.degToRad(10);
-const BASE_PITCH = THREE.MathUtils.degToRad(2);
+import { createRunway } from './stageRunway';
+import { createControls } from './stageControls';
+import { createBackdrop } from './backdrop';
 
 export function createStage(canvas: HTMLCanvasElement): Stage {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -76,20 +75,14 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   slopeMesh.position.set(0, -1.6, -50);
   slopeMesh.rotation.x = Math.atan2(5.6, 74);
 
-  // Tường sau xa (gần như chìm trong fog)
-  addMesh(new THREE.PlaneGeometry(260, 60), mat(0x0d0b20), 0, 12, -95);
+  // Runway, phông nền LED + mái vòm hội trường
+  const runway = createRunway(scene);
+  const backdrop = createBackdrop(scene);
 
-  // Mouse-look: mục tiêu ±15°, làm mượt
-  let tx = 0;
-  let ty = 0;
-  let cx = 0;
-  let cy = 0;
+  // Đi lại + nhìn 360°
+  const controls = createControls();
   let t = 0;
-  const onMove = (e: PointerEvent) => {
-    tx = (e.clientX / window.innerWidth) * 2 - 1;
-    ty = (e.clientY / window.innerHeight) * 2 - 1;
-  };
-  window.addEventListener('pointermove', onMove);
+  let animT = 0;
 
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -106,22 +99,26 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     update(f: FrameState) {
       const dt = Math.min(f.dt, 0.1);
       t += dt;
-      const k = 1 - Math.exp(-6 * dt);
-      cx += (tx - cx) * k;
-      cy += (ty - cy) * k;
+      animT += dt > 0 ? dt : 0;
+      controls.update(dt);
       // idle: thở + nhún nhẹ theo beat
-      const idleYaw = Math.sin(t * 0.37) * 0.012;
-      const idlePitch = Math.sin(t * 0.53) * 0.008 - f.beatPulse * 0.004 * f.hype;
-      camera.rotation.y = -cx * MAX_YAW + idleYaw;
-      camera.rotation.x = BASE_PITCH - cy * MAX_PITCH + idlePitch;
-      camera.position.y = 1.65 + Math.sin(t * 0.8) * 0.012;
+      const idleYaw = Math.sin(t * 0.37) * 0.008;
+      const idlePitch = Math.sin(t * 0.53) * 0.006 - f.beatPulse * 0.004 * f.hype;
+      camera.rotation.y = controls.yaw + idleYaw;
+      camera.rotation.x = controls.pitch + idlePitch;
+      camera.position.set(controls.pos.x, 1.65 + Math.sin(t * 0.8) * 0.012, controls.pos.z);
+      runway.update(f, animT);
+      backdrop.update(f, animT);
     },
     render: () => renderer.render(scene, camera),
+    resetView: () => controls.reset(),
     dispose() {
       window.removeEventListener('resize', resize);
-      window.removeEventListener('pointermove', onMove);
+      controls.dispose();
+      runway.dispose();
+      backdrop.dispose();
       for (const d of disposables) d.dispose();
       renderer.dispose();
     },
-  };
+  } as Stage & { resetView(): void };
 }

@@ -28,6 +28,11 @@ varying vec2 vShoulder;
 varying vec2 vHand;
 varying float vTint;
 varying vec3 vGlow;
+varying vec2 vHand2;
+varying vec2 vHead;
+varying vec4 vShape;   // hệ số cao, hệ số rộng, kiểu tóc 0..1, màu áo 0..1
+varying vec3 vStickCol;
+varying float vFront;  // 1 = camera nhìn thấy mặt trước (phía sân khấu), 0 = thấy lưng
 #endif
 
 #ifdef STICK
@@ -47,28 +52,73 @@ vec3 personalColor(float s) {
   return vec3(1.0, 0.85, 0.45);
 }
 
+float hash1(float n) { return fract(sin(n) * 43758.5453); }
+
 void main() {
-  float height = aSeed.y;
+  // Hạt giống phụ suy ra từ aSeed (không thêm attribute).
+  float hBeh = fract(aSeed.x * 31.71 + aSeed.w * 7.37);   // hành vi
+  float hArm2 = fract(aSeed.z * 13.13 + aSeed.x * 3.91);  // tay thứ hai
+  float hW = fract(aSeed.w * 19.7 + aSeed.z * 5.3);       // độ rộng
+  float hHair = fract(aSeed.x * 17.3 + aSeed.z * 5.17);
+  float hCloth = fract(aSeed.w * 29.1 + aSeed.z * 3.33 + aSeed.x * 1.7);
+  float height = aSeed.y * (0.93 + 0.14 * fract(aSeed.z * 41.3 + aSeed.w * 2.1));
+  float widthK = 0.84 + 0.32 * hW;
   float side = aSeed.z < 0.5 ? -1.0 : 1.0;
   float enth = aSeed.w;
   float h = clamp(uHype * (0.45 + 0.75 * enth), 0.0, 1.0);
 
-  // Lệch pha nhỏ (~0,15 phách) để không giống robot.
-  float b = uBeat - aSeed.x * 0.15;
+  // Cực hype: gần như mọi người nhảy đồng loạt.
+  float sync = smoothstep(0.82, 0.9, uHype);
+  // Cơn phấn khích ngẫu nhiên: mỗi cửa sổ ~2,5 s có ~6% người "bùng nổ".
+  float win = floor(uTime * 0.4 + aSeed.x * 7.0);
+  float excited = step(0.94, hash1(win * 12.9898 + aSeed.w * 78.233 + aSeed.z * 4.1)) * smoothstep(0.15, 0.4, uHype);
 
-  // Nhún: chạm đất đúng phách. Hype thấp gần như đứng yên, chỉ lắc lư chậm.
-  float bounce = pow(abs(sin(b * PI)), 0.6);
-  float lift = bounce * (0.02 + 0.16 * h * h);
+  // Lệch pha nhỏ (~0,15 phách) để không giống robot; đồng bộ dần khi sync.
+  float b = uBeat - aSeed.x * 0.15 * (1.0 - sync);
+  float bs = abs(sin(b * PI));
+  float bounce = pow(bs, 0.6);
+
+  float isJumper = step(hBeh, 0.3);
+  float isSwayer = step(0.3, hBeh) * step(hBeh, 0.55);
+  float isClapper = step(0.55, hBeh) * step(hBeh, 0.75);
+  float isBobber = step(0.75, hBeh);
+
+  // Nhảy: chạm đất đúng phách (bs = 0 tại phách nguyên).
+  float jump = max(isJumper * smoothstep(0.55, 0.7, h), max(sync * (0.6 + 0.4 * enth), excited));
+  float lift = bounce * (0.02 + 0.12 * h * h) * (1.0 - jump) + pow(bs, 0.8) * 0.34 * jump * height;
   float idle = sin(uTime * 0.7 + aSeed.x * 6.2831) * 0.03 * (1.0 - h);
 
+  // Lắc lư sang ngang chu kỳ 2 phách (người lắc lư mạnh, người khác nhẹ).
+  float swayAmt = mix(0.025, 0.11, isSwayer) * (0.4 + 0.6 * h) * (1.0 - jump * 0.7);
+  float lean = sin(b * PI + aSeed.x * 0.6) * swayAmt + idle * 0.5;
+
+  // Gật đầu theo phách (mạnh hơn ở người "gật đầu" và khi hype thấp).
+  float bobAmt = mix(0.012, 0.045, isBobber) * (1.0 - 0.5 * h);
+  vec2 head = vec2(lean * 0.25, 1.6 * height - bobAmt * pow(1.0 - bs, 3.0));
+
   // Tay cầm lightstick: góc tính từ phương thẳng đứng (radian, dương = sang phải màn hình).
-  float raise = smoothstep(0.05, 0.85, h);
+  float raise = max(smoothstep(0.05, 0.85, h), excited);
   float baseAngle = side * mix(0.95, 0.3, raise);
-  float swing = sin(b * PI) * mix(0.12, 0.85, h);
+  float swing = sin(b * PI) * mix(0.12, 0.85, h) * (1.0 - isClapper * 0.8);
   float angle = baseAngle + swing + idle;
   vec2 dir = vec2(sin(angle), cos(angle));
-  vec2 shoulder = vec2(side * 0.17, 1.42) * height;
+  vec2 shoulder = vec2(side * 0.17 * widthK, 1.42) * height;
   vec2 hand = shoulder + dir * 0.6 * height;
+
+  // Tay thứ hai: giơ (đấm nhịp) hoặc buông, tùy seed + hype.
+  vec2 shoulder2 = vec2(-side * 0.17 * widthK, 1.42) * height;
+  float up2 = max(step(hArm2, h * 0.9), max(excited, sync));
+  float a2 = -side * (0.3 + 0.15 * sin(b * PI * 2.0 + 1.0)) - side * 0.25 * (1.0 - bounce);
+  vec2 hand2Up = shoulder2 + vec2(sin(a2), cos(a2)) * 0.58 * height;
+  vec2 hand2Down = shoulder2 + vec2(-side * 0.07, -0.55) * height + vec2(lean * 0.3, 0.0);
+  vec2 hand2 = mix(hand2Down, hand2Up, up2);
+
+  // Vỗ tay: hai tay chụm trên đầu đúng phách.
+  float clap = isClapper * smoothstep(0.15, 0.35, h) * (1.0 - jump) * pow(1.0 - bs, 4.0);
+  vec2 clapPt = vec2(side * 0.04, 1.95) * height;
+  hand = mix(hand, clapPt + vec2(side * 0.03, 0.0), clap);
+  hand2 = mix(hand2, clapPt - vec2(side * 0.03, 0.0), clap * step(0.5, up2 + isClapper));
+  dir = normalize(hand - shoulder);
 
   // Đèn flash điện thoại: ngưỡng ngẫu nhiên riêng quyết định ai giơ điện thoại; uFlash càng cao
   // càng nhiều người (tối đa ~60%). phoneMix 0..1: <0,5 lightstick tắt dần, >0,5 đèn điện thoại sáng dần.
@@ -90,12 +140,18 @@ void main() {
 
 #ifdef BODY
   // Quad đủ rộng để chứa cả cánh tay giơ cao.
-  vec2 size = vec2(1.5, 2.45) * height;
+  vec2 size = vec2(1.5, 2.5) * height;
   local = vec2(position.x * size.x, position.y * size.y);
   vLocal = local;
   vShoulder = shoulder;
   vHand = hand;
   vTint = aTint;
+  vHand2 = hand2;
+  vHead = head;
+  vShape = vec4(height, widthK, hHair, hCloth);
+  vStickCol = personalColor(fract(aSeed.x * 13.7 + aSeed.w * 5.3));
+  vStickCol = mix(vStickCol, mix(uColorA, uColorB, 0.5 * uWaveMix), smoothstep(0.25, 0.7, uHype));
+  vFront = smoothstep(-0.15, 0.15, dot(toCam, normalize(-aPos.xz + vec2(0.0, 0.001))));
   // Ánh lightstick hắt lên vai/đầu khi đông người cùng sáng.
   vGlow = mix(uColorA, uColorB, 0.5 * uWaveMix) * (0.06 + 0.22 * uHype);
   vGlow = mix(vGlow, vec3(0.16, 0.16, 0.18), uFlash * 0.7);
@@ -151,6 +207,7 @@ void main() {
   }
 #endif
 
+  local.x += lean * local.y;
   vec3 world = aPos + right * local.x + vec3(0.0, local.y, 0.0);
   vec4 mvPosition = viewMatrix * vec4(world, 1.0);
   gl_Position = projectionMatrix * mvPosition;

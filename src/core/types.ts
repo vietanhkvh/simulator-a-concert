@@ -112,6 +112,8 @@ export interface MicOptions {
    * hay không) để tiếng nhạc lọt từ loa vào micro không bị tính là giọng hát.
    */
   voiceProcessing?: boolean;
+  /** deviceId của micro người chơi chọn (bỏ trống = micro mặc định của hệ thống). */
+  deviceId?: string;
 }
 
 export interface MicInput {

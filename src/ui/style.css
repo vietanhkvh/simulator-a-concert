@@ -162,4 +162,41 @@
   pointer-events: none;
 }
 
-.cs-pause-btn, .cs-pause-veil, .cs-keys-hint { font-family: var(--cs-font); }
+.cs-pause-btn, .cs-pause-veil, .cs-keys-hint, .cs-sing-banner, .cs-mic-picker, .cs-mic-picker select { font-family: var(--cs-font); }
+
+/* Băng thông báo khán giả hát theo / hát thay */
+.cs-sing-banner {
+  position: fixed;
+  left: 50%;
+  top: 64px;
+  transform: translateX(-50%);
+  padding: 6px 18px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(106, 76, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+.cs-sing-banner.handover { background: rgba(255, 79, 163, 0.75); font-size: 18px; }
+.cs-sing-banner[hidden] { display: none; }
+.cs-keys-hint { max-width: 46vw; text-align: right; border-radius: 12px; }
+
+/* Chọn micro ở màn bắt đầu / kết quả (góc trên phải) */
+.cs-mic-picker {
+  position: fixed;
+  right: 16px;
+  top: 14px;
+  z-index: 30;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(8, 6, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  padding: 6px 12px;
+  pointer-events: auto;
+}
+.cs-mic-picker select { font-size: 13px; color: #fff; background: transparent; border: 0; max-width: 240px; }
+.cs-mic-picker select option { color: #111; }
+.cs-mic-picker[hidden] { display: none; }

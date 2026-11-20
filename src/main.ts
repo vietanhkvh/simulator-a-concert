@@ -5,6 +5,7 @@
  * Tham số URL: ?fakeMic=perfect|off|octave  ?latency=<ms>  ?crowd=<số người>
  */
 import { createCrowdAudio, type CrowdAudio } from './audio/crowdAudio';
+import { createCrowdSing, type CrowdSing } from './audio/crowdSing';
 import { createAudioEngine } from './audio/engine';
 import { EventBus } from './core/events';
 import { createLoop } from './core/loop';
@@ -23,6 +24,7 @@ import { createStage } from './render/stage';
 import { createStageFx } from './render/stageFx';
 import { createScoring } from './scoring/scoring';
 import { createVoiceScoring } from './scoring/voice';
+import { findChorusLines } from './song/chorus';
 import { lyricIndexAt } from './song/lrc';
 import { loadManifest, loadSong } from './song/loader';
 import { loadLocalSong, songHasNotes } from './song/local';
@@ -62,9 +64,61 @@ let flashOn = false;
 let lastInteract = -Infinity;
 const hint = document.createElement('div');
 hint.className = 'cs-keys-hint';
-hint.textContent = 'Space: Hò reo  ·  W: Sóng lightstick  ·  H: Thả tim  ·  F: Đèn flash  ·  P: Pháo hoa';
+hint.textContent =
+  'Mũi tên: đi lại  ·  Kéo chuột: xoay  ·  Giữ C: đưa micro cho khán giả  ·  Space: hò reo  ·  W: sóng  ·  H: tim  ·  F: flash  ·  P: pháo hoa';
 hint.hidden = true;
 uiRoot.appendChild(hint);
+// --- Chọn micro (ví dụ: nghe bằng tai nghe nhưng thu bằng micro của máy) ---
+const MIC_KEY = 'cs-mic-device';
+const micPicker = document.createElement('label');
+micPicker.className = 'cs-mic-picker';
+micPicker.append('Micro: ');
+const micSelect = document.createElement('select');
+micSelect.id = 'cs-mic-select';
+micPicker.appendChild(micSelect);
+uiRoot.appendChild(micPicker);
+let micLabelsAsked = false;
+async function refreshMics(): Promise<void> {
+  let saved = '';
+  try { saved = localStorage.getItem(MIC_KEY) ?? ''; } catch { /* không có localStorage */ }
+  const current = micSelect.value || saved;
+  let inputs: MediaDeviceInfo[] = [];
+  try {
+    inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+  } catch { /* trình duyệt không hỗ trợ */ }
+  micSelect.replaceChildren(new Option('Mặc định của hệ thống', ''));
+  inputs.forEach((d, i) => { if (d.deviceId) micSelect.add(new Option(d.label || `Micro ${i + 1}`, d.deviceId)); });
+  micSelect.value = [...micSelect.options].some((o) => o.value === current) ? current : '';
+}
+// Tên thiết bị chỉ hiện sau khi được cấp quyền micro: xin quyền một lần khi người chơi mở danh sách.
+micSelect.addEventListener('pointerdown', () => {
+  if (micLabelsAsked || !navigator.mediaDevices?.getUserMedia) return;
+  micLabelsAsked = true;
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then((s) => { s.getTracks().forEach((t) => t.stop()); return refreshMics(); })
+    .catch(() => { /* bị từ chối: giữ danh sách hiện có */ });
+});
+micSelect.addEventListener('change', () => {
+  try { localStorage.setItem(MIC_KEY, micSelect.value); } catch { /* bỏ qua */ }
+});
+navigator.mediaDevices?.addEventListener?.('devicechange', () => void refreshMics());
+void refreshMics();
+
+// --- Fan hát theo điệp khúc + hỏi–đáp (giữ C để đưa micro cho khán giả) ---
+const HANDOVER_MAX_SEC = 10; // giữ C tối đa bấy nhiêu giây, sau đó phải chờ hồi
+let crowdSing: CrowdSing | null = null;
+let chorusLines = new Set<number>();
+let handoverHeld = false;
+let handoverEnergy = HANDOVER_MAX_SEC;
+let crowdSinging = false; // khán giả đang hát thay (hỏi–đáp)
+const singBanner = document.createElement('div');
+singBanner.className = 'cs-sing-banner';
+singBanner.hidden = true;
+uiRoot.appendChild(singBanner);
+window.addEventListener('keydown', (e) => { if (e.code === 'KeyC' && state === 'playing') handoverHeld = true; });
+window.addEventListener('keyup', (e) => { if (e.code === 'KeyC') handoverHeld = false; });
+window.addEventListener('blur', () => { handoverHeld = false; });
+
 // --- Tạm dừng (nút góc trên phải, hoặc phím Esc) ---
 let paused = false;
 const pauseBtn = document.createElement('button');
@@ -185,6 +239,7 @@ async function start(): Promise<void> {
     // Tạo/mở khóa AudioContext ngay trong cú bấm của người dùng.
     audio ??= createAudioEngine();
     crowdAudio ??= createCrowdAudio(audio.ctx);
+    crowdSing ??= createCrowdSing(audio.ctx);
     const resumed = audio.resume();
     // Video mới mỗi lần chơi (createMediaElementSource chỉ gọi được 1 lần / phần tử).
     releaseVideo();
@@ -227,11 +282,14 @@ async function start(): Promise<void> {
     // Không có nốt: bài kéo dài hết file audio/video.
     if (!hasNotes) song.durationSec = Math.max(song.durationSec, audio.durationSec);
     scoring = hasNotes ? noteScoring : voiceScoring;
+    chorusLines = hasNotes ? findChorusLines(song) : new Set();
+    handoverEnergy = HANDOVER_MAX_SEC;
 
     mic?.stop();
     mic = createMic({
       mode: requestedMic,
       voiceProcessing: !hasNotes,
+      deviceId: micSelect.value || undefined,
       targetHz: () => {
         if (!song || !audio) return null;
         const t = audio.now();
@@ -286,6 +344,8 @@ function finish(score: ScoreState): void {
   teleprompter?.setVisible(false);
   hud.setVisible(false);
   setState('result');
+  crowdSing?.update(null, 0);
+  singBanner.hidden = true;
   crowdAudio?.cheer(1);
   confetti.burst();
   bus.emit('songEnd', score);
@@ -294,6 +354,7 @@ function finish(score: ScoreState): void {
 
 function tick(dt: number): void {
   pauseBtn.hidden = state !== 'playing';
+  micPicker.hidden = !(state === 'menu' || state === 'result');
   if (paused) {
     if (state === 'playing' && lastFrame) {
       // Đứng hình: vẫn vẽ lại (đổi kích thước cửa sổ, camera theo chuột) nhưng không chạy game.
@@ -307,8 +368,30 @@ function tick(dt: number): void {
   if ((state === 'countdown' || state === 'playing') && song && audio && mic) {
     const songTime = audio.now();
     if (state === 'countdown' && songTime >= 0) setState('playing');
-    const pitch = mic.read();
+    let pitch = mic.read();
+    // Hỏi–đáp: giữ C thì khán giả hát thay ca sĩ (chỉ bài có nốt, cần Hype ≥ 0,15, có giới hạn thời gian).
+    const targetNote = hasNotes ? noteAt(song, songTime - latencySec) : null;
+    crowdSinging = handoverHeld && hasNotes && state === 'playing' && handoverEnergy > 0 && (lastFrame?.hype ?? 0) >= 0.15;
+    handoverEnergy = crowdSinging
+      ? Math.max(0, handoverEnergy - dt)
+      : Math.min(HANDOVER_MAX_SEC, handoverEnergy + (handoverHeld ? 0 : dt * 0.5));
+    if (crowdSinging && targetNote && targetNote.type !== 'freestyle') {
+      const hz = pitchToHz(targetNote.pitch);
+      pitch = { hz, midi: 69 + 12 * Math.log2(hz / 440), clarity: 1, rms: 0.2 };
+    }
     const score = scoring.update(songTime, pitch, latencySec, dt);
+    // Fan hát theo: ở điệp khúc khi Hype đủ cao thì hát nền; hỏi–đáp thì hát to.
+    const inChorus = chorusLines.has(score.lineIndex);
+    const singNote = hasNotes ? noteAt(song, songTime) : null;
+    const singAmount = crowdSinging ? 1 : inChorus ? Math.min(0.6, Math.max(0, (score.hype - 0.45) / 0.4) * 0.6) : 0;
+    crowdSing?.update(singNote && singNote.type !== 'freestyle' ? pitchToHz(singNote.pitch) : null, singAmount);
+    singBanner.hidden = singAmount <= 0.05;
+    if (!singBanner.hidden) {
+      singBanner.textContent = crowdSinging
+        ? `Khán giả đang hát thay bạn!  (${Math.ceil(handoverEnergy)}s)`
+        : 'Điệp khúc — khán giả hát theo';
+      singBanner.classList.toggle('handover', crowdSinging);
+    }
     const beat = visualBeat(songTime, song);
     f = {
       dt, songTime, beat, beatPulse: beatPulse(beat), level: audio.level(), hype: score.hype,
@@ -339,6 +422,8 @@ function tick(dt: number): void {
   }
   // Tương tác: Hype hiển thị được cộng tạm (không đổi điểm), sóng lightstick theo phím W.
   hypeBoost = Math.max(0, hypeBoost - dt * 0.12);
+  if (state !== 'playing') crowdSinging = false;
+  if (crowdSinging) hypeBoost = Math.max(hypeBoost, 0.2);
   hint.hidden = state !== 'playing';
   if (state === 'playing') {
     const waving = performance.now() < waveUntil;

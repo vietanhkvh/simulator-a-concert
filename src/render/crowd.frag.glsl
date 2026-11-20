@@ -19,6 +19,19 @@ varying vec2 vShoulder;
 varying vec2 vHand;
 varying float vTint;
 varying vec3 vGlow;
+varying vec2 vHand2;
+varying vec2 vHead;
+varying vec4 vShape;
+varying vec3 vStickCol;
+varying float vFront;
+
+vec3 clothColor(float c) {
+  if (c < 0.2) return vec3(0.06, 0.08, 0.2);    // xanh navy
+  if (c < 0.38) return vec3(0.22, 0.05, 0.08);  // đỏ rượu
+  if (c < 0.54) return vec3(0.04, 0.17, 0.17);  // xanh teal
+  if (c < 0.7) return vec3(0.5, 0.5, 0.5);      // áo phông trắng
+  return vec3(0.025, 0.025, 0.03);              // áo merch đen
+}
 #endif
 
 #ifdef STICK
@@ -54,21 +67,85 @@ float fogAmount() {
 void main() {
 #ifdef BODY
   vec2 p = vLocal;
-  float hs = vShoulder.y / 1.42; // hệ số chiều cao
-  float d = length(p - vec2(0.0, 1.6 * hs)) - 0.115 * hs;                         // đầu
-  d = min(d, sdRoundBox(p - vec2(0.0, 1.17 * hs), vec2(0.215, 0.29) * hs, 0.09)); // vai + ngực
-  d = min(d, sdRoundBox(p - vec2(0.0, 0.5 * hs), vec2(0.17, 0.6) * hs, 0.05));    // thân dưới
-  d = min(d, sdCapsule(p, vec2(0.0, 1.4 * hs), vec2(0.0, 1.5 * hs), 0.055));      // cổ
-  d = min(d, sdCapsule(p, vShoulder, vHand, 0.05));                               // tay cầm lightstick
+  float hs = vShape.x;
+  float wk = vShape.y;
+  float hair = vShape.z;
+  vec2 hc = vHead;
+  float hr = 0.112 * hs;
+  // Các phần cơ thể (SDF, đơn vị m).
+  float dHead = length((p - hc) * vec2(1.08, 0.95)) - hr;
+  float dNeck = sdCapsule(p, vec2(0.0, 1.36 * hs), hc - vec2(0.0, 0.08 * hs), 0.045 * hs);
+  // Vai thuôn + ngực, eo hẹp hơn.
+  float dTorso = sdRoundBox(p - vec2(0.0, 1.2 * hs), vec2(0.2 * wk, 0.2) * hs, 0.085 * hs);
+  dTorso = min(dTorso, sdRoundBox(p - vec2(0.0, 0.9 * hs), vec2(0.165 * wk, 0.16) * hs, 0.05));
+  float dLegs = sdRoundBox(p - vec2(0.0, 0.4 * hs), vec2(0.155 * wk, 0.42) * hs, 0.04);
+  // Khe giữa hai chân.
+  dLegs = max(dLegs, -sdRoundBox(p - vec2(0.0, 0.18 * hs), vec2(0.018, 0.22) * hs, 0.01));
+  vec2 sh1 = vShoulder, sh2 = vec2(-vShoulder.x, vShoulder.y);
+  vec2 el1 = mix(sh1, vHand, 0.5) + vec2(sign(sh1.x) * 0.04, -0.02) * hs;
+  vec2 el2 = mix(sh2, vHand2, 0.5) + vec2(sign(sh2.x) * 0.04, -0.02) * hs;
+  float dArm = min(sdCapsule(p, sh1, el1, 0.05 * hs), sdCapsule(p, el1, vHand, 0.042 * hs));
+  dArm = min(dArm, min(sdCapsule(p, sh2, el2, 0.05 * hs), sdCapsule(p, el2, vHand2, 0.042 * hs)));
+  float dHands = min(length(p - vHand) - 0.045 * hs, length(p - vHand2) - 0.045 * hs);
+
+  // Tóc: 0 ngắn, 1 dài, 2 mũ lưỡi trai, 3 búi.
+  float dHair;
+  float hairType = floor(hair * 4.0);
+  if (hairType < 0.5) {
+    dHair = max(length(p - hc - vec2(0.0, 0.02 * hs)) - hr * 1.05, -(p.y - hc.y - 0.01 * hs));
+  } else if (hairType < 1.5) {
+    dHair = min(length(p - hc - vec2(0.0, 0.015 * hs)) - hr * 1.12,
+                sdRoundBox(p - hc - vec2(0.0, -0.13 * hs), vec2(0.13, 0.15) * hs, 0.05 * hs));
+    dHair = max(dHair, -(p.y - hc.y + 0.3 * hs));
+  } else if (hairType < 2.5) {
+    dHair = max(length(p - hc - vec2(0.0, 0.015 * hs)) - hr * 1.1, -(p.y - hc.y - 0.03 * hs));
+    dHair = min(dHair, sdRoundBox(p - hc - vec2(0.07 * hs * (vShoulder.x > 0.0 ? 1.0 : -1.0), 0.035 * hs), vec2(0.11, 0.012) * hs, 0.008));
+  } else {
+    dHair = max(length(p - hc) - hr * 1.06, -(p.y - hc.y - 0.035 * hs));
+    dHair = min(dHair, length(p - hc - vec2(0.0, 0.14 * hs)) - 0.055 * hs);
+  }
+  // Nhìn từ sau: toàn bộ đầu là tóc.
+  dHair = mix(min(dHair, dHead + 0.003), dHair, vFront);
+  if (hairType > 0.5 && hairType < 1.5) dHair = mix(min(dHair, dHead), dHair, vFront);
+
+  float d = min(min(min(dHead, dNeck), min(dTorso, dLegs)), min(min(dArm, dHands), dHair));
   float aa = fwidth(d) * 0.75 + 1e-4;
   float alpha = 1.0 - smoothstep(-aa, aa, d);
   if (alpha < 0.02) discard;
 
-  vec3 col = vec3(vTint);
-  // Viền sáng phía trên (ánh lightstick & đèn sân khấu hắt lên).
-  float top = smoothstep(1.0 * hs, 1.8 * hs, p.y);
-  float rim = smoothstep(-0.035, 0.0, d);
-  col += vGlow * (0.12 * top + 0.9 * rim * top);
+  // Vật liệu (màu nền / albedo), theo thứ tự lớp phía sau → phía trước.
+  vec3 skin = mix(vec3(0.42, 0.29, 0.22), vec3(0.62, 0.47, 0.38), fract(hair * 7.3));
+  vec3 cloth = clothColor(vShape.w);
+  vec3 pants = vec3(0.03, 0.032, 0.045) + vec3(0.03, 0.035, 0.06) * step(0.5, fract(vShape.w * 5.1));
+  vec3 hairCol = mix(vec3(0.03, 0.022, 0.018), vec3(0.16, 0.1, 0.05), step(0.75, fract(hair * 11.0)));
+  if (hairType > 1.5 && hairType < 2.5) hairCol = clothColor(fract(vShape.w + 0.37)) * 0.8;
+  vec3 alb = pants;
+  float isSkin = 0.0;
+  if (dTorso < 0.0) alb = cloth;
+  if (dNeck < 0.0) { alb = skin; isSkin = 1.0; }
+  if (dHead < 0.0) { alb = skin; isSkin = 1.0; }
+  if (dHair < 0.0) { alb = hairCol; isSkin = 0.0; }
+  if (dArm < 0.0) { alb = vShape.w < 0.85 ? cloth * 0.85 : skin; isSkin = vShape.w < 0.85 ? 0.0 : 1.0; }
+  if (dHands < 0.0) { alb = skin; isSkin = 1.0; }
+  // Logo nhỏ sáng trên áo merch đen.
+  if (vShape.w >= 0.7 && dTorso < 0.0 && dArm > 0.0) {
+    float logo = 1.0 - smoothstep(0.02 * hs, 0.032 * hs, length(p - vec2(0.0, 1.22 * hs)));
+    alb = mix(alb, mix(vec3(1.0, 0.3, 0.7), vec3(1.0, 0.85, 0.3), step(0.85, vShape.w)) * 1.6, logo * vFront);
+  }
+  // Mặt: mắt / bóng tối nhẹ ở nửa dưới đầu cho cảm giác khối.
+  if (dHead < 0.0 && dHair > 0.0) alb *= 0.8 + 0.2 * smoothstep(-0.08, 0.04, (p.y - hc.y) / hs);
+  // Nhìn từ sau: không thấy mặt.
+  alb = mix(mix(alb, hairCol, step(dHead, 0.0)), alb, vFront);
+
+  // Chiếu sáng: nền tối + ánh lightstick riêng (mạnh gần bàn tay) + ánh sân khấu hắt từ trên.
+  float topY = smoothstep(0.8 * hs, 1.9 * hs, p.y);
+  float nearStick = exp(-length(p - vHand) * 5.0 / hs);
+  vec3 light = vec3(0.14 + vTint * 3.0) + vGlow * (0.45 + 0.9 * topY);
+  light += vStickCol * (0.15 + 0.7 * nearStick) * (0.35 + 0.65 * isSkin);
+  vec3 col = alb * light;
+  // Viền sáng (rim) quanh bóng, mạnh hơn ở đầu/vai.
+  float rim = smoothstep(-0.03 * hs, 0.0, d);
+  col += (vGlow * 1.4 + vStickCol * 0.12) * rim * (0.25 + 0.75 * topY);
   gl_FragColor = vec4(col, alpha);
 #ifdef USE_FOG
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogAmount());

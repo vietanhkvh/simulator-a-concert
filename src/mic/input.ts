@@ -76,7 +76,9 @@ export function createMic(opts: MicOptions): MicInput {
           audio: {
             echoCancellation: !!opts.voiceProcessing,
             noiseSuppression: !!opts.voiceProcessing,
-            autoGainControl: false,
+            // Tự chỉnh âm lượng để micro tích hợp của máy (ở xa miệng) vẫn đủ to.
+            autoGainControl: true,
+            ...(opts.deviceId ? { deviceId: { exact: opts.deviceId } } : {}),
           },
           video: false,
         });

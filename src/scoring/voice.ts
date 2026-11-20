@@ -7,7 +7,7 @@ import type { PitchSample, ScoreState, ScoringEngine, Song } from '../core/types
 import { lyricIndexAt } from '../song/lrc';
 import { createHypeMeter } from './hype';
 
-export const VOICE_MIN_RMS = 0.03;
+export const VOICE_MIN_RMS = 0.02;
 /** Hệ số tốc độ đổi Hype so với chế độ chấm nốt. */
 export const VOICE_RATE = 0.5;
 /** Giây im lặng được bỏ qua trước khi Hype bắt đầu giảm (bài không có mốc lời). */

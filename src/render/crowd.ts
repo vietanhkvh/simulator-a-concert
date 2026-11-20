@@ -35,6 +35,50 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/** Lối catwalk giữa khán giả (sàn y = 0): nửa rộng 1,6 m, z từ -5 tới -24, bục tròn R 3,5 m tại (0, -26). */
+const RUNWAY = { halfWidth: 1.6, endZ: -24, platformZ: -26, platformR: 3.5 };
+/** Khoảng trống quanh catwalk (m): không ai đứng trong |x| < CLEAR_X khi z > CLEAR_Z, hay trong CLEAR_R quanh bục. */
+const CLEAR_X = 2.6;
+const CLEAR_Z = -24.5;
+const CLEAR_R = 4.6;
+
+/**
+ * Đẩy người khỏi lối catwalk & bục tròn sang chỗ trống gần nhất (giữ tổng số người).
+ * Lặp vài lần vì đẩy khỏi lối có thể rơi vào vùng bục và ngược lại.
+ */
+function clearRunway(people: Person[], rand: () => number): void {
+  for (const p of people) {
+    for (let it = 0; it < 6; it++) {
+      let moved = false;
+      const dx = p.x;
+      const dz = p.z - RUNWAY.platformZ;
+      const r = Math.hypot(dx, dz);
+      if (r < CLEAR_R) {
+        // Đẩy theo hướng tâm bục; người đứng gần như đúng tâm → chọn hướng ngẫu nhiên phía sau.
+        let ux = dx / Math.max(r, 1e-3);
+        let uz = dz / Math.max(r, 1e-3);
+        if (r < 1e-3) {
+          const a = Math.PI * (0.25 + rand() * 0.5);
+          ux = Math.cos(a);
+          uz = -Math.sin(a);
+        }
+        const nr = CLEAR_R + 0.05 + rand() * 0.9;
+        p.x = ux * nr;
+        p.z = RUNWAY.platformZ + uz * nr;
+        moved = true;
+      }
+      if (p.z > CLEAR_Z && Math.abs(p.x) < CLEAR_X) {
+        const s = p.x === 0 ? (rand() < 0.5 ? -1 : 1) : Math.sign(p.x);
+        // Dồn vào sát hàng rào hai bên lối (đám đông chen lên mép catwalk).
+        p.x = s * (CLEAR_X + 0.05 + rand() * 1.1);
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    p.dist = Math.hypot(p.x, p.z);
+  }
+}
+
 interface Person {
   x: number;
   y: number;
@@ -83,6 +127,7 @@ function layout(opts: CrowdOptions, rand: () => number): Person[] {
       });
     }
   }
+  clearRunway(people, rand);
   // Xa trước gần sau: viền mềm của bóng blend đúng thứ tự.
   people.sort((p, q) => q.dist - p.dist);
   return people;
