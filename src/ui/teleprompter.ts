@@ -2,7 +2,7 @@
  * Màn nhắc lời HUD (P5): câu hiện tại tô theo âm tiết, câu kế tiếp mờ, dải cao độ và đếm ngược khi nghỉ dài.
  * DOM chỉ dựng lại khi đổi câu; mỗi frame chỉ đổi CSS variable / transform.
  */
-import type { FrameState, Line, LyricLine, Note, Song, Teleprompter } from '../core/types';
+import type { FrameState, Line, LyricLine, Note, PanelControls, Song, Teleprompter } from '../core/types';
 import './style.css';
 
 const REST_COUNTDOWN_SEC = 3; // nghỉ dài hơn mức này thì hiện thanh đếm ngược
@@ -19,6 +19,96 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
   return e;
 }
 
+const MIN_KEY = 'cs-panel-min';
+const SEEK_STEP_SEC = 10;
+
+function loadMinimized(): boolean {
+  try {
+    return localStorage.getItem(MIN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function fmtTime(sec: number): string {
+  const s = Math.max(0, Math.floor(Number.isFinite(sec) ? sec : 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Thanh nhỏ gắn mép trên khung lời / video: tua ±10 s, giờ hiện tại / độ dài, thanh tiến độ bấm để tua,
+ * nút Thu nhỏ / Mở rộng (lớp `cs-min` trên khung, nhớ trong localStorage).
+ */
+function attachPanelBar(wrap: HTMLElement, controls: PanelControls | undefined) {
+  const bar = el('div', 'cs-panel-bar', wrap);
+  const mkBtn = (cls: string, text: string, title: string) => {
+    const b = el('button', `cs-panel-btn ${cls}`, bar);
+    b.type = 'button';
+    b.textContent = text;
+    b.title = title;
+    return b;
+  };
+  const back = mkBtn('cs-seek-back', '⏪ 10s', 'Lùi 10 giây (phím [)');
+  const fwd = mkBtn('cs-seek-fwd', '10s ⏩', 'Tới 10 giây (phím ])');
+  const time = el('span', 'cs-panel-time', bar);
+  const prog = el('div', 'cs-panel-prog', bar);
+  const progFill = el('div', 'cs-panel-prog-fill', prog);
+  const toggle = mkBtn('cs-panel-toggle', '', 'Thu nhỏ / mở rộng khung lời (phím T)');
+  if (!controls) {
+    back.hidden = fwd.hidden = true;
+    prog.hidden = true;
+  }
+  let minimized = false;
+  let lastText = '';
+  let lastFrac = -1;
+  const setMinimized = (on: boolean) => {
+    minimized = on;
+    wrap.classList.toggle('cs-min', on);
+    toggle.textContent = on ? '⤢ Mở rộng' : '⤡ Thu nhỏ';
+    try {
+      localStorage.setItem(MIN_KEY, on ? '1' : '0');
+    } catch {
+      /* không có localStorage */
+    }
+  };
+  setMinimized(loadMinimized());
+  const click = (b: HTMLButtonElement, fn: () => void) =>
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fn();
+      b.blur(); // không để Space/Enter bấm lại nút
+    });
+  click(back, () => controls?.seekBy(-SEEK_STEP_SEC));
+  click(fwd, () => controls?.seekBy(SEEK_STEP_SEC));
+  click(toggle, () => setMinimized(!minimized));
+  prog.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    if (!controls) return;
+    const r = prog.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
+    controls.seekTo(frac * controls.duration());
+  });
+  return {
+    update(t: number) {
+      const d = controls?.duration() ?? 0;
+      const text = d > 0 ? `${fmtTime(t)} / ${fmtTime(d)}` : fmtTime(t);
+      if (text !== lastText) {
+        lastText = text;
+        time.textContent = text;
+      }
+      const frac = d > 0 ? Math.max(0, Math.min(1, t / d)) : 0;
+      if (Math.abs(frac - lastFrac) > 0.001) {
+        lastFrac = frac;
+        progFill.style.transform = `scaleX(${frac.toFixed(4)})`;
+      }
+    },
+    setMinimized,
+    get minimized() {
+      return minimized;
+    },
+  };
+}
+
 interface NoteView {
   note: Note;
   fill: HTMLElement | null;
@@ -30,14 +120,28 @@ interface SylView {
   prog: number;
 }
 
-export function createTeleprompter(root: HTMLElement, song: Song): Teleprompter {
-  if (song.lyrics) return createLrcTeleprompter(root, song.lyrics);
+export function createTeleprompter(root: HTMLElement, song: Song, controls?: PanelControls): Teleprompter {
+  if (song.lyrics) return createLrcTeleprompter(root, song.lyrics, controls);
   if (song.lines.length === 0) {
-    // Hát tự do: không có lời.
-    return { update() {}, setVisible() {}, dispose() {} };
+    // Hát tự do: không có lời, chỉ có thanh tua.
+    const wrap = el('div', 'cs-tp cs-tp-free');
+    root.appendChild(wrap);
+    const bar = attachPanelBar(wrap, controls);
+    return {
+      update: (f: FrameState) => bar.update(f.songTime),
+      setVisible(v) {
+        wrap.style.display = v ? '' : 'none';
+      },
+      setMinimized: bar.setMinimized,
+      get minimized() {
+        return bar.minimized;
+      },
+      dispose: () => wrap.remove(),
+    };
   }
   const wrap = el('div', 'cs-tp');
   root.appendChild(wrap);
+  const bar = attachPanelBar(wrap, controls);
 
   const countdown = el('div', 'cs-tp-count', wrap);
   const countFill = el('div', 'cs-tp-count-fill', countdown);
@@ -148,6 +252,7 @@ export function createTeleprompter(root: HTMLElement, song: Song): Teleprompter 
   return {
     update(f: FrameState) {
       const t = f.songTime;
+      bar.update(t);
       if (song.lines.length === 0) return;
       const idx = pickLine(t);
       if (idx !== shown) setLine(idx);
@@ -215,6 +320,10 @@ export function createTeleprompter(root: HTMLElement, song: Song): Teleprompter 
     setVisible(v) {
       wrap.style.display = v ? '' : 'none';
     },
+    setMinimized: bar.setMinimized,
+    get minimized() {
+      return bar.minimized;
+    },
     dispose: () => wrap.remove(),
   };
 }
@@ -223,9 +332,10 @@ export function createTeleprompter(root: HTMLElement, song: Song): Teleprompter 
  * Nhắc lời theo câu (.lrc): câu hiện tại tô dần từ mốc của nó tới mốc câu kế tiếp, câu kế tiếp mờ.
  * Không có dải cao độ.
  */
-export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[]): Teleprompter {
+export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[], controls?: PanelControls): Teleprompter {
   const wrap = el('div', 'cs-tp cs-tp-lrc');
   root.appendChild(wrap);
+  const bar = attachPanelBar(wrap, controls);
   const countdown = el('div', 'cs-tp-count', wrap);
   const countFill = el('div', 'cs-tp-count-fill', countdown);
   const curEl = el('div', 'cs-tp-cur', wrap);
@@ -245,6 +355,7 @@ export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[]): T
   return {
     update(f: FrameState) {
       const t = f.songTime;
+      bar.update(t);
       const idx = pick(t);
       const line = idx >= 0 ? lyrics[idx] : undefined;
       const active = !!line && t < line.endSec;
@@ -275,6 +386,10 @@ export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[]): T
     setVisible(v) {
       wrap.style.display = v ? '' : 'none';
     },
+    setMinimized: bar.setMinimized,
+    get minimized() {
+      return bar.minimized;
+    },
     dispose: () => wrap.remove(),
   };
 }
@@ -283,13 +398,18 @@ export function createLrcTeleprompter(root: HTMLElement, lyrics: LyricLine[]): T
  * Khung video karaoke ở giữa-dưới (chỗ teleprompter) để người chơi đọc lời in sẵn trong video.
  * Phần tử video do main.ts tạo; khung chỉ gắn vào DOM, không điều khiển phát.
  */
-export function createVideoPanel(root: HTMLElement, video: HTMLVideoElement): Teleprompter {
+export function createVideoPanel(root: HTMLElement, video: HTMLVideoElement, controls?: PanelControls): Teleprompter {
   const wrap = el('div', 'cs-video-panel');
+  const bar = attachPanelBar(wrap, controls);
   video.classList.add('cs-video');
   wrap.appendChild(video);
   root.appendChild(wrap);
   return {
-    update() {},
+    update: (f: FrameState) => bar.update(f.songTime),
+    setMinimized: bar.setMinimized,
+    get minimized() {
+      return bar.minimized;
+    },
     setVisible(v) {
       wrap.style.display = v ? '' : 'none';
     },

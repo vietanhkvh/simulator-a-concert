@@ -99,3 +99,75 @@ describe('hype meter', () => {
     expect(h.raw).toBeCloseTo(0.3, 3);
   });
 });
+
+describe('scoring with seeks', () => {
+  /** Hát đúng (sing=true) hoặc im lặng; jumps: {at: giây, to: giây} — đồng hồ nhảy khi t vượt `at`. */
+  function runSeek(jumps: { at: number; to: number; sing?: boolean }[], firstSing = true, explicit = true) {
+    const song = mockSong();
+    const eng = createScoring();
+    eng.reset(song);
+    const dt = 1 / 60;
+    let s!: ScoreState;
+    let t = 0;
+    let sing = firstSing;
+    let steps = 0;
+    const pending = [...jumps];
+    let finishedNotes = 0;
+    while (t <= song.durationSec + 0.5 && steps++ < 100000) {
+      if (pending.length && t >= pending[0].at) {
+        const j = pending.shift()!;
+        t = j.to;
+        if (j.sing !== undefined) sing = j.sing;
+        if (explicit) eng.seek!(t, 0);
+      }
+      const n = noteAt(song, t);
+      s = eng.update(t, sing && n ? sample(n.pitch + 60) : null, 0, dt);
+      if (s.lastHit === 'miss') finishedNotes++;
+      t += dt;
+    }
+    return { s, song, misses: finishedNotes };
+  }
+
+  for (const explicit of [true, false]) {
+    const tag = explicit ? 'explicit seek()' : 'auto-detected jump';
+    it(`forward seek: skipped notes are not misses (${tag})`, () => {
+      const song = mockSong();
+      const third = song.durationSec / 3;
+      const { s } = runSeek([{ at: third, to: third * 2 }], true, explicit);
+      expect(s.percent).toBeGreaterThan(98);
+      expect(s.combo).toBeGreaterThan(0);
+      expect(s.score).toBeLessThan(9000); // chỉ phần đã hát
+    });
+    it(`backward seek: notes re-sung replace earlier credit (${tag})`, () => {
+      const song = mockSong();
+      const half = song.durationSec / 2;
+      // Im lặng nửa đầu, tua về 0 rồi hát đúng cả bài: phần im lặng bị xóa.
+      const { s } = runSeek([{ at: half, to: 0, sing: true }], false, explicit);
+      expect(s.percent).toBeGreaterThan(98);
+      expect(s.score).toBeGreaterThan(9800);
+    });
+    it(`backward seek after singing does not double count (${tag})`, () => {
+      const song = mockSong();
+      const half = song.durationSec / 2;
+      const { s } = runSeek([{ at: half, to: 1 }], true, explicit);
+      expect(s.percent).toBeGreaterThan(98);
+      expect(s.percent).toBeLessThanOrEqual(100);
+      expect(s.score).toBeGreaterThan(9800);
+      expect(s.score).toBeLessThanOrEqual(10000);
+    });
+  }
+  it('hype is unchanged by a seek', () => {
+    const song = mockSong();
+    const eng = createScoring();
+    eng.reset(song);
+    let s!: ScoreState;
+    for (let t = 0; t < 4; t += 1 / 60) {
+      const n = noteAt(song, t);
+      s = eng.update(t, n ? sample(n.pitch + 60) : null, 0, 1 / 60);
+    }
+    const before = s.hype;
+    eng.seek!(song.durationSec / 2, 0);
+    s = eng.update(song.durationSec / 2, null, 0, 0);
+    expect(s.hype).toBeCloseTo(before, 6);
+  });
+});

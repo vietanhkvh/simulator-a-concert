@@ -13,6 +13,13 @@ export function walkable(x: number, z: number): boolean {
   return x * x + dz * dz <= 3.2 * 3.2;
 }
 
+/** Góc nhìn: 'singer' = ngôi thứ nhất; còn lại lấy pose từ provider (cameraCrew.getView). */
+export type ViewMode = 'singer' | 'flycam' | 'pit' | 'crane' | 'wide';
+export const VIEW_ORDER: ViewMode[] = ['singer', 'flycam', 'pit', 'crane', 'wide'];
+export interface ViewPose { position: THREE.Vector3; target: THREE.Vector3; fov: number }
+export type ViewProvider = (mode: ViewMode) => ViewPose | null;
+const BLEND_SEC = 0.6;
+
 const isTyping = () => {
   const el = document.activeElement as HTMLElement | null;
   if (!el) return false;
@@ -26,10 +33,129 @@ export function createControls() {
   let yaw = 0;
   let pitch = THREE.MathUtils.degToRad(2);
   const keys = new Set<string>();
-  const handled = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ', 'KeyE']);
+
+  // ── Góc nhìn bên ngoài ──
+  let viewMode: ViewMode = 'singer';
+  let provider: ViewProvider | null = null;
+  let hookScene: THREE.Scene | null = null;
+  let prevHook: THREE.Scene['onBeforeRender'] | null = null;
+  let baseFov: number | null = null;
+  let blend = 1;
+  let lastMs = 0;
+  let hasLast = false;
+  const lastPos = new THREE.Vector3();
+  const lastQuat = new THREE.Quaternion();
+  let lastFov = 70;
+  const fromPos = new THREE.Vector3();
+  const fromQuat = new THREE.Quaternion();
+  let fromFov = 70;
+  const tPos = new THREE.Vector3();
+  const tQuat = new THREE.Quaternion();
+  const lookM = new THREE.Matrix4();
+  const UP = new THREE.Vector3(0, 1, 0);
+  const singerPose = { position: new THREE.Vector3(0, EYE, 0), yaw: 0 };
+
+  /** Gọi trong scene.onBeforeRender: ghi đè transform camera (stage.ts đã đặt góc ngôi thứ nhất). */
+  const applyCamera = (camera: THREE.Camera) => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+    if (baseFov === null) baseFov = camera.fov;
+    const now = performance.now();
+    const dt = hasLast ? Math.min(0.25, Math.max(0, (now - lastMs) / 1000)) : 0;
+    lastMs = now;
+    const pose = viewMode !== 'singer' && provider ? provider(viewMode) : null;
+    let tFov: number;
+    if (pose) {
+      tPos.copy(pose.position);
+      lookM.lookAt(pose.position, pose.target, UP);
+      tQuat.setFromRotationMatrix(lookM);
+      tFov = pose.fov;
+    } else {
+      tPos.copy(camera.position);
+      tQuat.copy(camera.quaternion);
+      tFov = baseFov;
+    }
+    blend = Math.min(1, blend + dt / BLEND_SEC);
+    if (blend < 1 && hasLast) {
+      const e = blend * blend * (3 - 2 * blend);
+      tPos.lerpVectors(fromPos, tPos, e);
+      tQuat.slerpQuaternions(fromQuat, tQuat, e);
+      tFov = fromFov + (tFov - fromFov) * e;
+    }
+    camera.position.copy(tPos);
+    camera.quaternion.copy(tQuat);
+    if (Math.abs(camera.fov - tFov) > 1e-3) { camera.fov = tFov; camera.updateProjectionMatrix(); }
+    camera.updateMatrixWorld();
+    lastPos.copy(tPos);
+    lastQuat.copy(tQuat);
+    lastFov = tFov;
+    hasLast = true;
+  };
+  const setView = (mode: ViewMode) => {
+    if (mode === viewMode || !VIEW_ORDER.includes(mode)) return;
+    viewMode = mode;
+    if (hasLast) { fromPos.copy(lastPos); fromQuat.copy(lastQuat); fromFov = lastFov; blend = 0; }
+    if (mode !== 'singer' && dragId !== null) dragId = null;
+    window.dispatchEvent(new CustomEvent('cs-view', { detail: { mode } }));
+  };
+  const cycleView = (dir: number) => {
+    const i = VIEW_ORDER.indexOf(viewMode);
+    setView(VIEW_ORDER[(i + dir + VIEW_ORDER.length) % VIEW_ORDER.length]);
+  };
+  const detachHook = () => {
+    if (hookScene) hookScene.onBeforeRender = prevHook ?? (() => {});
+    hookScene = null;
+    prevHook = null;
+  };
+  const handled = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE']);
+
+  // Mouse-look: pointer lock, hoặc "sticky" (không có/ lỗi pointer lock) dùng pointermove delta.
+  let mouseLook = false;
+  let sticky = false;
+  const NOLOOK = 'button,input,textarea,select,a,label,[data-nodrag]';
+  const canvasEl = () => document.querySelector('canvas') as HTMLCanvasElement | null;
+  const emit = () => window.dispatchEvent(new CustomEvent('cs-mouselook', { detail: { on: mouseLook } }));
+  const setMouseLook = (on: boolean) => {
+    if (on === mouseLook) return;
+    mouseLook = on;
+    if (on) {
+      sticky = false;
+      const c = canvasEl();
+      try {
+        if (c && typeof c.requestPointerLock === 'function') {
+          const r = c.requestPointerLock() as unknown as Promise<void> | undefined;
+          if (r && typeof r.catch === 'function') r.catch(() => { if (mouseLook && !document.pointerLockElement) sticky = true; });
+        } else sticky = true;
+      } catch { sticky = true; }
+    } else {
+      sticky = false;
+      try { if (document.pointerLockElement) document.exitPointerLock(); } catch { /* ignore */ }
+    }
+    emit();
+  };
+  const onLockChange = () => {
+    if (!document.pointerLockElement && mouseLook && !sticky) { mouseLook = false; emit(); }
+  };
+  const onLockError = () => { if (mouseLook) sticky = true; };
+  const onDblClick = (e: MouseEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (!t || (t.closest && t.closest(NOLOOK))) return;
+    if (!(t instanceof HTMLCanvasElement)) return;
+    setMouseLook(!mouseLook);
+  };
+  const lookDelta = (dx: number, dy: number) => {
+    if (viewMode !== 'singer') return;
+    yaw -= dx * 0.0045;
+    pitch = THREE.MathUtils.clamp(pitch - dy * 0.0045, PITCH_MIN, PITCH_MAX);
+  };
+  const onMouseMoveLocked = (e: MouseEvent) => {
+    if (mouseLook && document.pointerLockElement) lookDelta(e.movementX, e.movementY);
+  };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (!handled.has(e.code) || isTyping()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || isTyping()) return;
+    if (e.code === 'KeyM') { if (!e.repeat) setMouseLook(!mouseLook); return; }
+    if (e.code === 'KeyV') { if (!e.repeat) cycleView(e.shiftKey ? -1 : 1); return; }
+    if (!handled.has(e.code)) return;
     keys.add(e.code);
     if (e.code.startsWith('Arrow')) e.preventDefault();
   };
@@ -41,14 +167,20 @@ export function createControls() {
   let ly = 0;
   const onDown = (e: PointerEvent) => {
     const t = e.target as HTMLElement | null;
-    if (t && t.closest && t.closest('button,input,textarea,select,a,label,[data-nodrag]')) return;
+    if (t && t.closest && t.closest(NOLOOK)) return;
+    if (mouseLook) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     dragId = e.pointerId;
     lx = e.clientX;
     ly = e.clientY;
   };
   const onMove = (e: PointerEvent) => {
+    if (mouseLook) {
+      if (sticky && e.pointerType === 'mouse') lookDelta(e.movementX, e.movementY);
+      return;
+    }
     if (dragId !== e.pointerId) return;
+    if (viewMode !== 'singer') { lx = e.clientX; ly = e.clientY; return; }
     const dx = e.clientX - lx;
     const dy = e.clientY - ly;
     lx = e.clientX;
@@ -66,8 +198,44 @@ export function createControls() {
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onUp);
+  window.addEventListener('dblclick', onDblClick);
+  document.addEventListener('pointerlockchange', onLockChange);
+  document.addEventListener('pointerlockerror', onLockError);
+  document.addEventListener('mousemove', onMouseMoveLocked);
 
-  return {
+  const api = {
+    isMouseLook: () => mouseLook,
+    /** Đổi góc nhìn (V xoay vòng: singer → flycam → pit → crane → wide). */
+    setView,
+    cycleView,
+    getViewMode: () => viewMode,
+    /**
+     * Nguồn pose cho góc nhìn ngoài (vd. (m) => crew.getView(m)). `scene` = scene của stage: camera
+     * được ghi đè trong scene.onBeforeRender nên không cần sửa stage.ts. Bỏ trống = giữ scene đã gắn.
+     */
+    setViewProvider(fn: ViewProvider | null, scene?: THREE.Scene) {
+      provider = fn;
+      if (scene && scene !== hookScene) {
+        detachHook();
+        hookScene = scene;
+        prevHook = scene.onBeforeRender;
+        const prev = prevHook;
+        scene.onBeforeRender = function (this: THREE.Scene, ...args: Parameters<THREE.Scene['onBeforeRender']>) {
+          prev.apply(this, args);
+          const camera = args[2];
+          applyCamera(camera);
+        };
+      }
+    },
+    /** Ghi đè camera thủ công (khi không gắn scene hook): gọi ngay trước renderer.render. */
+    applyCamera,
+    /** Vị trí mắt ca sĩ (y = 1,65) + yaw (0 = nhìn -Z). Đối tượng dùng lại, đừng giữ tham chiếu để sửa. */
+    getSingerPose() {
+      singerPose.position.copy(pos);
+      singerPose.yaw = yaw;
+      return singerPose;
+    },
+    setMouseLook,
     pos,
     get yaw() { return yaw; },
     get pitch() { return pitch; },
@@ -76,8 +244,8 @@ export function createControls() {
       if (dt <= 0) return;
       if (keys.has('KeyQ')) yaw += 1.8 * dt;
       if (keys.has('KeyE')) yaw -= 1.8 * dt;
-      const f = (keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0);
-      const r = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0);
+      const f = (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0) - (keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0);
+      const r = (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0);
       // hướng nhìn: -Z xoay theo yaw
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
       const rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -111,6 +279,13 @@ export function createControls() {
       pitch = THREE.MathUtils.degToRad(2);
     },
     dispose() {
+      setMouseLook(false);
+      detachHook();
+      if (current === api) current = null;
+      window.removeEventListener('dblclick', onDblClick);
+      document.removeEventListener('pointerlockchange', onLockChange);
+      document.removeEventListener('pointerlockerror', onLockError);
+      document.removeEventListener('mousemove', onMouseMoveLocked);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
@@ -120,4 +295,14 @@ export function createControls() {
       window.removeEventListener('pointercancel', onUp);
     },
   };
+  (window as unknown as { __csControls?: unknown }).__csControls = api; // debug/kiểm thử
+  current = api;
+  return api;
+}
+
+export type StageControls = ReturnType<typeof createControls>;
+let current: StageControls | null = null;
+/** Controls đang hoạt động (stage.ts tạo bên trong createStage). */
+export function getControls(): StageControls | null {
+  return current;
 }

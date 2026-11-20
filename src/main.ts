@@ -12,7 +12,7 @@ import { createLoop } from './core/loop';
 import { beatPulse, noteAt, pitchToHz, visualBeat } from './core/time';
 import type {
   AudioEngine, FrameState, GameState, MicInput, MicMode, ScoreState, ScoringEngine, Song,
-  SongManifestEntry, Teleprompter,
+  PanelControls, SongManifestEntry, Teleprompter,
 } from './core/types';
 import { createMic } from './mic/input';
 import { createConfetti } from './render/confetti';
@@ -20,7 +20,10 @@ import { createCrowd } from './render/crowd';
 import { createEmotes } from './render/emotes';
 import { createLedScreens } from './render/ledScreens';
 import { createLights } from './render/lights';
+import { createCameraCrew } from './render/cameraCrew';
+import { createSinger } from './render/singer';
 import { createStage } from './render/stage';
+import { getControls } from './render/stageControls';
 import { createStageFx } from './render/stageFx';
 import { createScoring } from './scoring/scoring';
 import { createVoiceScoring } from './scoring/voice';
@@ -29,6 +32,7 @@ import { lyricIndexAt } from './song/lrc';
 import { loadManifest, loadSong } from './song/loader';
 import { loadLocalSong, songHasNotes } from './song/local';
 import { createHud } from './ui/hud';
+import { createHudMicMeter, createMicPanel } from './ui/micPanel';
 import { createScreens } from './ui/screens';
 import { createTeleprompter, createVideoPanel } from './ui/teleprompter';
 
@@ -42,7 +46,7 @@ const requestedMic: MicMode =
 // Micro giả trễ ~50 ms (cửa sổ phân tích), micro thật mặc định bù 120 ms.
 const latencySec =
   Math.max(0, Number(params.get('latency') ?? (requestedMic === 'real' ? 120 : 50)) || 0) / 1000;
-const crowdCount = Math.max(100, Math.min(10000, Number(params.get('crowd') ?? 2500) || 2500));
+const crowdCount = Math.max(100, Math.min(10000, Number(params.get('crowd') ?? 8000) || 8000));
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -55,6 +59,17 @@ const led = createLedScreens(stage.scene);
 const confetti = createConfetti(stage.scene);
 const emotes = createEmotes(stage.scene);
 const stageFx = createStageFx(stage.scene);
+// Hình ca sĩ + đội quay phim/flycam; phím V đổi góc nhìn (xử lý trong stageControls).
+const singer = createSinger(stage.scene);
+const crew = createCameraCrew(stage.scene);
+const controls = getControls();
+controls?.setViewProvider((m) => crew.getView(m), stage.scene);
+function updateCrew(f: FrameState): void {
+  if (!controls) return;
+  const sp = controls.getSingerPose();
+  crew.update(f, sp.position, sp.yaw);
+  singer.update(f, sp.position, sp.yaw, controls.getViewMode() !== 'singer');
+}
 
 // --- Tương tác với khán giả bằng phím (chỉ khi đang diễn) ---
 const INTERACT_COOLDOWN_SEC = 4;
@@ -65,44 +80,12 @@ let lastInteract = -Infinity;
 const hint = document.createElement('div');
 hint.className = 'cs-keys-hint';
 hint.textContent =
-  'WASD / mũi tên: đi lại  ·  Kéo chuột: xoay  ·  Giữ C: đưa micro cho khán giả  ·  1: hò reo  ·  2: sóng  ·  3: tim  ·  4: flash  ·  5: pháo hoa';
+  'WASD / mũi tên: đi lại  ·  Kéo chuột hoặc M: xoay  ·  V: đổi góc máy  ·  Giữ C: đưa micro cho khán giả  ·  1: hò reo  ·  2: sóng  ·  3: tim  ·  4: flash  ·  5: pháo hoa';
 hint.hidden = true;
 uiRoot.appendChild(hint);
-// --- Chọn micro (ví dụ: nghe bằng tai nghe nhưng thu bằng micro của máy) ---
-const MIC_KEY = 'cs-mic-device';
-const micPicker = document.createElement('label');
-micPicker.className = 'cs-mic-picker';
-micPicker.append('Micro: ');
-const micSelect = document.createElement('select');
-micSelect.id = 'cs-mic-select';
-micPicker.appendChild(micSelect);
-uiRoot.appendChild(micPicker);
-let micLabelsAsked = false;
-async function refreshMics(): Promise<void> {
-  let saved = '';
-  try { saved = localStorage.getItem(MIC_KEY) ?? ''; } catch { /* không có localStorage */ }
-  const current = micSelect.value || saved;
-  let inputs: MediaDeviceInfo[] = [];
-  try {
-    inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
-  } catch { /* trình duyệt không hỗ trợ */ }
-  micSelect.replaceChildren(new Option('Mặc định của hệ thống', ''));
-  inputs.forEach((d, i) => { if (d.deviceId) micSelect.add(new Option(d.label || `Micro ${i + 1}`, d.deviceId)); });
-  micSelect.value = [...micSelect.options].some((o) => o.value === current) ? current : '';
-}
-// Tên thiết bị chỉ hiện sau khi được cấp quyền micro: xin quyền một lần khi người chơi mở danh sách.
-micSelect.addEventListener('pointerdown', () => {
-  if (micLabelsAsked || !navigator.mediaDevices?.getUserMedia) return;
-  micLabelsAsked = true;
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then((s) => { s.getTracks().forEach((t) => t.stop()); return refreshMics(); })
-    .catch(() => { /* bị từ chối: giữ danh sách hiện có */ });
-});
-micSelect.addEventListener('change', () => {
-  try { localStorage.setItem(MIC_KEY, micSelect.value); } catch { /* bỏ qua */ }
-});
-navigator.mediaDevices?.addEventListener?.('devicechange', () => void refreshMics());
-void refreshMics();
+// --- Micro: bảng chọn/thử micro (ui/micPanel.ts), ví dụ nghe bằng tai nghe nhưng thu bằng micro của máy ---
+const micPanel = createMicPanel(uiRoot);
+const hudMicMeter = createHudMicMeter(uiRoot);
 
 // --- Fan hát theo điệp khúc + hỏi–đáp (giữ C để đưa micro cho khán giả) ---
 const HANDOVER_MAX_SEC = 10; // giữ C tối đa bấy nhiêu giây, sau đó phải chờ hồi
@@ -287,10 +270,11 @@ async function start(): Promise<void> {
     handoverEnergy = HANDOVER_MAX_SEC;
 
     mic?.stop();
+    micPanel.stopTest(); // đóng luồng "Thử micro" trước khi mở micro cho game
     mic = createMic({
       mode: requestedMic,
       voiceProcessing: !hasNotes,
-      deviceId: micSelect.value || undefined,
+      ...(requestedMic === 'real' ? micPanel.selection() : {}),
       targetHz: () => {
         if (!song || !audio) return null;
         const t = audio.now();
@@ -307,11 +291,13 @@ async function start(): Promise<void> {
     });
     const micMode = await mic.start(audio.ctx);
     hud.setNotice(
-      micMode === 'real' ? null : requestedMic === 'real' ? 'Chế độ xem (không có micro)' : `Micro giả: ${micMode}`,
+      micMode === 'real' ? null
+        : requestedMic === 'real' ? `Chế độ xem — ${mic.status?.message ?? 'không có micro'}` : `Micro giả: ${micMode}`,
     );
+    micPanel.showStatus(mic.status ?? null);
 
     teleprompter?.dispose();
-    teleprompter = video ? createVideoPanel(uiRoot, video) : createTeleprompter(uiRoot, song);
+    teleprompter = video ? createVideoPanel(uiRoot, video, panelControls) : createTeleprompter(uiRoot, song, panelControls);
     hud.setPitchScore?.(hasNotes);
     scoring.reset(song);
     lastLine = -1;
@@ -327,6 +313,40 @@ async function start(): Promise<void> {
     setState('menu');
   }
 }
+
+// --- Tua bài (nút ⏪/⏩, thanh tiến độ, phím [ ]) và thu nhỏ khung lời (phím T) ---
+const SEEK_STEP_SEC = 10;
+function songDuration(): number {
+  return (audio?.durationSec || song?.durationSec) ?? 0;
+}
+function seekSong(sec: number): void {
+  if (!audio?.seek || !song || (state !== 'playing' && state !== 'countdown')) return;
+  // Kẹp để không chạm điều kiện hết bài (cuối file hoặc nốt cuối + TAIL_SEC).
+  const end = Math.min(audio.durationSec || Infinity, song.durationSec + TAIL_SEC);
+  audio.seek(Math.max(0, Math.min(sec, end - 1)));
+  const t = audio.now();
+  scoring.seek?.(t, latencySec);
+  lastLine = -1;
+  if (paused && lastFrame) {
+    // Đang tạm dừng: cập nhật khung lời ngay ở vị trí mới.
+    lastFrame = { ...lastFrame, songTime: t, activeNote: hasNotes ? noteAt(song, t) : null };
+    teleprompter?.update({ ...lastFrame, dt: 0 });
+  }
+}
+const panelControls: PanelControls = {
+  seekTo: (sec) => seekSong(sec),
+  seekBy: (d) => seekSong((audio?.now() ?? 0) + d),
+  duration: songDuration,
+};
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || (state !== 'playing' && state !== 'countdown')) return;
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    e.preventDefault();
+    panelControls.seekBy(e.code === 'BracketLeft' ? -SEEK_STEP_SEC : SEEK_STEP_SEC);
+  } else if (e.code === 'KeyT' && !e.repeat) {
+    teleprompter?.setMinimized?.(!teleprompter.minimized);
+  }
+});
 
 function releaseVideo(): void {
   if (!currentVideo) return;
@@ -355,7 +375,8 @@ function finish(score: ScoreState): void {
 
 function tick(dt: number): void {
   pauseBtn.hidden = state !== 'playing';
-  micPicker.hidden = !(state === 'menu' || state === 'result');
+  micPanel.setVisible(state === 'menu' || state === 'result');
+  if (state === 'countdown' || state === 'playing') hudMicMeter.update(mic);
   if (paused) {
     if (state === 'playing' && lastFrame) {
       // Đứng hình: vẫn vẽ lại (đổi kích thước cửa sổ, camera theo chuột) nhưng không chạy game.
@@ -441,6 +462,7 @@ function tick(dt: number): void {
   confetti.update(f);
   crowdAudio?.update(f);
   stage.update(f);
+  updateCrew(f);
   stage.render();
   lastFrame = f;
 }
@@ -464,6 +486,8 @@ declare global {
       start(): Promise<void>;
       /** Tua tới gần cuối bài cho kiểm thử nhanh (nếu AudioEngine hỗ trợ thì P7 nối thêm). */
       finish(): void;
+      /** Tua tới giây `sec` của bài (như nút ⏪/⏩). */
+      seek(sec: number): void;
     };
   }
 }
@@ -479,6 +503,7 @@ window.__game = {
   bus,
   start,
   finish: () => { if (lastFrame) finish({ ...lastFrame.score }); },
+  seek: (sec) => seekSong(sec),
 };
 
 hud.setVisible(false);

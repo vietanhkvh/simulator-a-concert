@@ -1,6 +1,8 @@
-// Đèn sân khấu giả (additive, không Light thật, không bóng). 3 draw call: chùm sáng, flare/chấm, vệt màu sàn.
+// Đèn sân khấu giả (additive, không Light thật, không bóng). 5 draw call (3 + 2 đèn trang trí): chùm sáng, flare/chấm, vệt màu sàn.
 import * as THREE from 'three';
 import type { FrameState, Updatable } from '../core/types';
+import { PALETTES, COOL, palColor, livePal } from './stageDecoPal';
+import { createDecoFixtures } from './stageDecoFixtures';
 
 const LEN = 60;
 
@@ -94,23 +96,6 @@ function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, n: number, or
   return { mesh, col, it };
 }
 
-// ───────── bảng màu ─────────
-const hex = (h: number[]) => h.map((x) => new THREE.Color(x));
-const PALETTES: THREE.Color[][] = [
-  hex([0x00e5ff, 0xff1fb4, 0x00e5ff, 0xff1fb4, 0x7a5cff]), // cyan + magenta
-  hex([0xffb000, 0xff2a2a, 0xff6a00, 0xffd000, 0xff1f5a]), // hổ phách + đỏ
-  hex([0x9dff00, 0x8a2bff, 0x30ff8a, 0xc23bff, 0xe6ff3a]), // chanh + tím
-  [], // cầu vồng chase (tính bằng HSL)
-  hex([0xff3d7f, 0x3d7bff, 0xffe14d, 0x2bffc6, 0xb04dff]), // pop nhiều màu
-];
-const COOL = hex([0x2a5bff, 0x6a3dff, 0x1fb4ff, 0x4a6bff]);
-
-function palColor(p: number, k: number, beat: number, out: THREE.Color) {
-  const pal = PALETTES[p]!;
-  if (pal.length === 0) return out.setHSL((k * 0.11 + beat * 0.06) % 1, 1, 0.55);
-  return out.copy(pal[((k % pal.length) + pal.length) % pal.length]!);
-}
-
 // ───────── đèn ─────────
 interface Fix {
   pos: THREE.Vector3;
@@ -187,6 +172,7 @@ export function createLights(scene: THREE.Scene): Updatable {
   const washes = instanced(washGeo, addMat(washVert, washFrag), NW, 3);
   root.add(washes.mesh, beams.mesh, flares.mesh);
   scene.add(root);
+  const extra = createDecoFixtures(scene);
 
   // ── trạng thái ──
   const lit = new Float32Array(NBT);
@@ -249,6 +235,7 @@ export function createLights(scene: THREE.Scene): Updatable {
       const pPrev = (seg + PALETTES.length - 1) % PALETTES.length;
       const mix = sm(0, 1, (beat / 8 - seg) * 8);
       const vivid = sm(0.12, 0.65, hype);
+      livePal.pCur = pCur; livePal.pPrev = pPrev; livePal.mix = mix; livePal.vivid = vivid; livePal.beat = beat;
       const nLit = Math.round(6 + (NBT - 6) * sm(0.05, 0.85, hype));
       const pulse = f.beatPulse;
 
@@ -347,6 +334,8 @@ export function createLights(scene: THREE.Scene): Updatable {
         wint[w] = 0.22 + 0.36 * hype + 0.06 * pulse;
       }
 
+      extra.update(f, p);
+
       for (const o of [beams, flares, washes]) {
         o.mesh.instanceMatrix.needsUpdate = true;
         o.col.needsUpdate = true;
@@ -355,6 +344,7 @@ export function createLights(scene: THREE.Scene): Updatable {
     },
     dispose() {
       scene.remove(root);
+      extra.dispose();
       for (const o of [beams, flares, washes]) {
         o.mesh.geometry.dispose();
         (o.mesh.material as THREE.Material).dispose();

@@ -5,6 +5,7 @@ import type { FrameState, Stage } from '../core/types';
 import { createRunway } from './stageRunway';
 import { createControls } from './stageControls';
 import { createBackdrop } from './backdrop';
+import { createStageDeco } from './stageDeco';
 
 export function createStage(canvas: HTMLCanvasElement): Stage {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -78,6 +79,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   // Runway, phông nền LED + mái vòm hội trường
   const runway = createRunway(scene);
   const backdrop = createBackdrop(scene);
+  const deco = createStageDeco(scene);
 
   // Đi lại + nhìn 360°
   const controls = createControls();
@@ -109,6 +111,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       camera.position.set(controls.pos.x, 1.65 + Math.sin(t * 0.8) * 0.012, controls.pos.z);
       runway.update(f, animT);
       backdrop.update(f, animT);
+      deco.update(f, animT);
     },
     render: () => renderer.render(scene, camera),
     resetView: () => controls.reset(),
@@ -117,6 +120,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
       controls.dispose();
       runway.dispose();
       backdrop.dispose();
+      deco.dispose();
       for (const d of disposables) d.dispose();
       renderer.dispose();
     },

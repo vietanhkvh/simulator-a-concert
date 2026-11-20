@@ -35,6 +35,9 @@ export function createVoiceScoring(): ScoringEngine {
         score: 0, percent: 0, combo: 0, hype: hype.value, activeNote: null, lineIndex: -1, lastHit: 'none', centsOff: null,
       });
     },
+    seek() {
+      // Chấm theo giọng không phụ thuộc vị trí trong bài: cứ tiếp tục.
+    },
     update(songTime, pitch, latencySec, dt) {
       if (!song) return state;
       const t = songTime - latencySec;

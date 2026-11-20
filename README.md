@@ -42,6 +42,8 @@ Ba chế độ sau không có nốt nên không chấm điểm cao độ: Hype t
 | Phím / nút | Tác dụng |
 |---|---|
 | Nút **Tạm dừng** (góc trên phải) hoặc `Esc` | Tạm dừng / tiếp tục. Chuyển sang tab khác cũng tự tạm dừng |
+| Nút **⏪ 10s** / **10s ⏩** (trên khung lời) hoặc `[` / `]` | Tua lùi / tới 10 giây; bấm thanh tiến độ để tua tới vị trí bất kỳ (nốt bị bỏ qua không tính là trượt) |
+| Nút **Thu nhỏ** / **Mở rộng** hoặc `T` | Thu khung lời thành một dòng nhỏ (video thành ô nhỏ góc dưới phải) để nhìn sân khấu; được ghi nhớ |
 | `W` `A` `S` `D` hoặc phím mũi tên | Đi lại trên sân khấu và đường runway |
 | Kéo chuột (hoặc `Q` / `E`) | Xoay góc nhìn 360° |
 | Giữ `C` | Đưa micro cho khán giả hát thay (tối đa 10 giây, chỉ bài có nốt) |

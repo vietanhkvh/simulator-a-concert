@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { hzToMidi } from '../core/time';
 import type { PitchSample } from '../core/types';
 import { createMic } from './input';
-import { createDetector, createMedianFilter, fakeHz, FFT_SIZE, rms } from './pitch';
+import {
+  ABS_MIN_RMS, applyGain, clampSensitivity, createDetector, createMedianFilter, createNoiseGate, fakeHz, FFT_SIZE,
+  MIN_RMS, rms, VOICED_REPORT_RMS,
+} from './pitch';
+import { VOICE_MIN_RMS, isVoiced } from '../scoring/voice';
 
 const SR = 48000;
 
@@ -41,8 +45,8 @@ describe('detector', () => {
   it('silence → null', () => {
     expect(det.detect(new Float32Array(FFT_SIZE), SR)).toBeNull();
   });
-  it('quiet sine below RMS gate → null', () => {
-    expect(det.detect(sine(440, 0.005), SR)).toBeNull();
+  it('sine below absolute RMS gate → null', () => {
+    expect(det.detect(sine(440, 0.001), SR)).toBeNull();
   });
   it('white noise → null (low clarity)', () => {
     expect(det.detect(noise(0.3), SR)).toBeNull();
@@ -104,5 +108,86 @@ describe('createMic (no Web Audio available)', () => {
     expect(mic.read()!.hz).toBe(440);
     const off = createMic({ mode: 'off', targetHz: () => 440 });
     expect(off.read()!.midi).toBeCloseTo(72, 6);
+  });
+});
+
+// Micro tích hợp của laptop ở xa miệng: giọng hát chỉ khoảng −40 dBFS (RMS ≈ 0.007–0.01).
+describe('quiet built-in mic', () => {
+  const dbfs = (db: number) => Math.pow(10, db / 20) * Math.SQRT2; // biên độ sine cho RMS = db dBFS
+  it('−43 dBFS RMS sine (peak −40 dBFS) was below the old fixed gate but is detected now', () => {
+    const b = sine(220, dbfs(-43));
+    expect(rms(b)).toBeLessThan(MIN_RMS);
+    const s = createDetector().detect(b, SR);
+    expect(s).not.toBeNull();
+    expect(Math.abs(s!.midi - hzToMidi(220))).toBeLessThan(0.1);
+    // Mẫu hợp lệ phải vượt cổng VOICE_MIN_RMS của chế độ chấm theo giọng → Hype tăng.
+    expect(s!.rms).toBeGreaterThanOrEqual(VOICE_MIN_RMS);
+    expect(isVoiced(s)).toBe(true);
+  });
+  it('−40 dBFS sine at 16 kHz (Bluetooth / separate context) is detected', () => {
+    const s = createDetector().detect(sine(220, dbfs(-40), 0, 16000), 16000);
+    expect(s).not.toBeNull();
+    expect(Math.abs(s!.midi - hzToMidi(220))).toBeLessThan(0.15);
+  });
+  it('−40 dBFS sine with background noise and 4× software gain', () => {
+    const b = sine(220, dbfs(-40));
+    const n = noise(0.002, 7);
+    for (let i = 0; i < b.length; i++) b[i] += n[i];
+    applyGain(b, 4);
+    expect(rms(b)).toBeGreaterThan(0.02);
+    expect(createDetector().detect(b, SR)).not.toBeNull();
+  });
+  it('voiced samples report at least VOICED_REPORT_RMS, loud ones keep real rms', () => {
+    const det = createDetector();
+    expect(det.detect(sine(300, 0.3), SR)!.rms).toBeCloseTo(0.3 / Math.SQRT2, 2);
+    expect(det.detect(sine(300, dbfs(-45)), SR)!.rms).toBe(VOICED_REPORT_RMS);
+    expect(det.level).toBeCloseTo(Math.pow(10, -45 / 20), 3);
+  });
+});
+
+describe('adaptive noise gate', () => {
+  it('rises slowly with sustained noise, falls fast in quiet', () => {
+    const g = createNoiseGate();
+    expect(g.threshold).toBeCloseTo(ABS_MIN_RMS * 1.5, 6);
+    for (let i = 0; i < 300; i++) g.observe(0.004); // ồn quạt ~5 s ở 60 fps
+    expect(g.threshold).toBeGreaterThan(0.01 - 1e-9);
+    expect(g.threshold).toBeLessThanOrEqual(MIN_RMS);
+    for (let i = 0; i < 20; i++) g.observe(0.0005);
+    expect(g.threshold).toBe(ABS_MIN_RMS);
+  });
+  it('noise frames raise the gate; a voice slightly above noise is still detected', () => {
+    const det = createDetector();
+    for (let i = 0; i < 200; i++) det.detect(noise(0.004, i + 1), SR);
+    expect(det.gate.floor).toBeGreaterThan(0.0015);
+    expect(det.detect(noise(0.004, 999), SR)).toBeNull();
+    expect(det.detect(sine(220, 0.02), SR)).not.toBeNull();
+  });
+  it('sustained singing does not raise the gate', () => {
+    const det = createDetector();
+    const before = det.gate.threshold;
+    for (let i = 0; i < 300; i++) det.detect(sine(220, 0.05, i), SR);
+    expect(det.gate.threshold).toBe(before);
+  });
+});
+
+describe('clampSensitivity', () => {
+  it('clamps to 0.5–8 and defaults to 2', () => {
+    expect(clampSensitivity('3')).toBe(3);
+    expect(clampSensitivity(100)).toBe(8);
+    expect(clampSensitivity(0.1)).toBe(0.5);
+    expect(clampSensitivity('')).toBe(2);
+    expect(clampSensitivity('abc')).toBe(2);
+  });
+});
+
+describe('mic errors', async () => {
+  const { isMissingDeviceError, micErrorMessage, normLabel } = await import('./input');
+  it('classifies stale deviceId errors', () => {
+    expect(isMissingDeviceError({ name: 'OverconstrainedError' })).toBe(true);
+    expect(isMissingDeviceError({ name: 'NotAllowedError' })).toBe(false);
+    expect(micErrorMessage({ name: 'NotAllowedError' })).toMatch(/chặn quyền/);
+  });
+  it('matches labels ignoring the Default - prefix', () => {
+    expect(normLabel('Default - MacBook Pro Microphone (Built-in)')).toBe('macbook pro microphone (built-in)');
   });
 });

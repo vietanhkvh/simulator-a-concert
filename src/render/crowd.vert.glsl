@@ -11,6 +11,7 @@ uniform float uWaveMix;    // 0..1, uWaveMode == 1 làm mượt trên CPU
 uniform vec3 uColorA;
 uniform vec3 uColorB;
 uniform float uFlash;      // 0..1 "biển đèn flash điện thoại" (đoạn nhạc lắng), làm mượt trên CPU
+uniform float uLodDist;    // m: xa hơn → bóng người đơn giản (BODY) / lightstick to & sáng hơn (STICK)
 
 attribute vec3 aPos;   // vị trí chân
 attribute vec4 aSeed;  // pha, hệ số chiều cao, tay trái/phải + ngưỡng bật, độ nhiệt tình
@@ -33,6 +34,8 @@ varying vec2 vHead;
 varying vec4 vShape;   // hệ số cao, hệ số rộng, kiểu tóc 0..1, màu áo 0..1
 varying vec3 vStickCol;
 varying float vFront;  // 1 = camera nhìn thấy mặt trước (phía sân khấu), 0 = thấy lưng
+varying float vLod;    // 0 = chi tiết, 1 = bóng đơn giản (xa)
+varying vec4 vBox;     // hộp bao (xMin, xMax, yMax, -) của người trong tọa độ billboard → discard sớm
 #endif
 
 #ifdef STICK
@@ -132,7 +135,8 @@ void main() {
   hand = mix(hand, phoneHand, smoothstep(0.0, 1.0, phoneMix));
 
   // Billboard quanh trục Y hướng về camera.
-  vec2 toCam = normalize(cameraPosition.xz - aPos.xz);
+  vec2 toCam = normalize(cameraPosition.xz - aPos.xz + vec2(0.0, 1e-4));
+  float camDist = length(cameraPosition - aPos);
   vec3 right = vec3(toCam.y, 0.0, -toCam.x);
 
   vec2 local;   // tọa độ phẳng (m) trong mặt billboard, gốc ở chân
@@ -140,8 +144,13 @@ void main() {
 
 #ifdef BODY
   // Quad đủ rộng để chứa cả cánh tay giơ cao.
+  // LOD: ngưỡng lệch ±3 m theo từng người để không lộ ranh giới hình vòng.
+  vLod = step(uLodDist + (aSeed.w - 0.75) * 12.0, camDist);
   vec2 size = vec2(1.5, 2.5) * height;
   local = vec2(position.x * size.x, position.y * size.y);
+  float bw = 0.3 * widthK * height;
+  vBox = vec4(min(min(hand.x, hand2.x), -bw) - 0.07, max(max(hand.x, hand2.x), bw) + 0.07,
+              max(max(hand.y, hand2.y), head.y + 0.16 * height) + 0.07, 0.0);
   vLocal = local;
   vShoulder = shoulder;
   vHand = hand;
@@ -165,6 +174,9 @@ void main() {
   // Hàng xa: phóng to quầng sáng một chút để vẫn đọc được thành "biển sáng".
   float dist = length(cameraPosition.xz - aPos.xz);
   float glowScale = 1.0 + max(0.0, dist - 10.0) * 0.04;
+  // Hàng rất xa: que to thêm & sáng hơn chút để phía sau vẫn lấp lánh.
+  float farK = smoothstep(uLodDist, uLodDist + 25.0, dist);
+  glowScale *= 1.0 + 0.25 * farK;
   vGlowScale = glowScale;
   float isPhone = step(0.5, phoneMix);
   vPhone = isPhone;
@@ -199,6 +211,7 @@ void main() {
   bright *= mix(0.7, 1.0, wave * uWaveMix + (1.0 - uWaveMix));
   // Đoạn lắng: lightstick người khác mờ đi, người giơ điện thoại thì lightstick tắt hẳn rồi đổi sang đèn trắng.
   bright *= 1.0 - 0.75 * uFlash;
+  bright *= 1.0 + 0.35 * farK;
   vColor = col * bright * clamp(1.0 - phoneMix * 2.0, 0.0, 1.0);
   if (isPhone > 0.5) {
     float tw = 0.78 + 0.22 * sin(uTime * (1.3 + aSeed.w * 1.7) + aSeed.x * 40.0);

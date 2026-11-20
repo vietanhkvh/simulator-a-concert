@@ -114,6 +114,36 @@ export interface MicOptions {
   voiceProcessing?: boolean;
   /** deviceId của micro người chơi chọn (bỏ trống = micro mặc định của hệ thống). */
   deviceId?: string;
+  /**
+   * Tên (label) của micro đã chọn: deviceId đổi giữa các phiên (Safari, Firefox, sau khi cấp quyền)
+   * nên khi không thấy id thì tìm lại theo tên.
+   */
+  deviceLabel?: string;
+  /** Gain phần mềm trước bộ phân tích (0.5–8, mặc định 2). */
+  gain?: number;
+  /** Báo trạng thái micro (mở được / lỗi / thiết bị bị rút…) để UI hiển thị. */
+  onStatus?: (s: MicStatus) => void;
+}
+
+/** Trạng thái micro thật để hiển thị cho người chơi (tiếng Việt). */
+export interface MicStatus {
+  /** true = đang thu từ micro thật. */
+  ok: boolean;
+  /** Một dòng tiếng Việt mô tả trạng thái. */
+  message: string;
+  /** Tên thiết bị thực sự đang mở ('' nếu không có). */
+  label: string;
+  deviceId: string;
+  /** Tần số lấy mẫu của micro (từ track.getSettings), null nếu trình duyệt không báo. */
+  sampleRate: number | null;
+  /** Tần số lấy mẫu của AudioContext dùng để phân tích. */
+  ctxSampleRate: number | null;
+  /** Không mở được thiết bị đã chọn nên đang dùng micro mặc định. */
+  fellBack?: boolean;
+  /** Phân tích trong AudioContext riêng (do lệch sample rate với context của game). */
+  separateContext?: boolean;
+  /** Mã lỗi DOMException (NotAllowedError, NotFoundError, …) nếu có. */
+  error?: string;
 }
 
 export interface MicInput {
@@ -127,6 +157,12 @@ export interface MicInput {
   stop(): void;
   /** Mode thực tế đang dùng (sau start). */
   readonly mode: MicMode;
+  /** Mức tín hiệu vào hiện tại (RMS sau gain, 0..1); 0 khi không thu. */
+  level?(): number;
+  /** Đổi gain phần mềm khi đang chạy. */
+  setGain?(g: number): void;
+  /** Trạng thái micro thật gần nhất (null nếu chưa start hoặc là micro giả). */
+  readonly status?: MicStatus | null;
 }
 
 // ───────────────────────── Âm thanh ─────────────────────────
@@ -145,6 +181,12 @@ export interface AudioEngine {
   /** Phát sau leadInSec giây; trong lúc chờ now() âm. */
   play(leadInSec: number): void;
   stop(): void;
+  /**
+   * (Bổ sung) Tua tới giây `sec` của bài (kẹp vào [0, durationSec - 1]); now() liên tục từ vị trí mới.
+   * Chạy được cả khi AudioContext đang treo (tạm dừng): resume thì phát tiếp từ vị trí mới.
+   * Không làm `ended` bật. Không có tác dụng khi chưa play().
+   */
+  seek?(sec: number): void;
   /**
    * Đồng hồ bài hát (giây) = ctx.currentTime - startAt - outputLatency.
    * Nguồn thời gian DUY NHẤT cho lời, nốt, beat, shader. Trả 0 khi chưa play.
@@ -182,6 +224,12 @@ export interface ScoringEngine {
    * dt (giây) dùng cho tích phân Hype.
    */
   update(songTime: number, pitch: PitchSample | null, latencySec: number, dt: number): ScoreState;
+  /**
+   * (Bổ sung) Báo bài vừa bị tua tới songTime (giây, cùng thang với update). Nốt bị nhảy qua không tính
+   * là trượt; tua lùi thì nốt từ thời điểm mới trở đi được hát lại (xóa phần đã tính). Hype giữ nguyên.
+   * update() cũng tự nhận ra khi đồng hồ nhảy > 1 s.
+   */
+  seek?(songTime: number, latencySec?: number): void;
 }
 
 // ───────────────────────── Frame ─────────────────────────
@@ -244,6 +292,19 @@ export interface Hud extends Updatable {
 
 export interface Teleprompter extends Updatable {
   setVisible(v: boolean): void;
+  /** (Bổ sung) Thu nhỏ / mở rộng khung lời (nhớ trong localStorage). */
+  setMinimized?(on: boolean): void;
+  readonly minimized?: boolean;
+}
+
+/** (Bổ sung) Điều khiển tua cho thanh nhỏ trên khung lời / video. */
+export interface PanelControls {
+  /** Tua tới giây tuyệt đối. */
+  seekTo(sec: number): void;
+  /** Tua tương đối (± giây). */
+  seekBy(deltaSec: number): void;
+  /** Độ dài bài (giây). */
+  duration(): number;
 }
 
 export interface ScreensOptions {

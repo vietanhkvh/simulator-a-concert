@@ -200,3 +200,86 @@
 .cs-mic-picker select { font-size: 13px; color: #fff; background: transparent; border: 0; max-width: 240px; }
 .cs-mic-picker select option { color: #111; }
 .cs-mic-picker[hidden] { display: none; }
+
+/* ───── Thanh tua / thu nhỏ trên khung lời & video ───── */
+.cs-panel-bar { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 999px; white-space: nowrap;
+  background: rgba(8, 6, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.25); pointer-events: auto;
+  font: 600 12px var(--cs-font); color: #fff; z-index: 5; }
+.cs-panel-btn { font: inherit; color: #fff; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.cs-panel-btn:hover { background: rgba(124, 92, 255, 0.6); }
+.cs-panel-btn[hidden], .cs-panel-prog[hidden] { display: none; }
+.cs-panel-time { font-variant-numeric: tabular-nums; min-width: 78px; text-align: center; color: #e8e4ff; }
+.cs-panel-prog { position: relative; width: 140px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.2);
+  cursor: pointer; overflow: hidden; }
+.cs-panel-prog::after { content: ''; position: absolute; inset: -6px 0; } /* vùng bấm rộng hơn */
+.cs-panel-prog-fill { position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--cs-accent2), var(--cs-accent)); }
+.cs-tp-free { min-height: 1px; }
+
+/* Thu nhỏ: chỉ còn câu hiện tại cỡ nhỏ, không dải cao độ. */
+.cs-tp.cs-min { bottom: 1.5vh; width: min(640px, 80vw); gap: 0; }
+.cs-tp.cs-min .cs-tp-lane, .cs-tp.cs-min .cs-tp-next, .cs-tp.cs-min .cs-tp-count { display: none; }
+.cs-tp.cs-min .cs-tp-cur { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%; padding: 3px 12px; border-radius: 8px; background: rgba(6, 4, 16, 0.55); filter: none;
+  text-shadow: 0 1px 3px #000; }
+.cs-tp.cs-min .cs-syl { text-shadow: none; }
+
+/* Khung video: thanh nằm ngoài khung nên bỏ overflow hidden, bo góc cho video. */
+.cs-video-panel { overflow: visible; }
+.cs-video-panel .cs-video { border-radius: 12px; }
+.cs-video-panel.cs-min { left: auto; right: 16px; bottom: 16px; transform: none; width: 200px; }
+.cs-video-panel.cs-min .cs-video { max-height: 140px; border-radius: 10px; }
+.cs-video-panel.cs-min .cs-panel-bar { left: auto; right: 0; transform: none; }
+.cs-video-panel.cs-min .cs-panel-prog { width: 70px; }
+
+/* Bảng micro (ui/micPanel.ts): chọn thiết bị, thử micro, độ nhạy, trạng thái */
+.cs-mic-panel {
+  position: fixed;
+  right: 16px;
+  top: 14px;
+  z-index: 30;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  font-family: var(--cs-font);
+  font-size: 13px;
+  color: #fff;
+  background: rgba(8, 6, 20, 0.78);
+  pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+}
+.cs-mic-panel[hidden] { display: none; }
+.cs-mic-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cs-mic-panel select {
+  flex: 1; min-width: 0; font: inherit; color: #fff; background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 6px; padding: 2px 4px;
+}
+.cs-mic-panel select option { color: #111; }
+.cs-mic-test {
+  font: inherit; color: #fff; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px; padding: 3px 10px; cursor: pointer; white-space: nowrap;
+}
+.cs-mic-panel.testing .cs-mic-test { background: #c2185b; border-color: #ff6fa5; }
+.cs-mic-meter { flex: 1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+.cs-mic-meter-fill, .cs-hud-mic-level > div {
+  height: 100%; width: 100%; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, #3ddc84 0%, #3ddc84 65%, #ffd54f 85%, #ff5252 100%);
+}
+.cs-mic-note { min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; opacity: 0.55; }
+.cs-mic-note.on { opacity: 1; color: #7cffb0; }
+.cs-mic-gain { flex: 1; min-width: 0; }
+.cs-mic-gain-val { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+.cs-mic-status { font-size: 12px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-mic-status.bad { color: #ffb74d; opacity: 1; }
+.cs-hud-mic-level {
+  display: inline-block; vertical-align: middle; width: 48px; height: 6px; margin-left: 6px;
+  border-radius: 3px; background: rgba(255, 255, 255, 0.2); overflow: hidden;
+}
+.cs-hud-mic-level[hidden] { display: none; }

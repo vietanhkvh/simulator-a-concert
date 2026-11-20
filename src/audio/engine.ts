@@ -105,6 +105,41 @@ export function createAudioEngine(): AudioEngine {
       source = src;
       startAt = when;
     },
+    seek(sec) {
+      if (startAt === null) return;
+      const dur = media ? (Number.isFinite(media.duration) ? media.duration : 0) : buffer ? buffer.duration : 0;
+      const target = Math.max(0, Math.min(sec, Math.max(0, dur - 1)));
+      hasEnded = false;
+      if (media) {
+        const el = media;
+        if (mediaTimer !== null) {
+          // Tua trong lúc đếm ngược: bỏ chờ, phát luôn từ vị trí mới.
+          clearTimeout(mediaTimer);
+          mediaTimer = null;
+          startAt = ctx.currentTime;
+          if (ctx.state === 'running') el.play().catch((err) => console.warn('[audio] video.play() bị chặn:', err));
+        }
+        el.currentTime = target;
+        return;
+      }
+      if (!buffer) return;
+      // Nguồn mới bắt đầu ngay (ctx.currentTime); khi AudioContext đang treo (tạm dừng) thì
+      // nó chờ tới lúc resume và phát tiếp từ vị trí mới. now() = target ngay sau khi tua:
+      // mẫu phát tại thời điểm x nghe thấy ở x + latency, nên offset = target + latency.
+      killSource();
+      const L = latency();
+      const offset = Math.min(buffer.duration, target + L);
+      const c = ctx.currentTime;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(gain);
+      src.onended = () => {
+        if (source === src) hasEnded = true;
+      };
+      src.start(c, offset);
+      source = src;
+      startAt = c - offset;
+    },
     stop() {
       if (mediaTimer !== null) clearTimeout(mediaTimer);
       mediaTimer = null;

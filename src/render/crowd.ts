@@ -1,17 +1,33 @@
 // P1 — Khán giả instanced + lightstick. Toàn bộ chuyển động trong vertex shader (crowd.vert.glsl),
-// buffer instance tĩnh sau khi khởi tạo, 2 draw call (thân: blend thường; lightstick: additive).
+// buffer instance tĩnh sau khi khởi tạo, 2 draw call (thân: alpha-test + depth write; lightstick: additive).
+// LOD theo khoảng cách trong shader; tự giảm số người vẽ khi máy chậm (CROWD_QUALITY).
 // Quy ước không gian: ca sĩ đứng tại gốc tọa độ nhìn về -Z; khán giả ở z < -6, sàn y = 0.
 import * as THREE from 'three';
 import type { CrowdOptions, FrameState, Updatable } from '../core/types';
 import vert from './crowd.vert.glsl?raw';
 import frag from './crowd.frag.glsl?raw';
 
-/** Bán kính hàng đầu (m) và khoảng cách giữa các hàng / người. */
+/** Bán kính hàng đầu (m) tính từ ca sĩ. */
 const R0 = 6.5;
-/** Khoảng cách (m, theo trục -Z) từ ca sĩ tới hàng rào khán giả; mép sân khấu ở z = -5. */
+/** Khoảng cách (m, theo trục -Z) từ ca sĩ tới hàng rào khán giả; mép sân khấu ở z = -5 → khe an ninh 2 m. */
 const BARRIER_Z = 7;
-const SPACING = 0.55;
-const JITTER = 0.15;
+/** Sân vận động ngoài trời: khán đài bắt đầu ~70 m → khán giả đứng tối đa tới FIELD.rMax. */
+const FIELD = {
+  rMax: 62,
+  /** Bán kính tối thiểu của khu đứng (đám đông nhỏ thì thu gọn lại, không loãng ra). */
+  rMin: R0 + 3,
+  /** Khoảng cách người–người (m) ở hàng đầu; phía sau thưa dần tới spacing * (1 + backK). */
+  spacing: 0.6,
+  spacingMin: 0.36,
+  backK: 0.4,
+  /** Nửa góc quạt tối đa ở các hàng sau (độ): ôm quanh hai bên sân khấu / catwalk. */
+  halfArcMaxDeg: 75,
+  /** Bán kính (m) mà quạt mở rộng hết cỡ. */
+  arcGrowR: 30,
+};
+/** Lối đi chia khu (m): 2 lối hướng tâm ở ±radialDeg (từ radialFromR trở ra) + 1 lối vòng ở ringR. */
+const AISLES = { radialDeg: 36, radialFromR: 13, ringR: 30, width: 1.5 };
+const JITTER = 0.28; // × spacing cục bộ
 /** Sàn dốc lên phía sau (m cao / m xa). */
 const SLOPE = 0.05;
 /**
@@ -19,6 +35,26 @@ const SLOPE = 0.05;
  * sân khấu cao 1,5 m so với khán giả (docs/discussion/02-gamedev.md §2) → sàn khán giả y = -1,5.
  */
 export const CROWD_FLOOR_Y = -1.5;
+
+/**
+ * Tự giảm chất lượng (crowd.update): frame time làm mượt (EMA smoothTauSec) > slowMs liên tục
+ * slowSec giây → quality -= step (≥ min); < fastMs liên tục fastSec giây → quality += step (≤ 1).
+ * quality = tỉ lệ số người được vẽ (geo.instanceCount); thứ tự instance xen kẽ nên bỏ đuôi = thưa đều.
+ * Lưu ý: màn 60 Hz có vsync cho dt ≈ 16,7 ms > fastMs → chỉ tăng lại khi màn > 70 Hz hoặc gọi setQuality.
+ */
+export const CROWD_QUALITY = {
+  min: 0.35,
+  step: 0.15,
+  slowMs: 28,
+  slowSec: 3,
+  fastMs: 14,
+  fastSec: 10,
+  smoothTauSec: 0.5,
+  /** Ngưỡng LOD (m): xa hơn → bóng người đơn giản (± 3 m ngẫu nhiên theo người để không lộ vòng). */
+  lodDist: 35,
+};
+/** Mốc quality của các bậc tự động; instance được chia tầng theo mốc này, mỗi tầng xếp gần → xa (early-z). */
+const QUALITY_TIERS = [0.35, 0.4, 0.55, 0.7, 0.85, 1];
 
 const COLOR_A = new THREE.Color(1.0, 0.18, 0.62); // hồng
 const COLOR_B = new THREE.Color(0.2, 0.72, 1.0); // xanh cyan
@@ -88,49 +124,136 @@ interface Person {
   distN: number;
 }
 
+const DEG = Math.PI / 180;
+
+/** Vị trí (x, z) có nằm trong khu đứng hợp lệ không (trước hàng rào, ngoài catwalk/bục, ngoài lối đi). */
+function validSpot(x: number, z: number, r: number, rMax: number): boolean {
+  if (z > -BARRIER_Z) return false;
+  if (z > CLEAR_Z && Math.abs(x) < CLEAR_X) return false;
+  if (Math.hypot(x, z - RUNWAY.platformZ) < CLEAR_R) return false;
+  const hw = AISLES.width / 2;
+  if (rMax > AISLES.ringR + 4 && Math.abs(r - AISLES.ringR) < hw) return false;
+  const f = -z; // khoảng cách về phía trước (trục -Z)
+  for (const sgn of [-1, 1]) {
+    const a = sgn * AISLES.radialDeg * DEG;
+    const along = x * Math.sin(a) + f * Math.cos(a);
+    const perp = Math.abs(x * Math.cos(a) - f * Math.sin(a));
+    if (along > AISLES.radialFromR && perp < hw) return false;
+  }
+  return true;
+}
+
+interface Spot {
+  x: number;
+  z: number;
+  r: number;
+  a: number;
+  s: number;
+}
+
+/** Lưới cung đồng tâm: hàng cách nhau s(r), người trên hàng cách nhau s(r); chỉ giữ chỗ hợp lệ. */
+function gridSpots(s0: number, rMax: number, halfArcFront: number, out: Spot[] | null): number {
+  const halfMax = Math.max(halfArcFront, FIELD.halfArcMaxDeg * DEG);
+  let n = 0;
+  let row = 0;
+  for (let r = R0; r <= rMax; row++) {
+    const s = s0 * (1 + FIELD.backK * THREE.MathUtils.clamp((r - R0) / Math.max(1, rMax - R0), 0, 1));
+    const half = THREE.MathUtils.lerp(halfArcFront, halfMax, THREE.MathUtils.smoothstep(r, R0, FIELD.arcGrowR));
+    const m = Math.max(1, Math.floor((2 * half * r) / s));
+    const off = (row % 2) * 0.5; // so le giữa các hàng
+    for (let j = 0; j < m; j++) {
+      const a = -half + ((j + 0.25 + off * 0.5) / m) * 2 * half;
+      const x = Math.sin(a) * r;
+      const z = -Math.cos(a) * r;
+      if (!validSpot(x, z, r, rMax)) continue;
+      n++;
+      out?.push({ x, z, r, a, s });
+    }
+    r += s;
+  }
+  return n;
+}
+
+/** Nghịch đảo cơ số 2 (van der Corput) — thứ tự xen kẽ ổn định để cắt đuôi vẫn thưa đều. */
+function radicalInverse(i: number): number {
+  let v = 0;
+  let f = 0.5;
+  for (let k = i; k > 0; k >>>= 1, f *= 0.5) if (k & 1) v += f;
+  return v;
+}
+
 function layout(opts: CrowdOptions, rand: () => number): Person[] {
   const count = Math.max(1, Math.floor(opts.count));
-  const arc = (Math.max(10, Math.min(180, opts.arcDeg)) * Math.PI) / 180;
-  // Số hàng: theo opts.rows nhưng đủ để mật độ ~SPACING dọc cung.
-  let rows = Math.max(1, Math.floor(opts.rows));
-  const arcLenTotal = (r: number) => {
-    let s = 0;
-    for (let i = 0; i < r; i++) s += arc * (R0 + i * SPACING);
-    return s;
-  };
-  while (rows > 4 && arcLenTotal(rows) / count > SPACING * 1.6) rows--;
-  while (arcLenTotal(rows) / count < SPACING * 0.85) rows++;
-  const total = arcLenTotal(rows);
-  const rMax = R0 + (rows - 1) * SPACING;
-
-  const people: Person[] = [];
-  let placed = 0;
-  for (let i = 0; i < rows; i++) {
-    const r = R0 + i * SPACING;
-    const n = i === rows - 1 ? count - placed : Math.round((count * arc * r) / total);
-    for (let j = 0; j < n && placed < count; j++, placed++) {
-      const t = (j + 0.5) / n;
-      const a = (t - 0.5) * arc;
-      const rr = r + (rand() * 2 - 1) * JITTER;
-      const aa = a + ((rand() * 2 - 1) * JITTER) / r;
-      const x = Math.sin(aa) * rr;
-      // Sân khấu là hình chữ nhật (mép trước z = -5): hàng rào khán giả cách mép STAGE_GAP.
-      // Hai cánh quạt được đẩy lùi ra sau hàng rào để không ai đứng tràn lên sàn diễn.
-      const z = -Math.max(Math.cos(aa) * rr, BARRIER_Z + (rr - R0) * 0.5);
-      people.push({
-        x,
-        y: CROWD_FLOOR_Y + (rr - R0) * SLOPE,
-        z,
-        dist: Math.hypot(x, z),
-        angleN: aa / (arc / 2),
-        distN: (rr - R0) / Math.max(1e-3, rMax - R0),
-      });
+  const halfFront = (Math.max(10, Math.min(180, opts.arcDeg)) * DEG) / 2;
+  // opts.rows giờ chỉ mang tính tham khảo: số hàng/khoảng cách tự suy ra từ count.
+  // 1) Mật độ chuẩn: tìm bán kính nhỏ nhất chứa đủ count người.
+  let s0 = FIELD.spacing;
+  let rMax = FIELD.rMax;
+  if (gridSpots(s0, FIELD.rMax, halfFront, null) >= count) {
+    let lo = FIELD.rMin;
+    let hi = FIELD.rMax;
+    for (let it = 0; it < 30; it++) {
+      const mid = (lo + hi) / 2;
+      if (gridSpots(s0, mid, halfFront, null) >= count) hi = mid;
+      else lo = mid;
     }
+    rMax = hi;
+  } else {
+    // 2) Đầy sân: siết khoảng cách (tối thiểu spacingMin), nếu vẫn thiếu thì nới bán kính.
+    let lo = FIELD.spacingMin;
+    let hi = FIELD.spacing;
+    for (let it = 0; it < 30; it++) {
+      const mid = (lo + hi) / 2;
+      if (gridSpots(mid, rMax, halfFront, null) >= count) lo = mid;
+      else hi = mid;
+    }
+    s0 = lo;
+    while (gridSpots(s0, rMax, halfFront, null) < count) rMax += 2;
   }
-  clearRunway(people, rand);
-  // Xa trước gần sau: viền mềm của bóng blend đúng thứ tự.
-  people.sort((p, q) => q.dist - p.dist);
-  return people;
+  const spots: Spot[] = [];
+  gridSpots(s0, rMax, halfFront, spots);
+  // Bỏ ngẫu nhiên phần dư (thường < 1%).
+  while (spots.length > count) {
+    const k = Math.floor(rand() * spots.length);
+    spots[k] = spots[spots.length - 1];
+    spots.pop();
+  }
+  spots.sort((p, q) => p.r - q.r || p.a - q.a);
+
+  const people: Person[] = spots.map((sp) => {
+    let x = sp.x;
+    let z = sp.z;
+    const jx = x + (rand() * 2 - 1) * JITTER * sp.s;
+    const jz = z + (rand() * 2 - 1) * JITTER * sp.s;
+    const jr = Math.hypot(jx, jz);
+    if (validSpot(jx, jz, jr, rMax)) {
+      x = jx;
+      z = jz;
+    }
+    const r = Math.hypot(x, z);
+    return {
+      x,
+      y: CROWD_FLOOR_Y + (r - R0) * SLOPE,
+      z,
+      dist: r,
+      angleN: Math.atan2(x, -z) / (FIELD.halfArcMaxDeg * DEG),
+      distN: THREE.MathUtils.clamp((r - R0) / Math.max(1e-3, rMax - R0), 0, 1),
+    };
+  });
+  clearRunway(people, rand); // an toàn: lưới đã tránh catwalk nên thường không đẩy ai
+  for (const p of people) p.y = CROWD_FLOOR_Y + (p.dist - R0) * SLOPE;
+
+  // Thứ tự vẽ: thân dùng alpha-test + depth write (không cần sort theo khung hình). Chia tầng theo
+  // QUALITY_TIERS bằng thứ tự xen kẽ van der Corput (trên thứ tự không gian) → cắt đuôi = thưa đều;
+  // trong mỗi tầng xếp gần → xa để early-z loại bớt overdraw.
+  const keyed = people.map((p, i) => {
+    const rank = radicalInverse(i);
+    let tier = 0;
+    while (tier < QUALITY_TIERS.length - 1 && rank >= QUALITY_TIERS[tier]) tier++;
+    return { p, tier };
+  });
+  keyed.sort((u, v) => u.tier - v.tier || u.p.dist - v.p.dist);
+  return keyed.map((k) => k.p);
 }
 
 /**
@@ -145,6 +268,13 @@ export const FLASH_AUTO = { levelOn: 0.35, levelOff: 0.42, hypeMax: 0.7, levelTa
 export interface Crowd extends Updatable {
   /** 0..1, làm mượt ~1,5 s. Gọi một lần là tắt chế độ tự động. */
   setFlash(amount: number): void;
+  /**
+   * Tỉ lệ người được vẽ 0,3..1 (thưa đều, không bỏ hàng sau). Gọi là tắt chế độ tự động;
+   * setQuality(q, true) đặt mức nhưng vẫn để tự động điều chỉnh tiếp.
+   */
+  setQuality?(q: number, keepAuto?: boolean): void;
+  /** Mức quality hiện tại (0,3..1). */
+  getQuality?(): number;
 }
 
 export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
@@ -186,6 +316,7 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
     uColorA: { value: COLOR_A.clone() },
     uColorB: { value: COLOR_B.clone() },
     uFlash: { value: 0 },
+    uLodDist: { value: CROWD_QUALITY.lodDist },
   };
   let flashManual: number | null = null;
   let levelSmooth = 0.5;
@@ -197,7 +328,8 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
       defines: { [part]: '' },
       uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...shared },
       fog: true,
-      transparent: true,
+      // Thân: alpha-test (discard) + depth write, không blend → không cần sort, early-z cắt overdraw.
+      transparent: part === 'STICK',
       depthTest: true,
       depthWrite: part === 'BODY',
       blending: part === 'BODY' ? THREE.NormalBlending : THREE.AdditiveBlending,
@@ -218,8 +350,39 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
   sticks.renderOrder = 2;
   scene.add(body, sticks);
 
+  let quality = 1;
+  let autoQuality = true;
+  let ftSmooth = 16.7;
+  let slowFor = 0;
+  let fastFor = 0;
+  const applyQuality = (q: number, why: string) => {
+    const nq = THREE.MathUtils.clamp(Number.isFinite(q) ? q : 1, 0.3, 1);
+    const changed = Math.abs(nq - quality) > 1e-3;
+    quality = nq;
+    geo.instanceCount = Math.max(1, Math.round(n * quality));
+    if (changed) {
+      console.info(
+        `[crowd] quality ${quality.toFixed(2)} → ${geo.instanceCount}/${n} people (${why}, frame ~${ftSmooth.toFixed(1)} ms)`,
+      );
+    }
+  };
+
   return {
     update(f: FrameState) {
+      if (autoQuality && f.dt > 0) {
+        // Bỏ qua khung giật bất thường (đổi tab, tải asset) khi làm mượt.
+        const ms = Math.min(f.dt, 0.1) * 1000;
+        ftSmooth += (ms - ftSmooth) * (1 - Math.exp(-f.dt / CROWD_QUALITY.smoothTauSec));
+        slowFor = ftSmooth > CROWD_QUALITY.slowMs ? slowFor + f.dt : 0;
+        fastFor = ftSmooth < CROWD_QUALITY.fastMs ? fastFor + f.dt : 0;
+        if (slowFor >= CROWD_QUALITY.slowSec && quality > CROWD_QUALITY.min + 1e-3) {
+          applyQuality(Math.max(CROWD_QUALITY.min, quality - CROWD_QUALITY.step), 'auto: slow');
+          slowFor = 0;
+        } else if (fastFor >= CROWD_QUALITY.fastSec && quality < 1 - 1e-3) {
+          applyQuality(Math.min(1, quality + CROWD_QUALITY.step), 'auto: fast');
+          fastFor = 0;
+        }
+      }
       shared.uTime.value += f.dt;
       shared.uBeat.value = f.beat;
       shared.uBeatPulse.value = f.beatPulse;
@@ -242,6 +405,14 @@ export function createCrowd(scene: THREE.Scene, opts: CrowdOptions): Crowd {
     },
     setFlash(amount: number) {
       flashManual = THREE.MathUtils.clamp(Number.isFinite(amount) ? amount : 0, 0, 1);
+    },
+    setQuality(q: number, keepAuto = false) {
+      autoQuality = keepAuto;
+      slowFor = fastFor = 0;
+      applyQuality(q, 'manual');
+    },
+    getQuality() {
+      return quality;
     },
     dispose() {
       scene.remove(body, sticks);

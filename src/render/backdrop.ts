@@ -1,8 +1,11 @@
-// Phông nền: tường LED sau ca sĩ (shader), cánh gà hai bên, mái vòm hội trường gradient màu, đèn nhà hát.
-// ~5 draw call.
+// Phông nền: tường LED sau ca sĩ (shader), cánh gà hai bên + sân vận động ngoài trời ban đêm
+// (trời sao, cực quang, khán đài, khinh khí cầu băng rôn khu vực, máy bay). ~11 draw call.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { FrameState } from '../core/types';
+import { createSky, type GlowBuf, type Uniforms } from './backdropSky';
+import { createStadium } from './backdropStadium';
+import { createBalloons } from './backdropBalloons';
 
 const LED_FRAG = /* glsl */ `
 uniform float uTime; uniform float uHype; uniform float uPulse; uniform float uLevel; uniform float uPhase;
@@ -33,49 +36,11 @@ void main(){
   gl_FragColor = vec4(col, 1.0);
 }`;
 
-const DOME_FRAG = /* glsl */ `
-uniform float uTime; uniform float uHype; uniform float uPulse;
-varying vec3 vDir;
-void main(){
-  vec3 d = normalize(vDir);
-  float el = d.y; // -1..1
-  float az = atan(d.x, -d.z);
-  float s = el*3.0 + sin(az*2.0 + uTime*0.05)*0.35 + uTime*0.03;
-  vec3 blue = vec3(0.05,0.06,0.28), mag = vec3(0.32,0.05,0.30), teal = vec3(0.03,0.24,0.28);
-  float b = fract(s);
-  vec3 col = b < 0.33 ? mix(blue, mag, b/0.33) : (b < 0.66 ? mix(mag, teal, (b-0.33)/0.33) : mix(teal, blue, (b-0.66)/0.34));
-  // dải sáng mềm quanh tầm mắt (ánh hắt sau khán giả)
-  float band = exp(-pow((el - 0.08)*6.0, 2.0));
-  col *= 0.35 + 0.8*band;
-  // cột/khung ban công tối theo phương ngang
-  float tiers = smoothstep(0.35, 0.5, abs(fract(el*9.0) - 0.5)) * step(0.0, el) * step(el, 0.35);
-  col *= 1.0 - 0.6*tiers;
-  // trên đỉnh tối dần
-  col *= mix(1.0, 0.25, smoothstep(0.25, 0.9, el));
-  col *= smoothstep(-0.25, 0.0, el);
-  col *= 0.55 + 0.35*uHype + 0.15*uPulse*uHype;
-  gl_FragColor = vec4(col, 1.0);
-}`;
-
 export function createBackdrop(scene: THREE.Scene) {
   const disposables: { dispose(): void }[] = [];
-  const uniforms = {
+  const uniforms: Uniforms = {
     uTime: { value: 0 }, uHype: { value: 0 }, uPulse: { value: 0 }, uLevel: { value: 0 }, uPhase: { value: 0 },
   };
-
-  // Mái vòm
-  const domeGeo = new THREE.SphereGeometry(150, 48, 24);
-  const domeMat = new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: DOME_FRAG,
-    side: THREE.BackSide, depthWrite: false, fog: false,
-  });
-  const dome = new THREE.Mesh(domeGeo, domeMat);
-  dome.renderOrder = -20;
-  dome.frustumCulled = false;
-  scene.add(dome);
-  disposables.push(domeGeo, domeMat);
 
   // Tường LED
   const ledGeo = new THREE.PlaneGeometry(26, 10);
@@ -137,33 +102,13 @@ export function createBackdrop(scene: THREE.Scene) {
   disposables.push(accGeo, accMat);
   acc.forEach((g) => g.dispose());
 
-  // Đèn nhà hát: các hàng chấm màu theo tầng ban công dọc tường xa (1 draw call)
-  const pts: number[] = [];
-  const cols: number[] = [];
-  const palette = [new THREE.Color(0xff4fa0), new THREE.Color(0x4fd6ff), new THREE.Color(0xffc24f), new THREE.Color(0x9a6bff), new THREE.Color(0x3dffb0)];
-  const R = 70;
-  for (let tier = 0; tier < 4; tier++) {
-    const y = 4 + tier * 4.5;
-    const rad = R + tier * 6;
-    const n = 220 + tier * 40;
-    for (let i = 0; i < n; i++) {
-      // vòng cung phía trước + hai bên (bỏ phần sau sân khấu)
-      const a = -Math.PI * 0.62 + (i / (n - 1)) * Math.PI * 1.24;
-      const x = Math.sin(a) * rad;
-      const z = -Math.cos(a) * rad - 8;
-      pts.push(x, y + Math.sin(i * 0.7) * 0.05, z);
-      const c = palette[(i + tier * 2) % palette.length];
-      const k = 0.55 + 0.45 * ((i * 7919) % 13) / 13;
-      cols.push(c.r * k, c.g * k, c.b * k);
-    }
-  }
-  const ptGeo = new THREE.BufferGeometry();
-  ptGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  ptGeo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-  const ptMat = new THREE.PointsMaterial({ size: 3, sizeAttenuation: false, vertexColors: true, fog: false, transparent: true, opacity: 0.75, depthWrite: false });
-  const points = new THREE.Points(ptGeo, ptMat);
-  scene.add(points);
-  disposables.push(ptGeo, ptMat);
+  // Sân vận động ngoài trời: trời đêm + cực quang + khán đài + khinh khí cầu + máy bay
+  const glow: GlowBuf = { pos: [], col: [], size: [], info: [] };
+  const sky = createSky(scene, uniforms, glow);
+  const stadium = createStadium(scene, uniforms, glow);
+  const balloons = createBalloons(scene, uniforms);
+  sky.finishGlow();
+  disposables.push(sky, stadium, balloons);
 
   const c = new THREE.Color();
   return {
@@ -174,7 +119,7 @@ export function createBackdrop(scene: THREE.Scene) {
       uniforms.uLevel.value = f.level;
       uniforms.uPhase.value = f.beat;
       accMat.color.copy(c.setHSL((0.6 + f.hype * 0.35 + t * 0.03) % 1, 0.9, 0.45 + 0.2 * f.beatPulse));
-      ptMat.opacity = 0.55 + 0.25 * f.hype + 0.15 * f.beatPulse;
+      sky.update(t);
     },
     dispose() { disposables.forEach((d) => d.dispose()); },
   };
