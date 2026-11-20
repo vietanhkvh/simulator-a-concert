@@ -66,6 +66,14 @@ export interface DevHost {
   getCrowdQuality(): number | null;
   setCrowdQuality(q: number): void;
   reloadWithCrowd(n: number): void;
+  /** Phong cách: danh sách, cái đang bật, đổi + dựng lại world ngay (không tải lại trang). */
+  themes(): { id: string; name: string }[];
+  getTheme(): string;
+  setTheme(id: string): boolean;
+  /** Dựng lại world `cycles` lần (qua mọi phong cách) và báo số geometry/texture trước–sau. */
+  leakCheck(cycles?: number): unknown;
+  /** Thời gian dựng world gần nhất theo phong cách (ms). */
+  buildTimes(): Record<string, unknown>;
 }
 
 // ───────────── Nhật ký: sự kiện game + lỗi console (ghi từ lúc tải trang, kể cả khi chưa bật dev) ─────────────
@@ -221,6 +229,10 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
       <div class="cs-dev-btns">${btn('data-act="restart"', '↺ Hát lại')}${btn('data-act="end"', '■ Kết thúc')}${btn('data-act="result"', 'Màn kết quả')}</div>
       <div class="cs-dev-btns">${[-30, -10, 10, 30].map((d) => btn(`data-seek="${d}"`, `${d > 0 ? '+' : ''}${d}s`)).join('')}
         ${btn('data-act="chorus"', '→ Điệp khúc')}${btn('data-act="nearend"', '→ Cuối −10s')}</div>`, true)}
+    ${sec('theme', 'Phong cách', `
+      <div class="cs-dev-btns cs-dev-themes">${host.themes().map((t) => btn(`data-theme="${t.id}"`, t.name)).join('')}</div>
+      <div class="cs-dev-btns">${btn('data-act="leak"', 'Kiểm rò rỉ (3 vòng dựng lại)')}</div>
+      <div class="cs-dev-note cs-dev-themenote">Đổi phong cách dựng lại cảnh 3D ngay; bài hát giữ nguyên trạng thái.</div>`, true)}
     ${sec('hype', 'Hype', `
       <label class="cs-dev-row"><input type="checkbox" class="cs-dev-hlock"> Khóa Hype
         <input type="range" class="cs-dev-hype" min="0" max="100" step="1" value="50"><span class="cs-dev-hval">50%</span></label>
@@ -296,6 +308,13 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
         `<label class="cs-dev-chk"><input type="checkbox" data-layer="${z}:${n}"${host.isLayerVisible(z, n) ? ' checked' : ''}> ${esc(n)}</label>`).join('') || '<span class="cs-dev-note">—</span>'}</div>`).join('');
   };
   renderLayers();
+  // ── Phong cách ──
+  const themeNote = q<HTMLDivElement>('.cs-dev-themenote');
+  const syncTheme = () => {
+    for (const b of el.querySelectorAll<HTMLButtonElement>('[data-theme]')) b.classList.toggle('on', b.dataset.theme === host.getTheme());
+    renderLayers(); // world mới → danh sách lớp mới
+  };
+  syncTheme();
 
   // ── Hype ──
   let sweep: { t: number; dur: number } | null = null;
@@ -403,8 +422,10 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
     if (!b) return;
     const d = b.dataset;
     b.blur(); // để Space/Enter không bấm lại nút
+    if (d.theme) { host.setTheme(d.theme); syncTheme(); return; }
     if (d.act) {
       switch (d.act) {
+        case 'leak': themeNote.textContent = JSON.stringify(host.leakCheck(3)); syncTheme(); break;
         case 'collapse': setCollapsed(!el.classList.contains('collapsed')); break;
         case 'close': hide(); break;
         case 'copy': void navigator.clipboard?.writeText(JSON.stringify(stats(), null, 2)).catch(() => {}); break;
@@ -585,6 +606,7 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
     isFreeFly: () => flyState.on,
     show, hide, toggle: () => (visible ? hide() : show()), enable, disable,
     notToggleable: DEV_NOT_TOGGLEABLE,
+    setTheme: (id: string) => { const ok = host.setTheme(id); syncTheme(); return ok; },
     csFreeFly, csResetView,
   };
   if (startEnabled) { enable(); show(); }

@@ -4,6 +4,7 @@ import * as THREE from 'three';
  * và chuyển trạng thái menu → loading → countdown → playing → result.
  *
  * Tham số URL: ?fakeMic=perfect|off|octave  ?latency=<ms>  ?crowd=<số người>  ?dev=1|0 (chế độ developer)
+ *   ?theme=chibi|lacquer|steel|pixel (phong cách; ưu tiên hơn lựa chọn đã lưu — docs/THEMES.md)
  */
 import { createCrowdAudio, type CrowdAudio } from './audio/crowdAudio';
 import { createCrowdSing, type CrowdSing } from './audio/crowdSing';
@@ -16,7 +17,10 @@ import type {
   PanelControls, SongManifestEntry, Teleprompter,
 } from './core/types';
 import { createMic } from './mic/input';
-import { createWorld } from './world/world';
+import { createWorld, rebuildWorld, type World } from './world/world';
+import {
+  applyTheme, getActiveThemeId, getTheme, hexStr, isThemeId, listThemes, rememberTheme, resolveInitialThemeId, THEME_IDS, type ThemeId,
+} from './world/style';
 import { ENTRANCE_SEC, PLATFORMS, VIEW_MODES, type EntranceKind, type StageControls, type ViewMode } from './zones/arena';
 import { createScoring } from './scoring/scoring';
 import { createVoiceScoring } from './scoring/voice';
@@ -56,12 +60,15 @@ const uiRoot = document.getElementById('ui') as HTMLElement;
 
 const bus = new EventBus();
 // Cảnh 3D gồm ba khu (ngoài sân → khán đài → sân trung tâm), ghép ở world/world.ts.
-const world = createWorld(canvas, { crowdCount });
-const stage = world;
+// Phong cách (docs/THEMES.md): bật token + data-theme TRƯỚC khi dựng world. World được dựng cho phong cách đang bật
+// và dựng lại (rebuildWorldNow) khi người chơi chọn phong cách khác ở sảnh rồi bấm Bắt đầu, hoặc từ bảng developer.
+applyTheme(resolveInitialThemeId());
+let world: World = createWorld(canvas, { crowdCount });
+let stage = world;
 // Handle của khu sân trung tâm: khán giả sân, hiệu ứng, màn hình LED, đội quay phim, màn chào sân,
-// điều khiển người chơi (phím V đổi góc nhìn xử lý trong khu).
-const { crowd, led, confetti, emotes, stageFx, crew, entrance } = world.arena;
-const controls: StageControls | null = world.arena.controls;
+// điều khiển người chơi (phím V đổi góc nhìn xử lý trong khu). Gán lại trong bindWorld() sau mỗi lần dựng lại world.
+let { crowd, led, confetti, emotes, stageFx, crew, entrance } = world.arena;
+let controls: StageControls | null = world.arena.controls;
 // Màn chào sân phát trước bài hát; ?entrance=jump|lift|cable|off.
 const skipHint = document.createElement('div');
 skipHint.className = 'cs-skip-hint';
@@ -126,7 +133,15 @@ function secretView(): typeof secretCamPose | null {
   secretCamPose.fov += (fovGoal - secretCamPose.fov) * k;
   return secretCamPose;
 }
-controls?.setViewProvider((m) => entrance.getView() ?? (m === 'wide' ? secretView() : null) ?? crew.getView(m), stage.scene);
+/** Nối lại mọi thứ main.ts giữ từ world (handle khu sân, điều khiển, góc máy, cài đặt đã lưu) sau khi world được dựng (lại). */
+function bindWorld(w: World): void {
+  world = w;
+  stage = w;
+  ({ crowd, led, confetti, emotes, stageFx, crew, entrance } = w.arena);
+  controls = w.arena.controls;
+  controls?.setViewProvider((m) => entrance.getView() ?? (m === 'wide' ? secretView() : null) ?? crew.getView(m), stage.scene);
+}
+bindWorld(world);
 window.addEventListener('cs-entrance', (e) => {
   const phase = (e as CustomEvent<{ phase: string }>).detail.phase;
   if (phase === 'land') {
@@ -153,7 +168,7 @@ function skipIntro(): void {
 // --- Sự kiện bí mật: chuyển sang góc toàn cảnh để thấy hết hiệu ứng, xong thì trả lại góc cũ ---
 const secretBanner = document.createElement('div');
 secretBanner.className = 'cs-secret-banner';
-secretBanner.textContent = 'Sự kiện bí mật!';
+secretBanner.textContent = getTheme().strings.secretBanner;
 secretBanner.hidden = true;
 document.body.appendChild(secretBanner);
 let secretPrevView: ViewName | null = null;
@@ -315,11 +330,11 @@ type OptionalApi = {
   triggerFlyby?: () => void;
 };
 const optional: OptionalApi = {
-  setCheerBanners: world.outside.setCheerBanners,
-  triggerSecret: world.outside.triggerSecret,
-  setSecretChances: world.outside.setSecretChances,
-  SECRET_CHANCES: world.outside.secretChances,
-  triggerFlyby: world.outside.triggerFlyby,
+  setCheerBanners: (l) => world.outside.setCheerBanners(l),
+  triggerSecret: (k, f) => world.outside.triggerSecret(k, f),
+  setSecretChances: (c) => world.outside.setSecretChances(c),
+  get SECRET_CHANCES() { return world.outside.secretChances; },
+  triggerFlyby: () => world.outside.triggerFlyby(),
 };
 /** Tỉ lệ theo các khóa của SECRET_CHANCES (module quyết định có 'jet' chưa), giá trị lưu trong cài đặt được ưu tiên. */
 function secretChances(): Record<SecretKind, number> {
@@ -461,6 +476,66 @@ const pauseMenu = createPauseMenu(uiRoot, {
 });
 showView(controls?.getViewMode() ?? 'singer');
 showLook(controls?.isMouseLook() ?? false);
+pauseMenu.setThemeName(getTheme().strings.name);
+
+// --- Phong cách: chọn ở sảnh (token + giao diện đổi ngay, world dựng lại khi bấm Bắt đầu) hoặc đổi ngay từ bảng developer ---
+const buildTimes: Record<string, { buildMs: number; firstFrameMs: number }> = {};
+/** Chọn phong cách: bật token + CSS, ghi nhớ, cập nhật chữ theo phong cách. Chưa dựng lại world. */
+function selectTheme(id: string, remember = true): boolean {
+  if (!isThemeId(id)) return false;
+  if (id !== getActiveThemeId()) applyTheme(id);
+  if (remember) rememberTheme(id);
+  secretBanner.textContent = getTheme().strings.secretBanner;
+  pauseMenu.setThemeName(getTheme().strings.name);
+  screens.syncTheme();
+  return true;
+}
+/** World đang hiển thị được dựng cho phong cách khác phong cách đang bật? */
+const worldStale = () => world.themeId !== getActiveThemeId();
+/**
+ * Huỷ world hiện tại và dựng world mới cho phong cách đang bật (cùng canvas + renderer), nối lại handle, khôi phục
+ * vị trí/góc máy và các cài đặt runtime (đèn flash, chất lượng khán giả, video LED). Trả về thời gian (ms).
+ */
+function rebuildWorldNow(): { buildMs: number; firstFrameMs: number } {
+  restoreSecretView();
+  secretBanner.hidden = true;
+  const prev = controls ? { view: controls.getViewMode(), pose: controls.getSingerPose(), yaw: controls.yaw, pitch: controls.pitch, look: controls.isMouseLook() } : null;
+  const q = crowd.getQuality?.() ?? null;
+  if (prev?.look) controls?.setMouseLook(false);
+  bindWorld(rebuildWorld(world, canvas, { crowdCount }));
+  if (prev && controls && (state === 'playing' || state === 'countdown')) {
+    controls.teleport(prev.pose.position.x, prev.pose.position.z, prev.yaw, prev.pitch);
+    controls.setView(prev.view);
+  }
+  if (q !== null) crowd.setQuality?.(q);
+  crowd.setFlash(flashOn ? 1 : 0);
+  ledVideo = null; // tick() gắn lại video cho màn LED mới
+  showView(controls?.getViewMode() ?? 'singer');
+  // Vẽ một frame ngay (dưới màn đen) để biên dịch shader, không khựng ở frame đầu sau khi sáng lại.
+  const t1 = performance.now();
+  if (lastFrame) world.update({ ...lastFrame, dt: 0 });
+  stage.render();
+  const times = { buildMs: Math.round(world.buildMs), firstFrameMs: Math.round(performance.now() - t1) };
+  buildTimes[world.themeId] = times;
+  return times;
+}
+/** Dev: dựng lại world `cycles` vòng qua mọi phong cách, so số geometry / texture / program của renderer trước–sau. */
+function leakCheck(cycles = 3): unknown {
+  if (state === 'loading' || state === 'intro') return { error: 'đang tải / chào sân' };
+  const home = getActiveThemeId();
+  const mem = () => { const i = stage.renderer.info; return { geometries: i.memory.geometries, textures: i.memory.textures, programs: i.programs?.length ?? 0 }; };
+  if (worldStale()) rebuildWorldNow();
+  const before = mem();
+  const perCycle: ReturnType<typeof mem>[] = [];
+  const order = [...THEME_IDS.filter((t) => t !== home), home];
+  for (let c = 0; c < cycles; c++) {
+    for (const id of order) { applyTheme(id); rebuildWorldNow(); }
+    perCycle.push(mem());
+  }
+  selectTheme(home, false);
+  const after = mem();
+  return { theme: home, cycles, before, after, perCycle, delta: { geometries: after.geometries - before.geometries, textures: after.textures - before.textures, programs: after.programs - before.programs } };
+}
 
 /**
  * on=false, resumeAudio=false: rời chế độ tạm dừng mà không phát nhạc tiếp (hát lại / kết thúc).
@@ -541,6 +616,9 @@ const screens = createScreens(uiRoot, {
   // Từ sảnh: có màn chào sân; "Hát lại" ở màn kết quả: không.
   onStart: () => void start(state === 'menu'),
   onLobby: () => void backToLobby(),
+  themes: listThemes().map((t) => ({ id: t.id, name: t.strings.name, desc: t.strings.tagline, swatches: t.ui.swatches.map(hexStr) })),
+  getTheme: () => getActiveThemeId(),
+  onTheme: (id) => { selectTheme(id); },
   onImport: (files) => {
     // Chạy trong chính sự kiện change/drop (cử chỉ người dùng) để mở khóa AudioContext/video.
     localFiles = files;
@@ -653,13 +731,18 @@ async function start(withIntro = true): Promise<void> {
     lastLine = -1;
 
     const entranceKind = withIntro && controls ? pickEntrance() : null;
+    // Người chơi đã chọn phong cách khác ở sảnh: dựng lại cảnh 3D dưới màn đen (có thể mất một lúc).
+    const stale = worldStale();
     if (!entranceKind) {
+      if (stale) { await fadeTo(1, 300); rebuildWorldNow(); }
       screens.hide();
       beginSong();
+      if (stale) void fadeTo(0, 600);
       return;
     }
     // Chuyển cảnh: sảnh tối dần → bật màn chào sân (chạy theo thời gian frame thật, chưa phát nhạc) → sáng dần.
     await fadeTo(1, 500);
+    if (stale) rebuildWorldNow();
     screens.hide();
     introKind = entranceKind;
     introDeadline = performance.now() + (entranceSec(entranceKind) + 6) * 1000;
@@ -1096,6 +1179,16 @@ const devHost: DevHost = {
     u.searchParams.set('crowd', String(n));
     location.href = u.toString();
   },
+  themes: () => listThemes().map((t) => ({ id: t.id, name: t.strings.name })),
+  getTheme: () => getActiveThemeId(),
+  setTheme(id) {
+    if (!isThemeId(id) || state === 'loading' || state === 'intro') return false;
+    selectTheme(id as ThemeId);
+    if (worldStale()) rebuildWorldNow();
+    return true;
+  },
+  leakCheck: (cycles) => leakCheck(cycles),
+  buildTimes: () => ({ ...buildTimes }),
 };
 const dev = createDevPanel(devHost, devRequested(params));
 // ?dev=0: không hiện gì liên quan tới developer (cả link ở sảnh); phím ` / F2 vẫn bật được.

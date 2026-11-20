@@ -1,4 +1,5 @@
-/* Token CSS "Kẹo đêm" (STYLE_GUIDE mục 5). Nguồn hex: src/world/style/palette.ts. Không @import, không file font. */
+/* Token CSS. :root = "Kẹo đêm · chibi" (STYLE_GUIDE mục 5; hex: src/world/style/themes/chibi.ts). Cuối file: một khối
+   biến cho mỗi phong cách khác, chọn bằng <html data-theme="…"> (applyTheme đặt). Không @import, không file font. */
 :root {
   --cs-night-700: #0a0818; --cs-night-500: #14102b; --cs-night-300: #2a2350; --cs-night-100: #4a3f82;
   --cs-berry-700: #b8326e; --cs-berry-500: #ff5fa8; --cs-berry-300: #ff94c4; --cs-berry-100: #ffd0e4;
@@ -28,6 +29,7 @@
   --cs-sticker-shadow-panel: 0 4px 0 var(--cs-ink);
   --cs-btn-bg: var(--cs-berry-500);
   --cs-btn-fg: var(--cs-night-700);
+  --cs-btn-hover: var(--cs-berry-300);
 
   /* Font: không tải file ngoài; 'Baloo 2' dùng nếu máy có, không thì rơi về font tròn của hệ thống. */
   --cs-font-display: 'Baloo 2', 'Nunito', ui-rounded, 'SF Pro Rounded', 'Segoe UI', system-ui, sans-serif;
@@ -47,3 +49,131 @@
   --cs-hit: 36px;
   --cs-glow-soft: 0 0 8px rgba(255, 244, 230, 0.3); /* tổng additive gần khung lời <= 0,35 */
 }
+
+/* ═════ "Mực & Sơn mài · bản Việt" (STYLE_B mục 6, STYLE_B2 mục 2, 8): bảng sơn mài, viền kép vàng, nút vàng quỳ ═════
+   Ô ramp của UI: night←sơn then · berry←đỏ son · honey←vàng quỳ · mint←ngọc bích · peach←cam đèn lồng · cream←vỏ trứng
+   · soda←bạc quỳ · grape←vàng quỳ lùi một bậc (viền, chữ phụ; nốt nhạc dùng chàm ở dưới). */
+:root[data-theme='lacquer'] {
+  --cs-night-700: #0b0606; --cs-night-500: #1a0e0c; --cs-night-300: #33201b; --cs-night-100: #5c3d32;
+  --cs-berry-700: #8e1b12; --cs-berry-500: #d9381e; --cs-berry-300: #f26b4a; --cs-berry-100: #ffc2ae;
+  --cs-grape-700: #8f6a1a; --cs-grape-500: #8f6a1a; --cs-grape-300: #d9a93a; --cs-grape-100: #f0ce78;
+  --cs-soda-700: #7c8794; --cs-soda-500: #bfc9d2; --cs-soda-300: #dde4ea; --cs-soda-100: #f4f7fa;
+  --cs-mint-700: #145c4e; --cs-mint-500: #7bcdb6; --cs-mint-300: #7bcdb6; --cs-mint-100: #cdefe4;
+  --cs-honey-700: #8f6a1a; --cs-honey-500: #d9a93a; --cs-honey-300: #f0ce78; --cs-honey-100: #fbebc0;
+  --cs-peach-700: #a1500f; --cs-peach-500: #f0892b; --cs-peach-300: #fab56a; --cs-peach-100: #ffe0b8;
+  --cs-cream-700: #b5a68a; --cs-cream-500: #f3e9d2; --cs-cream-300: #faf4e4; --cs-cream-100: #fffcf3;
+  --cs-ink: #0b0606;
+  --cs-surface: rgba(26, 14, 12, 0.86); --cs-stroke: rgba(143, 106, 26, 0.7);
+  --cs-r-sm: 4px; --cs-r-md: 8px; --cs-r-pill: 4px;
+  --cs-sticker-border: 3px double #8f6a1a; --cs-sticker-shadow: 0 3px 0 #8e1b12; --cs-sticker-shadow-panel: 0 3px 0 #0b0606;
+  --cs-btn-bg: #d9a93a; --cs-btn-fg: #0b0606; --cs-btn-hover: #f0ce78;
+  --cs-font-display: 'Noto Serif', Cambria, 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+  --cs-text-dim: #f0ce78; --cs-text-mute: #b5a68a;
+  --cs-panel: rgba(11, 6, 6, 0.9); --cs-panel-border: 3px double #8f6a1a;
+  --cs-glow-soft: 0 0 8px rgba(243, 233, 210, 0.3);
+}
+[data-theme='lacquer'] :is(.cs-btn, .cs-pill, .cs-pm-btn, .cs-mic-test, .cs-panel-btn, .cs-import-pick, .cs-entr-card) { border: 3px double #8f6a1a; }
+[data-theme='lacquer'] :is(.cs-btn:not(.cs-btn-sub), .cs-pm-primary) { border-color: #0b0606; box-shadow: 0 3px 0 #8e1b12; }
+[data-theme='lacquer'] .cs-entr-card[aria-checked='true'] { border-color: #d9a93a; box-shadow: 0 0 0 2px #d9a93a, 0 5px 0 #8e1b12; }
+[data-theme='lacquer'] .cs-tp-note { background: #6c8ccb; }
+[data-theme='lacquer'] .cs-tp-note.golden { background: #f0ce78; }
+[data-theme='lacquer'] .cs-hud-hype-fill { background: linear-gradient(90deg, #2b4a8c, #145c4e); }
+[data-theme='lacquer'] .cs-hud-hype[data-stage='1'] .cs-hud-hype-fill { background: linear-gradient(90deg, #2b4a8c, #d9381e 55%, #d9a93a); }
+[data-theme='lacquer'] .cs-hud-hype[data-stage='2'] .cs-hud-hype-fill { background: linear-gradient(90deg, #d9381e, #f0892b 55%, #f0ce78); }
+[data-theme='lacquer'] .cs-screen { background: radial-gradient(ellipse at 50% 40%, rgba(51, 32, 27, 0.82), rgba(11, 6, 6, 0.95)); }
+[data-theme='lacquer'] .cs-screen.cs-lobby { background: radial-gradient(ellipse at 20% 10%, #14213f 0%, transparent 60%),
+  radial-gradient(ellipse at 85% 95%, rgba(142, 27, 18, 0.45) 0%, transparent 55%), linear-gradient(170deg, #1a0e0c, #0b0606 75%); background-color: #0b0606; }
+[data-theme='lacquer'] .cs-screen.cs-lobby::before { background:
+  radial-gradient(circle at 12% 30%, rgba(240, 137, 43, 0.2) 0 60px, transparent 62px), radial-gradient(circle at 80% 20%, rgba(243, 233, 210, 0.16) 0 74px, transparent 76px),
+  radial-gradient(circle at 88% 74%, rgba(217, 169, 58, 0.16) 0 80px, transparent 82px), radial-gradient(circle at 24% 84%, rgba(217, 56, 30, 0.2) 0 56px, transparent 58px); }
+[data-theme='lacquer'] .cs-screen.cs-lobby::after { background: none; }
+
+/* ═════ "Thép & Lửa" (STYLE_C mục 2, 5): tấm thép góc vát, chữ condensed IN HOA, nút chính cam lửa ═════
+   Ô ramp của UI: night←than · berry←lửa · grape←thép · soda←hồ quang · mint←tungsten · honey←trắng nung · cream←giấy
+   · peach←đỏ tín hiệu (blood-100, chữ coal-700 đạt 4,56) với bóng blood-500. */
+:root[data-theme='steel'] {
+  --cs-night-700: #050506; --cs-night-500: #0e0f12; --cs-night-300: #1e2026; --cs-night-100: #3a3d47;
+  --cs-berry-700: #9a4a08; --cs-berry-500: #ff7a1a; --cs-berry-300: #ffa047; --cs-berry-100: #ffc98a;
+  --cs-grape-700: #2c3038; --cs-grape-500: #5b6270; --cs-grape-300: #8e96a6; --cs-grape-100: #c3c9d4;
+  --cs-soda-700: #7fa0c8; --cs-soda-500: #cfe4ff; --cs-soda-300: #e4f0ff; --cs-soda-100: #f5faff;
+  --cs-mint-700: #b88a4a; --cs-mint-500: #ffd9a0; --cs-mint-300: #ffe8c4; --cs-mint-100: #fff6e6;
+  --cs-honey-700: #c48a12; --cs-honey-500: #ffd23f; --cs-honey-300: #ffe98a; --cs-honey-100: #fff8d6;
+  --cs-peach-700: #8a0f1c; --cs-peach-500: #e8222e; --cs-peach-300: #ff9466; --cs-peach-100: #ffc98a;
+  --cs-cream-700: #a8a8a4; --cs-cream-500: #f2f0ea; --cs-cream-300: #faf9f5; --cs-cream-100: #ffffff;
+  --cs-ink: #050506;
+  --cs-ok: #cfe4ff;
+  --cs-surface: rgba(14, 15, 18, 0.82); --cs-stroke: rgba(142, 150, 166, 0.5);
+  --cs-r-sm: 0px; --cs-r-md: 0px; --cs-r-pill: 0px;
+  --cs-sticker-border: 2px solid #5b6270; --cs-sticker-shadow: 0 2px 0 #9a4a08; --cs-sticker-shadow-panel: 0 2px 0 #050506;
+  --cs-btn-bg: #ff7a1a; --cs-btn-fg: #050506; --cs-btn-hover: #ffa047;
+  --cs-font-display: 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', system-ui, sans-serif;
+  --cs-text-dim: #c3c9d4; --cs-text-mute: #8e96a6;
+  --cs-panel: rgba(14, 15, 18, 0.92); --cs-panel-border: 2px solid #5b6270;
+  --cs-focus: 2px solid #ffd23f;
+  --cs-glow-soft: 0 0 6px rgba(242, 240, 234, 0.22);
+}
+/* góc vát 8 px (clip-path cắt cả viền focus bên ngoài → kéo viền focus vào trong) */
+[data-theme='steel'] :is(.cs-btn, .cs-pill, .cs-pm-btn, .cs-mic-test, .cs-panel-btn, .cs-import-pick, .cs-entr-card, .cs-hud-mic, .cs-hud-hype-lock) {
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  border-color: #5b6270; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; outline-offset: -5px; }
+[data-theme='steel'] :is(.cs-btn:not(.cs-btn-sub), .cs-pm-primary) { border-color: #050506; border-bottom: 4px solid #9a4a08; }
+[data-theme='steel'] .cs-entr-card { text-transform: none; letter-spacing: 0; font-weight: inherit; }
+[data-theme='steel'] .cs-entr-card[aria-checked='true'] { border-color: #ff7a1a; border-width: 3px; background: #1e2026; }
+[data-theme='steel'] .cs-entr-card[aria-checked='true']::after { top: 4px; right: 4px; border-radius: 0; width: 20px; height: 20px; font-size: 12px; }
+[data-theme='steel'] :is(.cs-title, .cs-kicker, .cs-percent, .cs-grade, .cs-pm-head, .cs-import-title, .cs-entr-card b) { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 900; }
+[data-theme='steel'] .cs-hud-hype-fill { background: linear-gradient(90deg, #7fa0c8, #cfe4ff); }
+[data-theme='steel'] .cs-hud-hype[data-stage='1'] .cs-hud-hype-fill { background: linear-gradient(90deg, #7fa0c8, #ffd9a0 55%, #ff7a1a); }
+[data-theme='steel'] .cs-hud-hype[data-stage='2'] .cs-hud-hype-fill { background: linear-gradient(90deg, #e8222e, #ff7a1a 55%, #ffe98a); }
+[data-theme='steel'] .cs-screen { background: radial-gradient(ellipse at 50% 40%, rgba(30, 32, 38, 0.85), rgba(5, 5, 6, 0.95)); }
+[data-theme='steel'] .cs-screen.cs-lobby { background: radial-gradient(ellipse at 50% 110%, rgba(194, 65, 12, 0.5) 0%, transparent 60%),
+  repeating-linear-gradient(135deg, rgba(58, 61, 71, 0.16) 0 2px, transparent 2px 14px), linear-gradient(170deg, #1e2026, #050506 70%); background-color: #050506; }
+[data-theme='steel'] .cs-screen.cs-lobby::before { background: linear-gradient(115deg, transparent 0 38%, rgba(207, 228, 255, 0.07) 39% 44%, transparent 45%),
+  linear-gradient(68deg, transparent 0 58%, rgba(207, 228, 255, 0.06) 59% 63%, transparent 64%); }
+[data-theme='steel'] .cs-screen.cs-lobby::after { background: none; }
+
+/* ═════ "Đêm Sao Điểm Ảnh" (STYLE_E mục 2, 7): góc vuông, monospace hệ thống, viền cứng 2 px, bóng cứng lệch 3 px ═════
+   Ô ramp của UI: night←mực / lam Phổ · berry←vàng crôm (nút chính, lựa chọn) · grape←tím chiều + xám mây (viền, chữ phụ)
+   · soda←lam Phổ sáng · mint←lục bách-100 · honey←crôm sáng · peach←son-100 (chip, chữ mực) · cream←kem crôm-100. */
+:root[data-theme='pixel'] {
+  --cs-night-700: #0b0a1a; --cs-night-500: #0b0a1a; --cs-night-300: #1f3a8a; --cs-night-100: #2f5fb8;
+  --cs-berry-700: #b3781a; --cs-berry-500: #f2b824; --cs-berry-300: #f7dc78; --cs-berry-100: #fdf6d0;
+  --cs-grape-700: #4a3f82; --cs-grape-500: #7f6cc0; --cs-grape-300: #a9cbe8; --cs-grape-100: #e8f1f6;
+  --cs-soda-700: #1f3a8a; --cs-soda-500: #5b93d6; --cs-soda-300: #a9cbe8; --cs-soda-100: #e8f1f6;
+  --cs-mint-700: #1e5a46; --cs-mint-500: #a8c66c; --cs-mint-300: #a8c66c; --cs-mint-100: #e8f1f6;
+  --cs-honey-700: #b3781a; --cs-honey-500: #f7dc78; --cs-honey-300: #fdf6d0; --cs-honey-100: #ffffff;
+  --cs-peach-700: #5a1420; --cs-peach-500: #f8a04a; --cs-peach-300: #f8a04a; --cs-peach-100: #fdf6d0;
+  --cs-cream-700: #a9cbe8; --cs-cream-500: #fdf6d0; --cs-cream-300: #fefae6; --cs-cream-100: #ffffff;
+  --cs-ink: #0b0a1a;
+  --cs-surface: rgba(11, 10, 26, 0.88); --cs-stroke: #f2b824;
+  --cs-r-sm: 0px; --cs-r-md: 0px; --cs-r-pill: 0px;
+  --cs-sticker-border: 2px solid #f2b824; --cs-sticker-shadow: 3px 3px 0 #b3781a; --cs-sticker-shadow-panel: 3px 3px 0 #101a3a;
+  --cs-btn-bg: #f2b824; --cs-btn-fg: #0b0a1a; --cs-btn-hover: #f7dc78;
+  --cs-font-display: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+  --cs-font-body: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+  --cs-text-dim: #e8f1f6; --cs-text-mute: #a9cbe8;
+  --cs-panel: rgba(11, 10, 26, 0.94); --cs-panel-border: 2px solid #f2b824;
+  --cs-focus: 2px solid #fdf6d0;
+  --cs-glow-soft: none;
+}
+[data-theme='pixel'] :is(.cs-btn, .cs-pill, .cs-pm-btn, .cs-mic-test, .cs-panel-btn, .cs-import-pick) { border: 2px solid #fdf6d0; box-shadow: 3px 3px 0 #101a3a; letter-spacing: 1px; text-transform: uppercase; }
+[data-theme='pixel'] :is(.cs-btn:not(.cs-btn-sub), .cs-pm-primary) { border-color: #0b0a1a; box-shadow: 3px 3px 0 #b3781a, 0 0 0 2px #fdf6d0; }
+[data-theme='pixel'] .cs-entr-card { border: 2px solid #7f6cc0; box-shadow: 3px 3px 0 #101a3a; }
+[data-theme='pixel'] .cs-entr-card[aria-checked='true'] { border-color: #f2b824; box-shadow: 0 0 0 2px #f2b824, 4px 4px 0 2px #b3781a; transform: none; }
+[data-theme='pixel'] .cs-entr-card[aria-checked='true']::after { border-radius: 0; top: -8px; right: -8px; }
+[data-theme='pixel'] :is(.cs-title, .cs-kicker, .cs-pm-head) { letter-spacing: 2px; text-transform: uppercase; }
+[data-theme='pixel'] .cs-title { font-size: clamp(30px, 5vw, 52px); text-shadow: 4px 4px 0 #1f3a8a; }
+[data-theme='pixel'] .cs-hud-hype-fill { background: repeating-linear-gradient(90deg, #2f5fb8 0 10px, #0b0a1a 10px 12px); }
+[data-theme='pixel'] .cs-hud-hype[data-stage='1'] .cs-hud-hype-fill { background: repeating-linear-gradient(90deg, transparent 0 10px, #0b0a1a 10px 12px), linear-gradient(90deg, #2f5fb8, #f2b824 70%); }
+[data-theme='pixel'] .cs-hud-hype[data-stage='2'] .cs-hud-hype-fill { background: repeating-linear-gradient(90deg, transparent 0 10px, #0b0a1a 10px 12px), linear-gradient(90deg, #f2b824, #f0641e 55%, #c8321e); }
+/* lời đã hát: crôm → cam son (nút chính và chữ kem quá gần nhau nếu để mặc định) */
+[data-theme='pixel'] .cs-syl { background-image: linear-gradient(90deg, #f2b824 0, #f0641e var(--p), #fdf6d0 var(--p), #fdf6d0 100%); }
+[data-theme='pixel'] .cs-tp-note-fill, [data-theme='pixel'] .cs-tp-count-fill, [data-theme='pixel'] .cs-panel-prog-fill { background: linear-gradient(90deg, #f2b824, #f0641e); }
+[data-theme='pixel'] .cs-screen { background: rgba(11, 10, 26, 0.9); }
+[data-theme='pixel'] .cs-screen.cs-lobby { background: repeating-linear-gradient(0deg, rgba(47, 95, 184, 0.16) 0 4px, transparent 4px 8px),
+  linear-gradient(180deg, #101a3a 0%, #1f3a8a 60%, #101a3a 100%); background-color: #101a3a; }
+[data-theme='pixel'] .cs-screen.cs-lobby > .cs-card { background: rgba(11, 10, 26, 0.9); border: 2px solid #f2b824; box-shadow: 4px 4px 0 #0b0a1a; margin-block: 16px; }
+[data-theme='pixel'] .cs-screen.cs-lobby::before { background:
+  radial-gradient(circle at 14% 24%, #f7dc78 0 6px, rgba(242, 184, 36, 0.35) 7px 18px, transparent 19px), radial-gradient(circle at 82% 16%, #f7dc78 0 8px, rgba(242, 184, 36, 0.3) 9px 26px, transparent 27px),
+  radial-gradient(circle at 90% 70%, #fdf6d0 0 5px, rgba(242, 184, 36, 0.3) 6px 16px, transparent 17px), radial-gradient(circle at 8% 78%, #f7dc78 0 5px, rgba(91, 147, 214, 0.4) 6px 20px, transparent 21px);
+  animation: none; }
+[data-theme='pixel'] .cs-screen.cs-lobby::after { background: none; }

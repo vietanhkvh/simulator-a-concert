@@ -323,6 +323,10 @@ export interface ScreensOptions {
   onImport?: (files: File[]) => void;
   /** Nút "Về sảnh" trên màn kết quả (bổ sung). */
   onLobby?: () => void;
+  /** Phần "Chọn phong cách" ở sảnh: danh sách thẻ, cái đang chọn và hành động khi chọn (bổ sung). */
+  themes?: { id: string; name: string; desc: string; swatches: string[] }[];
+  getTheme?: () => string;
+  onTheme?: (id: string) => void;
 }
 
 export interface Screens {

@@ -42,7 +42,7 @@ export function getLobbyEntrance(): LobbyEntrance | null {
   return v === 'lift' || v === 'cable' ? v : 'jump';
 }
 
-export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens & { isLobby(): boolean } {
+export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens & { isLobby(): boolean; syncTheme(): void } {
   const el = document.createElement('div');
   el.className = 'cs-screen';
   root.appendChild(el);
@@ -73,6 +73,7 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
     const onKey = (e: KeyboardEvent) => {
       if (!box.isConnected) { window.removeEventListener('keydown', onKey); return; }
       if (el.style.display === 'none' || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if ((e.target as HTMLElement)?.closest?.('.cs-theme')) return; // mũi tên trên thẻ phong cách thuộc về nhóm đó
       const i = cards.findIndex((c) => c.getAttribute('aria-checked') === 'true');
       if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') pick(Number(e.code.slice(5)) - 1);
       else if (e.code === 'ArrowRight' || e.code === 'ArrowDown') { e.preventDefault(); pick((i + 1) % 3); }
@@ -81,6 +82,45 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
     window.addEventListener('keydown', onKey);
     card.appendChild(box);
   };
+
+  /** Bốn thẻ chọn phong cách (radio; Tab tới nhóm, mũi tên đổi lựa chọn như radio gốc). Chọn = đổi giao diện sảnh ngay. */
+  const addThemePicker = (card: Element) => {
+    const themes = opts.themes;
+    if (!themes?.length || !opts.onTheme) return;
+    const box = document.createElement('div');
+    box.className = 'cs-entr cs-theme';
+    const cur = opts.getTheme?.() ?? themes[0]!.id;
+    box.innerHTML = `<p class="cs-import-title" id="cs-theme-title">Chọn phong cách</p>
+      <div class="cs-entr-cards cs-theme-cards" role="radiogroup" aria-labelledby="cs-theme-title">${themes.map((t) => `
+        <button type="button" role="radio" class="cs-entr-card cs-theme-card" data-theme-id="${esc(t.id)}"
+          aria-checked="${t.id === cur}" tabindex="${t.id === cur ? 0 : -1}">
+          <span class="cs-theme-sw" aria-hidden="true">${t.swatches.map((c) => `<i style="background:${esc(c)}"></i>`).join('')}</span>
+          <b>${esc(t.name)}</b><span>${esc(t.desc)}</span></button>`).join('')}</div>`;
+    const cards = Array.from(box.querySelectorAll<HTMLButtonElement>('.cs-theme-card'));
+    const mark = (id: string) => cards.forEach((c) => {
+      const on = c.dataset.themeId === id;
+      c.setAttribute('aria-checked', String(on));
+      c.tabIndex = on ? 0 : -1;
+    });
+    const pick = (i: number, focus = false) => {
+      const c = cards[(i + cards.length) % cards.length]!;
+      mark(c.dataset.themeId!);
+      if (focus) c.focus({ preventScroll: true });
+      opts.onTheme?.(c.dataset.themeId!);
+    };
+    cards.forEach((c, i) => {
+      c.addEventListener('click', () => pick(i));
+      c.addEventListener('keydown', (e) => {
+        if (e.code === 'ArrowRight' || e.code === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); pick(i + 1, true); }
+        else if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); pick(i - 1, true); }
+        else if (e.code === 'Home') { e.preventDefault(); pick(0, true); }
+        else if (e.code === 'End') { e.preventDefault(); pick(cards.length - 1, true); }
+      });
+    });
+    syncThemeCards = () => { if (box.isConnected) mark(opts.getTheme?.() ?? cur); };
+    card.appendChild(box);
+  };
+  let syncThemeCards = (): void => {};
 
   const show = (inner: string, button?: string) => {
     el.style.display = '';
@@ -146,6 +186,8 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
 
   return {
     isLobby: () => lobby && el.style.display !== 'none',
+    /** Đồng bộ thẻ phong cách khi phong cách đổi từ nơi khác (bảng developer). */
+    syncTheme: () => syncThemeCards(),
     showStart(e) {
       lobby = true;
       show(
@@ -159,6 +201,7 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
       const startBtn = el.querySelector('#cs-start')!;
       const picker = document.createElement('div');
       el.firstElementChild!.insertBefore(picker, startBtn);
+      addThemePicker(picker);
       addEntrancePicker(picker);
       addImport(el.firstElementChild!);
       el.firstElementChild!.insertAdjacentHTML('beforeend', credit(e.attribution));

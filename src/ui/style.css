@@ -20,7 +20,7 @@
 /* Nút chính: berry + chữ night-700 (chữ trắng trên berry chỉ ~2,7:1) */
 .cs-btn:not(.cs-btn-sub), .cs-pm-primary, .cs-pm-btn.cs-pm-primary {
   color: var(--cs-btn-fg); background: var(--cs-btn-bg); border-color: var(--cs-ink); box-shadow: 0 4px 0 var(--cs-berry-700); }
-.cs-btn:not(.cs-btn-sub):hover, .cs-pm-primary:hover { background: var(--cs-berry-300); }
+.cs-btn:not(.cs-btn-sub):hover, .cs-pm-primary:hover { background: var(--cs-btn-hover); }
 .cs-btn:not(.cs-btn-sub):active, .cs-pm-primary:active { box-shadow: 0 0 0 var(--cs-berry-700); transform: translateY(4px); }
 /* Nút nguy hiểm / kết thúc: peach + biểu tượng */
 .cs-pm-danger, #cs-end-btn { color: var(--cs-btn-fg); background: var(--cs-peach-500); border-color: var(--cs-ink); box-shadow: 0 3px 0 var(--cs-peach-700); }
@@ -483,3 +483,13 @@ body:has(.cs-pm:not([hidden])) .cs-fw, body:has(.cs-pm:not([hidden])) .cs-topbar
   .cs-btn, .cs-pill, .cs-pm-btn, .cs-mic-test, .cs-panel-btn, .cs-import-pick, .cs-entr-card, .cs-fade, .cs-tp-marker, .cs-tp-count { transition: none; }
   .cs-btn:active, .cs-pill:active, .cs-pm-btn:active, .cs-entr-card:active { transform: none; }
 }
+
+/* ───── Chọn phong cách ở sảnh (dùng lại thẻ chào sân) + nhãn phong cách ───── */
+.cs-theme { margin-bottom: var(--cs-sp-3); }
+.cs-theme-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 700px) { .cs-theme-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cs-theme-card { padding: var(--cs-sp-3) 8px var(--cs-sp-3); }
+.cs-theme-sw { display: flex; width: 100%; height: 14px; box-sizing: border-box; border: 2px solid var(--cs-ink); border-radius: var(--cs-r-sm); overflow: hidden; }
+.cs-theme-sw i { flex: 1; }
+.cs-pm-theme { font-size: 13px; color: var(--cs-text-dim); margin: -4px 0 var(--cs-sp-2); }
+.cs-pm-theme b { color: var(--cs-text); }

@@ -90,6 +90,8 @@ export interface PauseMenuOptions {
 export interface PauseMenu {
   readonly el: HTMLElement;
   readonly isOpen: boolean;
+  /** Tên phong cách đang bật (hiện dưới tiêu đề). */
+  setThemeName(name: string): void;
   open(hype: number, micPanelEl: HTMLElement): void;
   close(): void;
   /** Mỗi frame khi mở: cập nhật thời gian/thanh tua. */
@@ -122,6 +124,7 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
   const pct = (v: number) => Math.round(v * 100);
   el.innerHTML = `
     <div class="cs-pm-head">Tạm dừng <span class="cs-pm-sub">— chỉnh &amp; thử tùy ý</span></div>
+    <div class="cs-pm-theme">Phong cách: <b></b> <span class="cs-pm-sub">(đổi ở sảnh)</span></div>
     <section class="cs-pm-sec cs-pm-main">
       <button type="button" class="cs-pm-btn cs-pm-primary" data-act="resume">▶ Tiếp tục</button>
       <button type="button" class="cs-pm-btn" data-act="restart">↺ Hát lại từ đầu</button>
@@ -280,6 +283,7 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
   const api: PauseMenu = {
     el,
     get isOpen() { return open; },
+    setThemeName(name) { (el.querySelector('.cs-pm-theme b') as HTMLElement).textContent = name; },
     open(h, micPanelEl) {
       open = true;
       el.hidden = false;
