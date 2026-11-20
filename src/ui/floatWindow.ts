@@ -334,6 +334,7 @@ export function createFloatWindow(root: HTMLElement, opts: FloatWindowOptions): 
         reset();
       });
       lastZoomText = '';
+      ro?.observe(b); // thanh xuống dòng khi khung hẹp → đo lại chiều cao thanh
       measure();
       apply();
     },

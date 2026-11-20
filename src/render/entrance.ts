@@ -21,6 +21,7 @@ export interface Entrance {
 
 const EYE = 1.65;
 const LAND = new THREE.Vector3(0, EYE, -6.6); // đầu runway giữa, trước mép sân khấu, trước cổng z=-9
+const COMET0 = new THREE.Vector3(-34, 72, -15); // sao chổi lao xuống từ bên trái, không qua mái
 const FAR_TARGET = new THREE.Vector3(0, 1.4, -24); // nhìn ra khán giả từ sau lưng ca sĩ
 
 // Mốc thời gian
@@ -160,7 +161,7 @@ export function createEntrance(scene: THREE.Scene): Entrance {
     const shots: [number, number, (o: Shot) => void][] = [
       [0, 0, (o) => { // thấp trên runway, nhìn lên qua cổng sáng
         o.pos.set(0.8, 0.5, -12.4);
-        o.target.copy(sp); o.fov = 60;
+        o.target.copy(sp); o.fov = lerp(48, 62, smooth((time - 1.8) / 1.2));
       }],
       [H.impact, 0.15, (o) => {
         const k = easeOut((time - H.impact) / 1.2);
@@ -200,7 +201,7 @@ export function createEntrance(scene: THREE.Scene): Entrance {
   }
 
   const singerHero = (time: number, out: THREE.Vector3) => {
-    const S = tmp2.set(16, 75, -24);
+    const S = tmp2.copy(COMET0);
     if (time < H.fall) { out.copy(S); return; }
     if (time < H.impact) {
       const s = (time - H.fall) / (H.impact - H.fall);
@@ -282,14 +283,14 @@ export function createEntrance(scene: THREE.Scene): Entrance {
       // sao chổi
       const head = tmp.copy(sp);
       head.y -= 0.6;
-      const dir = cometDir.set(16, 75 - EYE, -24 - LAND.z).normalize();
+      const dir = cometDir.subVectors(COMET0, LAND).normalize();
       const pre = clamp01(t / H.fall);
       if (t < H.impact) {
         const s = clamp01((t - H.fall) / (H.impact - H.fall));
         hero.setComet(head, dir, t < H.fall ? 0 : 6 + 34 * s, t < H.fall ? 0.4 + 0.8 * pre : 1.3, t);
       } else {
         const a = t - H.impact;
-        hero.setComet(tmp.set(LAND.x, 0.6, LAND.z), dir, Math.max(0, 40 * (1 - a / 0.25)), Math.max(0, 1.6 * (1 - a / 0.6)), t);
+        hero.setComet(tmp.set(LAND.x, 0.6, LAND.z), dir, Math.max(0, 30 * (1 - a / 0.2)), Math.max(0, 1.1 * (1 - a / 0.35)), t);
       }
       hero.setImpact(t >= H.impact ? t - H.impact : -1);
       if (!landed && t >= H.impact) { landed = true; dispatch('land'); }

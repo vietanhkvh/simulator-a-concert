@@ -309,10 +309,10 @@ void main() {
   float crack = smoothstep(0.07, 0.0, d) * smoothstep(len, len * 0.6, r) * step(0.35, r);
   float onDeck = max(step(abs(vW.x), 1.5), step(-4.9, vW.z) * step(abs(vW.x), 12.8));
   float heat = exp(-uAge * 0.9) * 0.85 + 0.15;
-  float scorch = exp(-r * r * 0.9) * (exp(-uAge * 1.5) * 1.2 + 0.25);
+  float scorch = exp(-r * r * 1.4) * (exp(-uAge * 3.0) * 0.6 + 0.12);
   vec3 col = vec3(0.6, 0.95, 1.0) * ring * 1.6
            + vec3(1.0, 0.55, 0.15) * crack * heat * onDeck * 1.4
-           + vec3(1.0, 0.75, 0.4) * scorch * onDeck;
+           + vec3(1.0, 0.5, 0.2) * scorch * onDeck;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -350,10 +350,10 @@ void main() {
   p.y = max(p.y, position.y + 0.02);
   float life = mix(1.0 + aSeed.z * 0.6, 2.4, dust);
   vA = (uAge < 0.0) ? 0.0 : 1.0 - smoothstep(life * 0.5, life, t);
-  vColor = mix(mix(vec3(1.0, 0.85, 0.4), vec3(1.0, 1.0, 0.95), aSeed.y), vec3(0.55, 0.5, 0.6), dust);
+  vColor = mix(mix(vec3(1.0, 0.85, 0.4), vec3(1.0, 1.0, 0.95), aSeed.y), vec3(0.16, 0.12, 0.18), dust);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = vA > 0.0 ? max(1.5, uPx * mix(0.07, 0.5 + t * 0.4, dust) / -mv.z) : 0.0;
+  gl_PointSize = vA > 0.0 ? max(1.5, uPx * mix(0.07, 0.3 + t * 0.25, dust) / -mv.z) : 0.0;
 }`;
 const SPARK_FRAG = /* glsl */ `
 varying vec3 vColor;
@@ -446,11 +446,11 @@ export function createHeroFx(land: THREE.Vector3): HeroFx {
       streak.visible = len > 0.05;
       streak.position.copy(head);
       streak.quaternion.setFromUnitVectors(UP, dir);
-      streak.scale.set(Math.max(0.2, g), len, Math.max(0.2, g));
+      streak.scale.set(Math.max(0.3, g * 1.7), len, Math.max(0.3, g * 1.7));
       streakMat.uniforms.uTime.value = time;
       glow.visible = g > 0.01;
       glow.position.copy(head);
-      glow.scale.setScalar(1.5 + 5 * g);
+      glow.scale.setScalar(2 + 7 * g);
       glowMat.opacity = Math.min(1, g);
     },
     setImpact(age) {

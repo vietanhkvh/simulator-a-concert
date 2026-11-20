@@ -21,6 +21,7 @@ import { createEmotes } from './render/emotes';
 import { createLedScreens } from './render/ledScreens';
 import { createLights } from './render/lights';
 import { createCameraCrew } from './render/cameraCrew';
+import { createEntrance, ENTRANCE_SEC, type EntranceKind } from './render/entrance';
 import { createSinger } from './render/singer';
 import { createStage } from './render/stage';
 import { getControls } from './render/stageControls';
@@ -69,12 +70,46 @@ const stageFx = createStageFx(stage.scene);
 const singer = createSinger(stage.scene);
 const crew = createCameraCrew(stage.scene);
 const controls = getControls();
-controls?.setViewProvider((m) => crew.getView(m), stage.scene);
+// Màn chào sân (nhảy dù từ trực thăng / đáp đất kiểu siêu anh hùng) phát trong lúc đếm ngược.
+// ?entrance=parachute|hero|off (mặc định: ngẫu nhiên).
+const entrance = createEntrance(stage.scene);
+const skipHint = document.createElement('div');
+skipHint.className = 'cs-skip-hint';
+skipHint.textContent = 'Enter: bỏ qua màn chào sân';
+skipHint.hidden = true;
+document.body.appendChild(skipHint);
+const entranceParam = params.get('entrance');
+function pickEntrance(): EntranceKind | null {
+  if (entranceParam === 'off') return null;
+  if (entranceParam === 'parachute' || entranceParam === 'hero') return entranceParam;
+  return Math.random() < 0.5 ? 'parachute' : 'hero';
+}
+controls?.setViewProvider((m) => entrance.getView() ?? crew.getView(m), stage.scene);
+window.addEventListener('cs-entrance', (e) => {
+  const phase = (e as CustomEvent<{ phase: string }>).detail.phase;
+  if (phase === 'land') {
+    crowdAudio?.cheer(1);
+    stageFx.pyro();
+    emotes.burst(60);
+  } else if (phase === 'end') {
+    const l = entrance.getLandingSpot();
+    controls?.teleport(l.x, l.z, l.yaw, 0);
+    controls?.setView('singer');
+  }
+});
+window.addEventListener('keydown', (e) => { if (e.code === 'Enter' && entrance.isPlaying()) entrance.skip(); });
 function updateCrew(f: FrameState): void {
   if (!controls) return;
   const sp = controls.getSingerPose();
   crew.update(f, sp.position, sp.yaw);
-  singer.update(f, sp.position, sp.yaw, controls.getViewMode() !== 'singer');
+  entrance.update(f);
+  const cinematic = entrance.isPlaying();
+  if (cinematic !== uiRoot.classList.contains('cs-cinematic')) {
+    uiRoot.classList.toggle('cs-cinematic', cinematic);
+    skipHint.hidden = !cinematic;
+  }
+  const ep = entrance.getSingerPose();
+  singer.update(f, ep ? ep.position : sp.position, ep ? ep.yaw : sp.yaw, ep ? true : controls.getViewMode() !== 'singer');
 }
 
 // --- Tương tác với khán giả bằng phím (chỉ khi đang diễn) ---
@@ -490,8 +525,13 @@ async function start(): Promise<void> {
 
     screens.hide();
     hud.setVisible(true);
-    audio.play(LEAD_IN_SEC);
+    const entranceKind = pickEntrance();
+    audio.play(entranceKind ? ENTRANCE_SEC[entranceKind] : LEAD_IN_SEC);
     setState('countdown');
+    if (entranceKind && controls) {
+      controls.setView('crane');
+      entrance.play(entranceKind);
+    }
   } catch (err) {
     console.error(err);
     releaseVideo();

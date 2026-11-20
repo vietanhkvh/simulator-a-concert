@@ -292,8 +292,8 @@
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); font-family: var(--cs-font); }
 .cs-fw.cs-video-panel { background: #000; }
 .cs-fw > .cs-panel-bar.cs-fw-bar { position: relative; left: auto; right: auto; bottom: auto; transform: none; margin: 0;
-  flex: none; border-radius: 0; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.18); gap: 6px; padding: 3px 6px;
-  overflow: hidden; cursor: move; touch-action: none; user-select: none; -webkit-user-select: none; }
+  flex: none; border-radius: 0; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.18); gap: 4px 6px; padding: 3px 6px;
+  flex-wrap: wrap; white-space: nowrap; overflow: hidden; cursor: move; touch-action: none; user-select: none; -webkit-user-select: none; }
 .cs-fw-bar .cs-panel-btn { padding: 2px 8px; flex: none; }
 .cs-fw-bar .cs-panel-prog { flex: 0 1 140px; min-width: 40px; }
 .cs-fw-zoom { display: inline-flex; align-items: center; gap: 3px; flex: none; }
@@ -401,3 +401,12 @@
   font: 800 15px var(--cs-font); color: #fff; background: rgba(8, 6, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.35);
   cursor: pointer; pointer-events: auto; }
 .cs-cg-toggle:hover { background: rgba(106, 76, 255, 0.6); }
+
+/* Màn chào sân: ẩn giao diện để xem trọn cảnh, chỉ để lại gợi ý bỏ qua */
+#ui.cs-cinematic > * { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.4s; }
+.cs-skip-hint {
+  position: fixed; right: 20px; bottom: 18px; z-index: 50;
+  font: 600 13px system-ui, 'Segoe UI', Roboto, sans-serif; color: rgba(255, 255, 255, 0.75);
+  background: rgba(8, 6, 20, 0.5); padding: 6px 12px; border-radius: 999px; pointer-events: none;
+}
+.cs-skip-hint[hidden] { display: none; }

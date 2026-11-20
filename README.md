@@ -76,6 +76,7 @@ Các tương tác có thời gian chờ 4 giây và chỉ làm khán giả sôi 
 |---|---|
 | `?latency=120` | Bù độ trễ micro (ms). Tăng nếu hát đúng mà bị chấm trễ. Cũng chỉnh được trong menu tạm dừng. |
 | `?fakeMic=perfect` | Micro giả hát đúng giai điệu (xem thử không cần micro). Còn có `off`, `octave`. |
+| `?entrance=parachute` | Màn chào sân: `parachute` (nhảy dù từ trực thăng), `hero` (đáp đất kiểu siêu anh hùng), `off` (tắt). Mặc định chọn ngẫu nhiên; bấm `Enter` để bỏ qua. |
 | `?crowd=8000` | Số khán giả (100–10000). Game tự giảm số người được vẽ nếu máy chậm. |
 
 ## Lệnh khác
