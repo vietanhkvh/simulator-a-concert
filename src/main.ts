@@ -29,7 +29,9 @@ const params = new URLSearchParams(location.search);
 const fakeMicParam = params.get('fakeMic');
 const requestedMic: MicMode =
   fakeMicParam === 'perfect' || fakeMicParam === 'off' || fakeMicParam === 'octave' ? fakeMicParam : 'real';
-const latencySec = Math.max(0, Number(params.get('latency') ?? 120) || 0) / 1000;
+// Micro giả trễ ~50 ms (cửa sổ phân tích), micro thật mặc định bù 120 ms.
+const latencySec =
+  Math.max(0, Number(params.get('latency') ?? (requestedMic === 'real' ? 120 : 50)) || 0) / 1000;
 const crowdCount = Math.max(100, Math.min(10000, Number(params.get('crowd') ?? 2500) || 2500));
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;

@@ -1,6 +1,94 @@
 /* P5 sở hữu file này. Mọi phần tử UI nằm trong #ui (pointer-events: none); phần tử bấm được tự bật lại. */
-.cs-screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 12px; color: #fff; font-family: system-ui, sans-serif; text-align: center;
-  background: rgba(5, 5, 10, 0.7); pointer-events: auto; }
-.cs-screen button { font-size: 20px; padding: 12px 32px; cursor: pointer; }
-.cs-stub { position: absolute; left: 12px; color: #fff; font: 14px/1.4 ui-monospace, monospace; white-space: pre; }
+:root {
+  --cs-font: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --cs-accent: #ff4fa3;
+  --cs-accent2: #7c5cff;
+  --cs-sung: #ffd34d;
+  --cs-gold: #fff2a8;
+}
+
+/* ───── Màn hình ───── */
+.cs-screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-family: var(--cs-font); text-align: center; pointer-events: auto;
+  background: radial-gradient(ellipse at 50% 40%, rgba(40, 20, 70, 0.72), rgba(4, 4, 10, 0.92)); }
+.cs-card { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: min(640px, 90vw); padding: 24px; }
+.cs-kicker { font-size: 13px; letter-spacing: 0.35em; text-transform: uppercase; color: #b9a8ff; }
+.cs-title { margin: 4px 0 0; font-size: clamp(36px, 6vw, 64px); line-height: 1.05; font-weight: 800;
+  background: linear-gradient(90deg, #fff, var(--cs-accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.cs-err-title { background: none; color: #ff7a7a; }
+.cs-artist { font-size: 20px; color: #d8d3ee; }
+.cs-hint { margin: 18px 0 0; font-size: 18px; color: #fff; }
+.cs-hint-ico { color: var(--cs-accent); margin-right: 6px; }
+.cs-hint-sub { margin: 0; font-size: 14px; color: #a8a3c0; }
+.cs-btn { margin-top: 20px; font: 700 20px var(--cs-font); color: #fff; border: 0; border-radius: 999px; padding: 14px 44px;
+  cursor: pointer; background: linear-gradient(90deg, var(--cs-accent2), var(--cs-accent));
+  box-shadow: 0 6px 28px rgba(255, 79, 163, 0.45); transition: transform 0.12s, box-shadow 0.12s; }
+.cs-btn:hover { transform: translateY(-1px) scale(1.03); box-shadow: 0 8px 34px rgba(255, 79, 163, 0.65); }
+.cs-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.cs-credit { margin: 22px 0 0; font-size: 12px; color: #8f8aa8; }
+.cs-loading { font-size: 18px; margin: 6px 0 0; }
+.cs-spinner { width: 36px; height: 36px; border-radius: 50%; border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--cs-accent); animation: cs-spin 0.9s linear infinite; }
+@keyframes cs-spin { to { transform: rotate(360deg); } }
+.cs-percent { margin: 2px 0 0; font-size: clamp(72px, 12vw, 120px); line-height: 1; font-weight: 900;
+  background: linear-gradient(180deg, #fff, var(--cs-sung)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.cs-grade { font-size: 22px; font-weight: 700; }
+.cs-stats { display: flex; gap: 36px; margin: 10px 0 4px; }
+.cs-stats div { display: flex; flex-direction: column; }
+.cs-stats b { font-size: 26px; }
+.cs-stats span { font-size: 12px; letter-spacing: 0.15em; text-transform: uppercase; color: #a8a3c0; }
+
+/* ───── HUD ───── */
+.cs-hud { position: absolute; top: 0; left: 0; right: 0; display: grid; grid-template-columns: 1fr minmax(240px, 40%) 1fr;
+  align-items: start; gap: 16px; padding: 14px 20px; font-family: var(--cs-font); color: #fff;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent); }
+.cs-hud-score { text-shadow: 0 2px 8px #000; }
+.cs-hud-score-val { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.cs-hud-score-sub { font-size: 14px; color: #d8d3ee; font-variant-numeric: tabular-nums; }
+.cs-hud-hype { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.cs-hud-hype-label { font-size: 12px; font-weight: 800; letter-spacing: 0.2em; text-shadow: 0 1px 4px #000; }
+.cs-hud-hype-track { flex: 1; height: 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.35); overflow: hidden; box-shadow: 0 0 10px rgba(0, 0, 0, 0.6); }
+.cs-hud-hype-fill { height: 100%; width: 100%; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, #5c7cff, var(--cs-accent), #ffb347); }
+.cs-hud-hype.hot .cs-hud-hype-track { box-shadow: 0 0 16px var(--cs-accent), 0 0 4px #fff; }
+.cs-hud-mic { justify-self: end; display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 12px;
+  border-radius: 999px; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.25); text-shadow: 0 1px 3px #000; }
+.cs-hud-mic-dot { width: 9px; height: 9px; border-radius: 50%; background: #888; }
+.cs-hud-mic.real .cs-hud-mic-dot { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+.cs-hud-mic.fake .cs-hud-mic-dot { background: #ffb347; }
+.cs-hud-mic.none .cs-hud-mic-dot { background: #ff5c5c; }
+.cs-hud-mic.none { border-color: #ff5c5c; }
+
+/* ───── Teleprompter ───── */
+.cs-tp { position: absolute; left: 50%; bottom: 3.5vh; transform: translateX(-50%); width: min(1080px, 92vw);
+  display: flex; flex-direction: column; align-items: center; gap: 8px; font-family: var(--cs-font); color: #fff; }
+.cs-tp-count { width: 40%; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.15); overflow: hidden;
+  opacity: 0; transition: opacity 0.25s; }
+.cs-tp-count-fill { height: 100%; background: linear-gradient(90deg, var(--cs-accent2), var(--cs-accent));
+  transform-origin: left center; }
+.cs-tp-lane { position: relative; width: 100%; height: clamp(90px, 15vh, 150px); border-radius: 12px; overflow: hidden;
+  background: rgba(6, 4, 16, 0.62); border: 1px solid rgba(255, 255, 255, 0.14); backdrop-filter: blur(3px); }
+.cs-tp-lane::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(180deg, transparent 0 24%, rgba(255, 255, 255, 0.06) 24% calc(24% + 1px)); }
+.cs-tp-lane-notes { position: absolute; inset: 8px 0; }
+.cs-tp-note { position: absolute; height: 12%; min-height: 10px; border-radius: 8px; overflow: hidden;
+  background: rgba(150, 140, 200, 0.45); border: 1px solid rgba(255, 255, 255, 0.55); box-sizing: border-box; }
+.cs-tp-note.golden { background: rgba(255, 220, 90, 0.4); border-color: var(--cs-gold); box-shadow: 0 0 10px rgba(255, 220, 90, 0.7); }
+.cs-tp-note.freestyle { background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.16) 0 6px, transparent 6px 12px);
+  border-style: dashed; height: 70%; }
+.cs-tp-note-fill { position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--cs-accent2), var(--cs-accent)); }
+.cs-tp-note.golden .cs-tp-note-fill { background: linear-gradient(90deg, #ffb347, var(--cs-gold)); }
+.cs-tp-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 8px #fff; will-change: transform; }
+.cs-tp-marker { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, #fff 30%, var(--cs-sung) 70%); box-shadow: 0 0 14px 4px rgba(255, 211, 77, 0.85);
+  will-change: transform; transition: opacity 0.12s; }
+.cs-tp-cur { font-size: clamp(28px, 4.2vw, 48px); font-weight: 800; line-height: 1.15; text-align: center;
+  white-space: pre-wrap; min-height: 1.15em; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 12px rgba(0, 0, 0, 0.7)); }
+.cs-syl { --p: 0%; color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(90deg, var(--cs-sung) 0, var(--cs-sung) var(--p), #fff var(--p), #fff 100%); }
+.cs-syl.golden { background-image: linear-gradient(90deg, var(--cs-gold) 0, #ffb347 var(--p), #fff var(--p), #fff 100%); }
+.cs-tp-next { font-size: clamp(18px, 2.4vw, 26px); font-weight: 600; text-align: center; white-space: pre-wrap; min-height: 1.2em;
+  color: rgba(255, 255, 255, 0.55); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95); }
