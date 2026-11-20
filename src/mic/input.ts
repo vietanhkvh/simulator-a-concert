@@ -73,7 +73,11 @@ export function createMic(opts: MicOptions): MicInput {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('no getUserMedia');
         const s = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          audio: {
+            echoCancellation: !!opts.voiceProcessing,
+            noiseSuppression: !!opts.voiceProcessing,
+            autoGainControl: false,
+          },
           video: false,
         });
         if (stopped) {

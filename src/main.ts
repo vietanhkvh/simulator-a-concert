@@ -147,12 +147,14 @@ async function start(): Promise<void> {
     mic?.stop();
     mic = createMic({
       mode: requestedMic,
+      voiceProcessing: !hasNotes,
       targetHz: () => {
         if (!song || !audio) return null;
         const t = audio.now();
         if (!hasNotes) {
           // Micro giả trong chế độ không có nốt: "hát" một cao độ cố định trong câu lời (hoặc suốt bài).
-          if (t < 0) return null;
+          // Không có micro thật (chế độ xem) thì không tự "hát": Hype giữ mức nền.
+          if (t < 0 || requestedMic === 'real') return null;
           if (song.lyrics) return lyricIndexAt(song.lyrics, t) >= 0 ? 220 : null;
           return 220;
         }

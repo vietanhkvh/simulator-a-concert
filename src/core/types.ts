@@ -107,6 +107,11 @@ export interface MicOptions {
    * chỉ micro giả dùng. Nhờ vậy module mic không biết gì về bài hát.
    */
   targetHz: () => number | null;
+  /**
+   * Bật khử vọng/khử ồn của trình duyệt. Dùng cho bài không có nốt (chỉ cần biết có đang hát
+   * hay không) để tiếng nhạc lọt từ loa vào micro không bị tính là giọng hát.
+   */
+  voiceProcessing?: boolean;
 }
 
 export interface MicInput {

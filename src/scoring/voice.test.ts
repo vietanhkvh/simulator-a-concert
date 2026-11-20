@@ -15,7 +15,12 @@ describe('voice scoring', () => {
     let h = 0;
     for (let i = 0; i < 300; i++) h = s.update(i / 60, voice, 0, 1 / 60).hype;
     expect(h).toBeGreaterThan(0.6);
-    for (let i = 300; i < 900; i++) h = s.update(i / 60, null, 0, 1 / 60).hype;
+    // Im lặng ngắn (dưới 4 s) không trừ Hype đáng kể...
+    const peak = h;
+    for (let i = 300; i < 480; i++) h = s.update(i / 60, null, 0, 1 / 60).hype;
+    expect(h).toBeGreaterThan(peak - 0.1);
+    // ...im lặng dài thì Hype giảm dần.
+    for (let i = 480; i < 2100; i++) h = s.update(i / 60, null, 0, 1 / 60).hype;
     expect(h).toBeLessThan(0.5);
   });
   it('lrc: ngoài câu lời không tính', () => {
