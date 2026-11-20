@@ -1,0 +1,6 @@
+/* P5 sở hữu file này. Mọi phần tử UI nằm trong #ui (pointer-events: none); phần tử bấm được tự bật lại. */
+.cs-screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; color: #fff; font-family: system-ui, sans-serif; text-align: center;
+  background: rgba(5, 5, 10, 0.7); pointer-events: auto; }
+.cs-screen button { font-size: 20px; padding: 12px 32px; cursor: pointer; }
+.cs-stub { position: absolute; left: 12px; color: #fff; font: 14px/1.4 ui-monospace, monospace; white-space: pre; }

@@ -1,0 +1,18 @@
+{
+  "songs": [
+    {
+      "id": "chasing-marks",
+      "title": "Chasing Marks",
+      "artist": "Silver Note",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Chasing Marks — Silver Note, CC BY 4.0",
+      "sourceUrl": "https://github.com/UltraStar-Deluxe/songs",
+      "notesUrl": "songs/chasing-marks/notes.txt",
+      "audioUrl": "songs/chasing-marks/instrumental.mp3",
+      "visualBpm": 130,
+      "gapOffsetMs": 0,
+      "notes": "notes.txt = instrumental.txt goc (not giong het song.txt, BPM 260, GAP 7664 ms). Audio = instrumental.mp3 (194.93 s). Not cuoi ket thuc o 180.7 s. Khong tin header #MP3; khong dung anh bia/nen."
+    }
+  ]
+}

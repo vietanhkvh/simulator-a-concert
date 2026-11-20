@@ -129,3 +129,28 @@ nên người xem luôn thấy được lời chạy, điểm và khán giả ph
 2. **Máy bạn có Node 20+ không?** Có thì giao theo phương án A + B; không thì cần Python hoặc chỉ xem qua link (phương án C).
 3. **Bài demo:** *Chasing Marks* là nhạc do fan *My Little Pony* sáng tác (license CC BY 4.0, game không dùng hình ảnh nào của bài).
    Chấp nhận cho demo 1, hay muốn đổi sang bài dự phòng (license phi thương mại)?
+
+## 8. Ghi chú sau P0 (Architect)
+
+**Bài demo đã kiểm tra (rủi ro 1):**
+- `instrumental.txt` và `song.txt` có phần nốt giống hệt nhau (241 nốt, BPM 260, GAP 7664 ms); chỉ khác header.
+  Đã chép `instrumental.txt` thành `public/songs/chasing-marks/notes.txt`.
+- `instrumental.mp3` dài 194,93 s, `song.mp3` 194,95 s. Tương quan chéo đường bao 7 s đầu cho độ lệch ~20 ms,
+  tức bản instrumental thẳng hàng với bản có lời, nên GAP của file nốt dùng được nguyên (`gapOffsetMs: 0`).
+- Trong bản có lời, năng lượng tăng vọt ở ~7,5 s, khớp với GAP 7,66 s. Nốt cuối kết thúc ở 180,7 s.
+- Chưa ai nghe bằng tai: P3/P7 vẫn nên nghe thử một lần; lệch thì chỉnh `gapOffsetMs` trong manifest.
+- `license.txt` ghi rõ "Creative Commons Attribution 4.0".
+
+**Khác so với interface ở mục 2 / `01-architect.md` (bản trong `src/core/types.ts` thắng):**
+- `ScoringEngine.update(songTime, pitch, latencySec, dt)`: thêm `dt` cho Hype. `ScoreState` thêm `percent` (0..100);
+  `ScoreState.hype` là giá trị đã làm mượt.
+- `FrameState` thêm `waveMode` và `score`. `FrameState.beat` tính theo `visualBpm` (tempo thật, 130 với bài demo, đo từ audio),
+  không phải beat UltraStar. `Song` và manifest có thêm `visualBpm`, `attribution`.
+- `parseUltraStar(txt, entry)` và `loadSong(entry)` nhận mục manifest thay cho URL; thêm `loadManifest()`.
+- `AudioEngine` thêm `resume()` và `durationSec`.
+- `createMic(opts)` nhận `{ mode, targetHz }`; `start()` trả về mode thực tế và không reject khi bị từ chối quyền.
+- UI: `createHud` trả `Hud` (`setNotice`, `setVisible`); thêm `createScreens(root, { onStart })` với
+  `showStart/showLoading/showResult/showError/hide`. Màn kết quả thuộc `Screens`, không thuộc `Hud`.
+- Tiện ích dùng chung ở `src/core/time.ts`: `beatToSec`, `visualBeat`, `beatPulse`, `pitchToHz`, `hzToMidi`, `noteAt`.
+- `main.ts` đã nối dây đủ luồng với stub (menu → countdown → playing → result) và có `window.__game`; P7 chỉ cần hoàn thiện.
+- Quy ước không gian: ca sĩ ở gốc tọa độ, nhìn về −Z; khán giả ở z < −6, sàn y = 0.
