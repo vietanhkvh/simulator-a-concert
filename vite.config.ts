@@ -14,6 +14,10 @@ export default defineConfig({
     target: 'es2022',
     rolldownOptions: {
       output: {
+        // Tên tệp chỉ gồm tiền tố trung tính + hash: tên có chữ như 'pixel', 'theme', 'secrets' dễ bị tiện ích chặn quảng cáo /
+        // theo dõi chặn nhầm, làm import động thất bại trên web thật.
+        entryFileNames: 'assets/c[hash].js',
+        chunkFileNames: 'assets/c[hash].js',
         // Chia chunk (docs/THEMES.md mục 5 "Tải lười"): boot (src/boot.ts + phụ thuộc tĩnh) · vendor (three, pitchy: ít đổi,
         // cache lâu) · app (game + builder mặc định + UI) · secrets (tải khi Hype cao) · theme-<id> (tải khi chọn phong cách).
         // Nhóm tải lười KHÔNG kéo theo phụ thuộc: phụ thuộc dùng chung phải nằm ở chunk tải trước, nếu không app sẽ import
