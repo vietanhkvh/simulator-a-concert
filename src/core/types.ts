@@ -326,7 +326,8 @@ export interface ScreensOptions {
   /** Phần "Chọn phong cách" ở sảnh: danh sách thẻ, cái đang chọn và hành động khi chọn (bổ sung). */
   themes?: { id: string; name: string; desc: string; swatches: string[] }[];
   getTheme?: () => string;
-  onTheme?: (id: string) => void;
+  /** Trả Promise khi phải tải mã phong cách: thẻ hiện "Đang tải phong cách…"; reject → quay về phong cách đang bật + báo lỗi. */
+  onTheme?: (id: string) => void | Promise<void>;
 }
 
 export interface Screens {

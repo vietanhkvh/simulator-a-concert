@@ -1,4 +1,5 @@
 import { renderControls } from './controlsGuide';
+import type { QualityMode, QualityTier } from '../core/quality';
 
 /**
  * Bảng "xưởng" khi tạm dừng (dock bên phải, sân khấu vẫn thấy bên trái): tiếp tục / hát lại / kết thúc,
@@ -68,6 +69,8 @@ export interface PauseMenuOptions {
   onPreviewHype(h: number): void;
   getQuality(): number | null;
   setQuality(q: number): void;
+  /** Chất lượng đồ hoạ (world/quality.ts): chế độ đang chọn + bậc đang dùng; set() lưu lựa chọn. */
+  gfx?: { get(): { mode: QualityMode; tier: QualityTier }; set(mode: QualityMode): void };
   onTest(kind: TestKind): void;
   setView(v: ViewName): void;
   setMouseLook(on: boolean): void;
@@ -106,6 +109,8 @@ export interface PauseMenu {
 const VIEWS: [ViewName, string][] = [
   ['singer', 'Ca sĩ'], ['aerial', 'Trên không'], ['flycam', 'Flycam'], ['pit', 'Hố'], ['crane', 'Cần cẩu'], ['wide', 'Toàn cảnh'],
 ];
+const GFX_OPTIONS: [QualityMode, string][] = [['auto', 'Tự động'], ['high', 'Cao'], ['medium', 'Vừa'], ['low', 'Thấp']];
+const TIER_LABEL: Record<QualityTier, string> = { ultra: 'Rất cao', high: 'Cao', medium: 'Vừa', low: 'Thấp' };
 const SECRET_LABEL: Record<string, string> = { ufo: 'UFO', rocket: 'Tên lửa', dragon: 'Rồng', jet: 'Máy bay phản lực' };
 const SECRETS: [SecretKind, string][] = [['ufo', 'UFO'], ['rocket', 'Tên lửa'], ['dragon', 'Rồng'], ['jet', 'Máy bay phản lực']];
 
@@ -142,6 +147,10 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
       <label class="cs-pm-row">Khán giả hát theo <input type="range" data-vol="sing" min="0" max="150" step="5" value="${pct(s.volume.sing)}"><span class="cs-pm-val"></span></label>
       <div class="cs-pm-btns"><button type="button" class="cs-pm-btn" data-test="cheer">Nghe hò reo</button>
         <button type="button" class="cs-pm-btn" data-test="sing">Nghe hát theo</button></div>
+    </section>
+    <section class="cs-pm-sec cs-pm-gfx"><h3>Đồ hoạ</h3>
+      <label class="cs-pm-row">Chất lượng đồ hoạ <select class="cs-pm-gfx-sel">${GFX_OPTIONS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+      <div class="cs-pm-note cs-pm-gfx-note"></div>
     </section>
     <section class="cs-pm-sec"><h3>Khán giả</h3>
       <label class="cs-pm-row">Hype xem trước <input type="range" class="cs-pm-hype" min="0" max="100" step="1"><span class="cs-pm-val cs-pm-hype-val"></span></label>
@@ -198,6 +207,8 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
   const hypeVal = q<HTMLSpanElement>('.cs-pm-hype-val');
   const quality = q<HTMLInputElement>('.cs-pm-quality');
   const qualityVal = q<HTMLSpanElement>('.cs-pm-quality-val');
+  const gfxSel = q<HTMLSelectElement>('.cs-pm-gfx-sel');
+  const gfxNote = q<HTMLDivElement>('.cs-pm-gfx-note');
   const flashBtn = q<HTMLButtonElement>('.cs-pm-flash');
   const lookBtn = q<HTMLButtonElement>('.cs-pm-look');
   const banners = q<HTMLTextAreaElement>('.cs-pm-banners');
@@ -227,6 +238,24 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
   hype.addEventListener('input', () => {
     hypeVal.textContent = `${hype.value}%`;
     o.onPreviewHype(Number(hype.value) / 100);
+  });
+  q<HTMLElement>('.cs-pm-gfx').hidden = !o.gfx;
+  const syncGfx = () => {
+    if (!o.gfx) return;
+    const g = o.gfx.get();
+    // 'ultra' chỉ đặt được bằng ?quality=ultra: thêm lựa chọn tạm để hiện đúng.
+    if (!gfxSel.querySelector(`option[value="${g.mode}"]`)) gfxSel.add(new Option(TIER_LABEL[g.mode as QualityTier] ?? g.mode, g.mode));
+    gfxSel.value = g.mode;
+    gfxNote.textContent = g.mode === 'auto'
+      ? `Đang dùng: ${TIER_LABEL[g.tier]} — tự hạ khi máy chậm, tự nâng khi dư sức.`
+      : `Cố định mức ${TIER_LABEL[g.tier]}.`;
+  };
+  gfxSel.addEventListener('change', () => {
+    o.gfx?.set(gfxSel.value as QualityMode);
+    syncGfx();
+    // Mức chất lượng đổi số khán giả vẽ: cập nhật thanh "Chất lượng vẽ".
+    const qv = o.getQuality();
+    if (qv !== null) { quality.value = String(Math.round(qv * 100)); qualityVal.textContent = `${quality.value}%`; }
   });
   quality.addEventListener('input', () => {
     qualityVal.textContent = `${quality.value}%`;
@@ -293,6 +322,7 @@ export function createPauseMenu(root: HTMLElement, o: PauseMenuOptions): PauseMe
       quality.disabled = qv === null;
       if (qv !== null) quality.value = String(Math.round(qv * 100));
       qualityVal.textContent = qv === null ? '—' : `${quality.value}%`;
+      syncGfx();
       // Mượn bảng micro (ui/micPanel.ts) vào trong menu; trả lại chỗ cũ khi đóng.
       if (micPanelEl.parentNode && micPanelEl.parentNode !== micSlot) {
         micHome = { parent: micPanelEl.parentNode, next: micPanelEl.nextSibling };

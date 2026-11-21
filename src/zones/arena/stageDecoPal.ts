@@ -43,6 +43,8 @@ export function lightFraction(h: number): number {
 // vai trò cho chỉ số k: primary nhiều nhất (≈ 60/30/10 theo guide), accent ít
 const ROLE = [0, 1, 0, 2, 1, 0, 1, 0] as const;
 const A = new THREE.Color();
+let mixHype = NaN;
+let mixW = hypeMix(0);
 
 /**
  * Màu cho đèn thứ k: vai trò chạy đuổi theo phách (mỗi 4 phách dịch 1 bước, chỉ khi hype ≥ 40 %),
@@ -50,7 +52,9 @@ const A = new THREE.Color();
  */
 export function palColor(k: number, out: THREE.Color, beat = livePal.beat, hype = livePal.hype): THREE.Color {
   const t = hypeTriad(hype);
-  const w = hypeMix(hype);
+  // Gọi hàng trăm lần mỗi frame với cùng hype: nhớ trọng số thay vì cấp mảng mới mỗi lần (giảm rác cho GC).
+  if (hype !== mixHype) { mixHype = hype; mixW = hypeMix(hype); }
+  const w = mixW;
   const moving = 1 - w[0];
   const ph = (beat / 4) * moving + livePal.chase;
   const step = Math.floor(ph);

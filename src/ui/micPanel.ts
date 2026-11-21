@@ -91,6 +91,16 @@ export function createMicPanel(root: HTMLElement): MicPanel {
     const savedId = load(KEY_ID);
     const savedLabel = load(KEY_LABEL);
     const current = select.value || savedId;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      // Không phải HTTPS/localhost (hoặc trình duyệt quá cũ): nói rõ ngay, game vẫn chơi được ở chế độ xem.
+      select.replaceChildren(new Option('Không có micro', ''));
+      select.disabled = true;
+      testBtn.disabled = true;
+      setStatusText(window.isSecureContext
+        ? 'Trình duyệt không hỗ trợ micro (vẫn chơi, không chấm điểm)'
+        : 'Micro cần HTTPS hoặc localhost (vẫn chơi, không chấm điểm)', true);
+      return;
+    }
     let devs: MediaDeviceInfo[] = [];
     try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput'); } catch { /* không hỗ trợ */ }
     const def = devs.find((d) => d.deviceId === 'default');

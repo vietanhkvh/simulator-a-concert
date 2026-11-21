@@ -1,0 +1,16 @@
+/* Panel "Giới thiệu / Bản quyền": chỉ dùng biến --cs-* nên đổi theo phong cách (data-theme). */
+.cs-about-link { margin-top: var(--cs-sp-3); padding: 0 var(--cs-sp-2); min-height: 32px; font: 600 13px var(--cs-font-body); color: var(--cs-text-mute);
+  background: none; border: 0; text-decoration: underline; cursor: pointer; pointer-events: auto; }
+.cs-about-link:hover { color: var(--cs-text); }
+.cs-about-link:focus-visible, .cs-about-close:focus-visible { outline: var(--cs-focus); outline-offset: 2px; }
+.cs-about-veil { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: var(--cs-sp-4);
+  box-sizing: border-box; background: rgba(5, 4, 14, 0.78); pointer-events: auto; font-family: var(--cs-font-body); color: var(--cs-text); }
+.cs-about { position: relative; width: min(640px, 100%); max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: var(--cs-sp-5);
+  text-align: left; background: var(--cs-night-500, var(--cs-panel)); border: var(--cs-panel-border); border-radius: var(--cs-r-md); box-shadow: var(--cs-sticker-shadow-panel); }
+.cs-about h2 { margin: 0 0 var(--cs-sp-2); font: 800 26px var(--cs-font-display); color: var(--cs-cream-500); text-shadow: 0 3px 0 var(--cs-ink); }
+.cs-about h3 { margin: var(--cs-sp-4) 0 var(--cs-sp-1); font: 800 12px var(--cs-font-display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--cs-grape-300); }
+.cs-about p, .cs-about li { margin: 0 0 var(--cs-sp-1); font-size: 14px; line-height: 1.55; color: var(--cs-text-dim); }
+.cs-about ul { margin: 0; padding-left: 20px; }
+.cs-about a { color: var(--cs-mint-300); }
+.cs-about a:focus-visible { outline: var(--cs-focus); outline-offset: 2px; }
+.cs-about-close { margin-top: var(--cs-sp-4); }

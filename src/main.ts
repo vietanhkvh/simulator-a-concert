@@ -5,6 +5,7 @@ import * as THREE from 'three';
  *
  * Tham số URL: ?fakeMic=perfect|off|octave  ?latency=<ms>  ?crowd=<số người>  ?dev=1|0 (chế độ developer)
  *   ?theme=chibi|lacquer|steel|pixel (phong cách; ưu tiên hơn lựa chọn đã lưu — docs/THEMES.md)
+ *   ?quality=auto|ultra|high|medium|low (chất lượng đồ hoạ; ưu tiên hơn lựa chọn ở menu tạm dừng — world/quality.ts)
  */
 import { createCrowdAudio, type CrowdAudio } from './audio/crowdAudio';
 import { createCrowdSing, type CrowdSing } from './audio/crowdSing';
@@ -18,6 +19,9 @@ import type {
 } from './core/types';
 import { createMic } from './mic/input';
 import { createWorld, rebuildWorld, type World } from './world/world';
+import { isThemeCodeLoaded, loadThemeCode } from './world/shared/themeCode';
+import { createQualityControl } from './world/quality';
+import { isQualityMode } from './core/quality';
 import {
   applyTheme, getActiveThemeId, getTheme, hexStr, isThemeId, listThemes, rememberTheme, resolveInitialThemeId, THEME_IDS, type ThemeId,
 } from './world/style';
@@ -32,6 +36,7 @@ import { createHud } from './ui/hud';
 import { createHudMicMeter, createMicPanel } from './ui/micPanel';
 import { createScreens, getLobbyEntrance, type LobbyEntrance } from './ui/screens';
 import { createTeleprompter, createVideoPanel } from './ui/teleprompter';
+import { hideBootLoader } from './core/webSupport';
 import { createControlsGuide } from './ui/controlsGuide';
 import {
   createPauseMenu, loadSettings, saveSettings, type SecretKind, type TestKind, type ViewName,
@@ -62,8 +67,14 @@ const bus = new EventBus();
 // Cảnh 3D gồm ba khu (ngoài sân → khán đài → sân trung tâm), ghép ở world/world.ts.
 // Phong cách (docs/THEMES.md): bật token + data-theme TRƯỚC khi dựng world. World được dựng cho phong cách đang bật
 // và dựng lại (rebuildWorldNow) khi người chơi chọn phong cách khác ở sảnh rồi bấm Bắt đầu, hoặc từ bảng developer.
-applyTheme(resolveInitialThemeId());
-let world: World = createWorld(canvas, { crowdCount });
+// Builder của phong cách không mặc định là chunk riêng (world/shared/themeCode.ts): chỉ tải phong cách đang chọn; tải lỗi → chibi.
+applyTheme(await loadThemeCode(resolveInitialThemeId()).then(() => resolveInitialThemeId(), (err: unknown) => {
+  console.warn('[theme] không tải được phong cách, dùng mặc định', err);
+  return 'chibi' as const;
+}));
+// Chất lượng đồ hoạ (world/quality.ts): tự đo fps và hạ/nâng bậc; ?quality= hoặc menu tạm dừng để cố định.
+const gfx = createQualityControl(params);
+let world: World = createWorld(canvas, { crowdCount }, undefined, gfx.rendererInit());
 let stage = world;
 // Handle của khu sân trung tâm: khán giả sân, hiệu ứng, màn hình LED, đội quay phim, màn chào sân,
 // điều khiển người chơi (phím V đổi góc nhìn xử lý trong khu). Gán lại trong bindWorld() sau mỗi lần dựng lại world.
@@ -145,6 +156,7 @@ function bindWorld(w: World): void {
   ({ crowd, led, confetti, emotes, stageFx, crew, entrance } = w.arena);
   controls = w.arena.controls;
   controls?.setViewProvider((m) => entrance.getView() ?? (m === 'wide' ? secretView() : null) ?? crew.getView(m), stage.scene);
+  gfx.attach(w);
 }
 bindWorld(world);
 window.addEventListener('cs-entrance', (e) => {
@@ -450,6 +462,7 @@ const pauseMenu = createPauseMenu(uiRoot, {
   onPreviewHype: (h) => { previewHype = h; },
   getQuality: () => crowd.getQuality?.() ?? null,
   setQuality: (q) => crowd.setQuality?.(q),
+  gfx: { get: () => ({ mode: gfx.mode, tier: gfx.status().tier }), set: (m) => gfx.setMode(m) },
   onTest: (k) => { interact(k, true); },
   setView: (v: ViewName) => controls?.setView(v),
   setMouseLook: (on) => controls?.setMouseLook(on),
@@ -485,6 +498,8 @@ pauseMenu.setThemeName(getTheme().strings.name);
 
 // --- Phong cách: chọn ở sảnh (token + giao diện đổi ngay, world dựng lại khi bấm Bắt đầu) hoặc đổi ngay từ bảng developer ---
 const buildTimes: Record<string, { buildMs: number; firstFrameMs: number }> = {};
+/** Phong cách người chơi bấm sau cùng ở sảnh (chunk tải xong muộn không được ghi đè lựa chọn mới hơn). */
+let themeWanted = '';
 /** Chọn phong cách: bật token + CSS, ghi nhớ, cập nhật chữ theo phong cách. Chưa dựng lại world. */
 function selectTheme(id: string, remember = true): boolean {
   if (!isThemeId(id)) return false;
@@ -623,7 +638,12 @@ const screens = createScreens(uiRoot, {
   onLobby: () => void backToLobby(),
   themes: listThemes().map((t) => ({ id: t.id, name: t.strings.name, desc: t.strings.tagline, swatches: t.ui.swatches.map(hexStr) })),
   getTheme: () => getActiveThemeId(),
-  onTheme: (id) => { selectTheme(id); },
+  // Phong cách chưa tải: thẻ hiện "Đang tải phong cách…" tới khi chunk về; lỗi → giữ phong cách hiện tại (screens báo).
+  onTheme: (id) => {
+    themeWanted = id;
+    if (!isThemeId(id) || isThemeCodeLoaded(id)) { selectTheme(id); return; }
+    return loadThemeCode(id).then(() => { if (themeWanted === id) selectTheme(id); });
+  },
   onImport: (files) => {
     // Chạy trong chính sự kiện change/drop (cử chỉ người dùng) để mở khóa AudioContext/video.
     localFiles = files;
@@ -996,10 +1016,13 @@ function tick(dt: number): void {
   updateCinematicUi();
   // Sảnh mờ đục che kín sân vận động: không vẽ 3D (tiết kiệm GPU), trừ khi đang chuyển cảnh; vẫn vẽ ~1 lần/giây để giữ ấm.
   const hidden = screens.isLobby() && !fadeBusy;
-  if (!hidden || performance.now() - lastRenderAt > 1000) {
+  // Tab ẩn: không vẽ (trình duyệt thường đã ngừng rAF, đây là chốt chặn khi nó vẫn gọi).
+  if (!document.hidden && (!hidden || performance.now() - lastRenderAt > 1000)) {
     stage.render();
     lastRenderAt = performance.now();
   }
+  // Bộ điều tốc chỉ đo khi cảnh được vẽ mỗi frame thật (không sảnh, không tạm dừng, tab hiện).
+  gfx.frame(!hidden && !paused && !document.hidden);
   // Frame xem trước không ghi đè lastFrame: đồng hồ/điểm/Hype thật giữ nguyên khi tiếp tục.
   if (!paused) lastFrame = f;
 }
@@ -1060,6 +1083,11 @@ const TELEPORTS: Record<string, { x: number; z: number; yaw: number }> = {
   right: { x: PLATFORMS.right.x, z: PLATFORMS.right.z, yaw: 0 },
   bstage: { x: PLATFORMS.bstage.x, z: PLATFORMS.bstage.z, yaw: 0 },
 };
+/** Bảng developer: chế độ + bậc chất lượng đồ hoạ, fps bộ điều tốc đo, tỉ lệ điểm ảnh. */
+function gfxSnapshot(): Record<string, unknown> {
+  const g = gfx.status();
+  return { gfx: `${g.mode === 'auto' ? 'tự động' : 'cố định'} · ${g.tier}${g.ceiling !== 'ultra' ? ` (trần ${g.ceiling})` : ''}`, gfxFps: g.fps, pixelRatio: g.pixelRatio };
+}
 const devZone = (z: string) => (z === 'outside' ? world.outside : z === 'stands' ? world.stands : z === 'arena' ? world.arena : null);
 const devHost: DevHost = {
   snapshot() {
@@ -1078,6 +1106,7 @@ const devHost: DevHost = {
       pos: pose ? { x: +pose.position.x.toFixed(2), z: +pose.position.z.toFixed(2) } : null,
       yawDeg: controls ? Math.round((controls.yaw * 180) / Math.PI) : null,
       crowd: crowdCount, crowdQ: crowd.getQuality ? +crowd.getQuality().toFixed(2) : null,
+      ...gfxSnapshot(),
       secret: world.outside.getSecretFocus() ? 'đang diễn' : null,
       entrance: introKind ?? (entrance.isPlaying() ? 'preview' : null),
       ...world.stats(),
@@ -1188,12 +1217,17 @@ const devHost: DevHost = {
   getTheme: () => getActiveThemeId(),
   setTheme(id) {
     if (!isThemeId(id) || state === 'loading' || state === 'intro') return false;
-    selectTheme(id as ThemeId);
-    if (worldStale()) rebuildWorldNow();
+    const apply = () => { selectTheme(id); if (worldStale()) rebuildWorldNow(); };
+    if (isThemeCodeLoaded(id)) apply();
+    else void loadThemeCode(id).then(apply, (err: unknown) => console.warn('[theme] không tải được', id, err));
     return true;
   },
-  leakCheck: (cycles) => leakCheck(cycles),
+  // Dựng lại qua MỌI phong cách → tải đủ chunk phong cách trước.
+  leakCheck: (cycles) => Promise.all(THEME_IDS.map((t) => loadThemeCode(t))).then(() => leakCheck(cycles)),
   buildTimes: () => ({ ...buildTimes }),
+  quality: () => gfx.status(),
+  setQualityMode: (m) => { if (isQualityMode(m)) gfx.setMode(m, false); },
+  qualityReset: (t) => { if (isQualityMode(t) && t !== 'auto') gfx.resetAuto(t); },
 };
 const dev = createDevPanel(devHost, devRequested(params));
 // ?dev=0: không hiện gì liên quan tới developer (cả link ở sảnh); phím ` / F2 vẫn bật được.
@@ -1214,8 +1248,10 @@ loadManifest()
     builtinEntry = entry = m.songs[0] ?? null;
     if (!entry) throw new Error('manifest.json không có bài nào');
     screens.showStart(entry);
+    hideBootLoader();
   })
   .catch((err) => {
     console.error(err);
+    hideBootLoader();
     screens.showError(`Không tải được danh sách bài hát: ${err instanceof Error ? err.message : String(err)}`);
   });

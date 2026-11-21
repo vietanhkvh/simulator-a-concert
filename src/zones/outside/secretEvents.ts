@@ -4,10 +4,6 @@ import * as THREE from 'three';
 import type { FrameState } from '../../core/types';
 import { SecretTrigger, pickAnySecret, type SecretKind } from './secretRoll';
 import { emitSecret, secretFocusState, type SecretAct } from './secretShared';
-import { createUfo } from './secretUfo';
-import { createRocket } from './secretRocket';
-import { createDragon } from './secretDragon';
-import { createJet } from './secretJet';
 
 export type { SecretKind } from './secretRoll';
 
@@ -31,6 +27,7 @@ let current: { request(kind: SecretKind, force: boolean): void } | null = null;
 
 /** Force an event now (for test buttons). No-op if one is already running, unless force = true. */
 export function triggerSecret(kind?: SecretKind, force = false): void {
+  void preloadDefaultSecrets();
   const k = kind && kind in SECRET_CHANCES ? kind : pickAnySecret(SECRET_CHANCES, Math.random);
   if (current) current.request(k, force);
   else pending = { kind: k, force };
@@ -56,14 +53,43 @@ export function getSecretFocus(): THREE.Vector3 | null {
 }
 
 export type SecretFactories = Record<SecretKind, (s: THREE.Scene) => SecretAct>;
-/** Builder mặc định (chibi) của từng sự kiện; index.ts thay từng cái theo phong cách (builders.ts). */
-export const DEFAULT_SECRET_FACTORIES: SecretFactories = { ufo: createUfo, rocket: createRocket, dragon: createDragon, jet: createJet };
+
+// Mã bốn sự kiện mặc định nằm ở chunk riêng (./secretActs): tải khi Hype ≥ 0,8 (sự kiện chỉ tung ở ≥ 0,95) hoặc khi có
+// lệnh trigger. Sự kiện được tung trước khi tải xong sẽ chờ (vài chục ms) rồi mới bắt đầu; tải lỗi → bỏ lượt đó.
+let defaultActs: typeof import('./secretActs') | null = null;
+let defaultActsFailed = false;
+let defaultActsLoading: Promise<void> | null = null;
+/** Tải mã sự kiện bí mật mặc định (một lần). */
+export function preloadDefaultSecrets(): Promise<void> {
+  return (defaultActsLoading ??= import('./secretActs').then(
+    (m) => { defaultActs = m; },
+    (err: unknown) => { defaultActsFailed = true; console.warn('[secret] không tải được sự kiện bí mật', err); },
+  ));
+}
+const needAct = (): typeof import('./secretActs') => {
+  if (!defaultActs) throw new Error('secretActs chưa tải (preloadDefaultSecrets)');
+  return defaultActs;
+};
+/** Builder mặc định (chibi) của từng sự kiện; index.ts thay từng cái theo phong cách (builders.ts). Gọi được sau khi tải. */
+export const DEFAULT_SECRET_FACTORIES: SecretFactories = {
+  ufo: (s) => needAct().createUfo(s),
+  rocket: (s) => needAct().createRocket(s),
+  dragon: (s) => needAct().createDragon(s),
+  jet: (s) => needAct().createJet(s),
+};
 
 export function createSecretEvents(scene: THREE.Scene, factories: SecretFactories = DEFAULT_SECRET_FACTORIES): SecretEvents {
   const acts: Partial<Record<SecretKind, SecretAct>> = {}; // tạo lười ở lần đầu cần
   const trigger = new SecretTrigger(SECRET_CHANCES);
   let running: { kind: SecretKind; act: SecretAct; t: number } | null = null;
   let queued: SecretKind | null = null;
+  const usesDefault = (Object.keys(factories) as SecretKind[]).some((k) => factories[k] === DEFAULT_SECRET_FACTORIES[k]);
+  /** Builder của `kind` gọi được ngay? (builder mặc định cần chunk secretActs; builder phong cách nằm sẵn trong chunk của nó) */
+  const ready = (kind: SecretKind): boolean => {
+    if (factories[kind] !== DEFAULT_SECRET_FACTORIES[kind] || defaultActs) return true;
+    void preloadDefaultSecrets();
+    return false;
+  };
 
   const end = () => {
     if (!running) return;
@@ -93,11 +119,17 @@ export function createSecretEvents(scene: THREE.Scene, factories: SecretFactorie
     update(f: FrameState) {
       const dt = Math.min(Math.max(f.dt, 0), 0.1);
       const rolled = trigger.step(f.hype, dt, running !== null);
+      if (usesDefault && f.hype >= 0.8 && !defaultActsLoading) void preloadDefaultSecrets();
       if (queued) {
-        end();
-        begin(queued);
-        queued = null;
-      } else if (rolled && !running) begin(rolled);
+        if (ready(queued)) {
+          end();
+          begin(queued);
+          queued = null;
+        } else if (defaultActsFailed) { queued = null; trigger.ended(); }
+      } else if (rolled && !running) {
+        if (ready(rolled)) begin(rolled);
+        else if (!defaultActsFailed) queued = rolled; // chờ chunk tải xong
+      }
       if (running) {
         running.t += dt;
         if (running.t >= running.act.duration) end();

@@ -3,16 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Concert Simulator</title>
+    <title>Simulator A Concert — Giả lập buổi hòa nhạc, hát với micro của bạn</title>
+    <meta name="description" content="Simulator A Concert: trò chơi 3D chạy ngay trên trình duyệt, bạn là ca sĩ trên sân khấu, hát vào micro và được chấm cao độ theo thời gian thực. Có thể hát bài của riêng bạn; file và âm thanh chỉ xử lý trên máy bạn, không tải lên đâu cả." />
+    <meta name="theme-color" content="#0a0818" />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Simulator A Concert" />
+    <meta property="og:title" content="Simulator A Concert — Hát trên sân khấu hòa nhạc 3D" />
+    <meta property="og:description" content="Trò chơi 3D trên trình duyệt: hát vào micro, được chấm cao độ, khán giả sân vận động cùng reo hò. Không cần cài đặt." />
+    <meta property="og:locale" content="vi_VN" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Simulator A Concert — Hát trên sân khấu hòa nhạc 3D" />
+    <meta name="twitter:description" content="Trò chơi 3D trên trình duyệt: hát vào micro, được chấm cao độ, khán giả sân vận động cùng reo hò." />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <style>
       html, body { margin: 0; height: 100%; background: #0a0818; overflow: hidden; }
       #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
       #ui { position: fixed; inset: 0; pointer-events: none; }
+      /* Chỉ báo tải: thuần HTML/CSS, bị gỡ khi sảnh sẵn sàng (hideBootLoader trong core/webSupport.ts). */
+      #boot { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: radial-gradient(ellipse at 50% 40%, #2a2350, #0a0818 75%); color: #fff4e6;
+        font: 600 16px system-ui, 'Segoe UI', Roboto, sans-serif; transition: opacity 0.4s ease; }
+      #boot.done { opacity: 0; pointer-events: none; }
+      #boot b { font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase; color: #b9a8ff; }
+      #boot i { width: 38px; height: 38px; border-radius: 50%; border: 5px solid #3a3170; border-top-color: #ff7ab8; animation: boot-spin 0.9s linear infinite; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #boot i { animation-duration: 3s; } }
     </style>
   </head>
   <body>
     <canvas id="stage"></canvas>
     <div id="ui"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="boot" role="status" aria-live="polite"><b>Simulator A Concert</b><i aria-hidden="true"></i><span>Đang tải trò chơi…</span></div>
+    <noscript>
+      <style>#boot { display: none; }</style>
+      <div style="position:fixed;inset:0;z-index:101;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;text-align:center;background:#0a0818;color:#fff4e6;font:18px/1.5 system-ui,'Segoe UI',Roboto,sans-serif">
+        <div><h1 style="margin:0 0 8px;font-size:28px">Cần bật JavaScript</h1>
+          <p style="margin:0">Simulator A Concert là trò chơi chạy trên trình duyệt nên cần JavaScript. Hãy bật JavaScript cho trang này rồi tải lại.</p></div>
+      </div>
+    </noscript>
+    <script type="module" src="/src/boot.ts"></script>
   </body>
 </html>

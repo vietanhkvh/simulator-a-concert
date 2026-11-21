@@ -1,8 +1,13 @@
-// Gom sổ đăng ký của từng phong cách (khu 2). KHÔNG sửa file này khi thêm builder: sửa ./<id>/index.ts.
+// Gom sổ đăng ký của từng phong cách (khu 2). KHÔNG sửa file này khi thêm builder (sửa ./<id>/index.ts) hay thêm phong cách.
+// Mỗi ./<id>/index.ts được tải LƯỜI (dynamic import, chunk theme-<id>) qua world/shared/themeCode.ts: chỉ phong cách đang
+// chọn được tải; THEME_BUILDERS[id] có mặt sau khi loadThemeCode(id) xong.
+import { registerThemeLoader } from '../../../world/shared/themeCode';
 import type { ThemeId } from '../../../world/style';
 import type { StandsBuilders } from '../builders';
-import { builders as lacquer } from './lacquer';
-import { builders as pixel } from './pixel';
-import { builders as steel } from './steel';
 
-export const THEME_BUILDERS: Partial<Record<ThemeId, Partial<StandsBuilders>>> = { lacquer, steel, pixel };
+const loaders = import.meta.glob<{ builders: Partial<StandsBuilders> }>('./*/index.ts');
+export const THEME_BUILDERS: Partial<Record<ThemeId, Partial<StandsBuilders>>> = {};
+registerThemeLoader(async (id) => {
+  const load = loaders[`./${id}/index.ts`];
+  if (load && !THEME_BUILDERS[id]) THEME_BUILDERS[id] = (await load()).builders;
+});

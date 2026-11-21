@@ -34,7 +34,12 @@ export interface World extends Stage {
   setZoneVisible(zone: DebugZoneName, on: boolean): boolean;
   /** Debug: số liệu renderer của lần vẽ gần nhất. */
   stats(): WorldStats;
+  /** Đổi tỉ lệ điểm ảnh renderer (bộ điều tốc chất lượng, world/quality.ts); không dựng lại gì. */
+  setPixelRatio(pr: number): void;
 }
+
+/** Lúc tạo renderer lần đầu (world/quality.ts quyết định theo bậc chất lượng khởi đầu). */
+export interface RendererInit { antialias?: boolean; pixelRatio?: number }
 
 export type DebugZoneName = 'outside' | 'stands' | 'arena' | 'glow';
 export interface WorldStats {
@@ -51,11 +56,12 @@ const POST_VERT = /* glsl */ `void main(){ gl_Position = vec4(position.xy, 0.0, 
  * Dựng world cho PHONG CÁCH ĐANG BẬT (world/style: getTheme()). `reuse`: renderer của world trước (đã dispose với
  * keepRenderer) — dùng lại context WebGL thay vì tạo mới.
  */
-export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions, reuse?: THREE.WebGLRenderer): World {
+export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions, reuse?: THREE.WebGLRenderer, init?: RendererInit): World {
   const t0 = performance.now();
   const themeId = getActiveThemeId();
-  const renderer = reuse ?? new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  const renderer = reuse ?? new THREE.WebGLRenderer({ canvas, antialias: init?.antialias ?? true, powerPreference: 'high-performance' });
+  // Dùng lại renderer: giữ tỉ lệ điểm ảnh bộ điều tốc đã chọn.
+  if (!reuse) renderer.setPixelRatio(init?.pixelRatio ?? Math.min(window.devicePixelRatio, 1.5));
   renderer.info.autoReset = false; // render() tự reset: số liệu gồm cả lượt hậu kỳ
   const scene = new THREE.Scene();
   const fogColor = new THREE.Color(SKY.fog);
@@ -146,6 +152,11 @@ export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions, reuse
       renderer.render(scene, camera);
       renderer.setRenderTarget(null);
       renderer.render(post.qScene, post.qCam);
+    },
+    setPixelRatio(pr) {
+      if (!(pr > 0) || renderer.getPixelRatio() === pr) return;
+      renderer.setPixelRatio(pr);
+      resize();
     },
     setZoneVisible(zone, on) {
       if (zone === 'glow') return worldLayers.set('glow', on);

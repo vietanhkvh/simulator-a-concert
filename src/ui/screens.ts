@@ -2,6 +2,7 @@
 import type { Screens, ScreensOptions } from '../core/types';
 import './tokens.css';
 import './style.css';
+import { createAboutLink } from './about';
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
@@ -95,7 +96,9 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
         <button type="button" role="radio" class="cs-entr-card cs-theme-card" data-theme-id="${esc(t.id)}"
           aria-checked="${t.id === cur}" tabindex="${t.id === cur ? 0 : -1}">
           <span class="cs-theme-sw" aria-hidden="true">${t.swatches.map((c) => `<i style="background:${esc(c)}"></i>`).join('')}</span>
-          <b>${esc(t.name)}</b><span>${esc(t.desc)}</span></button>`).join('')}</div>`;
+          <b>${esc(t.name)}</b><span>${esc(t.desc)}</span></button>`).join('')}</div>
+      <p class="cs-theme-status" role="status" aria-live="polite"></p>`;
+    const status = box.querySelector<HTMLParagraphElement>('.cs-theme-status')!;
     const cards = Array.from(box.querySelectorAll<HTMLButtonElement>('.cs-theme-card'));
     const mark = (id: string) => cards.forEach((c) => {
       const on = c.dataset.themeId === id;
@@ -106,7 +109,22 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
       const c = cards[(i + cards.length) % cards.length]!;
       mark(c.dataset.themeId!);
       if (focus) c.focus({ preventScroll: true });
-      opts.onTheme?.(c.dataset.themeId!);
+      const ticket = ++themeTicket;
+      cards.forEach((x) => { x.removeAttribute('aria-busy'); x.querySelector('.cs-theme-busy')?.remove(); });
+      status.textContent = '';
+      const res = opts.onTheme?.(c.dataset.themeId!);
+      if (!res) return;
+      // Mã phong cách đang tải (chunk riêng): báo trên thẻ; lỗi mạng → giữ phong cách đang bật.
+      c.setAttribute('aria-busy', 'true');
+      const busy = document.createElement('small');
+      busy.className = 'cs-theme-busy';
+      busy.textContent = 'Đang tải phong cách…';
+      c.appendChild(busy);
+      res.then(() => { if (ticket === themeTicket) status.textContent = ''; }, () => {
+        if (ticket !== themeTicket) return;
+        mark(opts.getTheme?.() ?? cur);
+        status.textContent = 'Không tải được phong cách này (mạng?). Vẫn giữ phong cách hiện tại — thử lại sau.';
+      }).finally(() => { c.removeAttribute('aria-busy'); busy.remove(); });
     };
     cards.forEach((c, i) => {
       c.addEventListener('click', () => pick(i));
@@ -121,6 +139,7 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
     card.appendChild(box);
   };
   let syncThemeCards = (): void => {};
+  let themeTicket = 0;
 
   const show = (inner: string, button?: string) => {
     el.style.display = '';
@@ -205,6 +224,7 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
       addEntrancePicker(picker);
       addImport(el.firstElementChild!);
       el.firstElementChild!.insertAdjacentHTML('beforeend', credit(e.attribution));
+      el.firstElementChild!.appendChild(createAboutLink(e.id === 'chasing-marks' ? e : null));
     },
     showLoading(text) {
       show(`<div class="cs-spinner"></div><p class="cs-loading">${esc(text)}</p>`);

@@ -23,7 +23,7 @@ ba phong cách mới vẫn dùng builder chibi với token của mình, cộng v
   pixel lùi một bậc ramp. `hypeColors`, `auroraAmount` (= `skyFxAmount` của mọi phong cách), `shade` không đổi chữ ký.
 
 ## 2. Vòng đời world
-`main.ts`: `applyTheme(resolveInitialThemeId())` → `createWorld` → `bindWorld(world)` (gán lại mọi handle main giữ: crowd, led,
+`main.ts`: `await loadThemeCode(id)` (mục 5, tải lười) → `applyTheme(resolveInitialThemeId())` → `createWorld` → `bindWorld(world)` (gán lại mọi handle main giữ: crowd, led,
 confetti, emotes, stageFx, crew, entrance, controls, view provider). Chọn thẻ ở sảnh = `selectTheme` (token + CSS đổi ngay, world
 chưa đổi); bấm Bắt đầu: nếu `world.themeId` khác phong cách đang bật thì `rebuildWorldNow()` dưới màn đen. Bảng developer /
 `window.__dev.setTheme(id)` dựng lại ngay, giữ vị trí + góc máy, bài hát không bị đụng. `__dev.leakCheck(3)` dựng lại 3 vòng
@@ -75,7 +75,17 @@ Gợi ý góc 'aerial': builder (vd. `stageDeco` có mái đặc) gọi `setAeri
 `ctx` = `ZoneContext` (`scene, camera, uniforms, glow`) + trường riêng của khu. Handle phải đúng kiểu hiện có: `index.ts` và `main.ts` không biết phong cách.
 **Bố cục file:** builder riêng ở `src/zones/<khu>/themes/<id>/<module>.ts`; file tự khai `export const builders = { <khe>: fn }`;
 `themes/<id>/index.ts` quét cả thư mục (`import.meta.glob`) nên **không ai phải sửa file chung**. File không có `builders` là
-file phụ trợ. Trong thư mục phong cách: chỉ `import type` từ `../../builders`; được import module mặc định của khu, `src/core`,
+file phụ trợ.
+**Tải lười (chunk theo phong cách):** `zones/<khu>/themes/index.ts` không import tĩnh phong cách nào; nó đăng ký
+`import.meta.glob('./*/index.ts')` (không eager) với `world/shared/themeCode.ts`. `loadThemeCode(id)` tải `themes/<id>/index.ts`
+của cả ba khu song song — Vite gom chúng (cùng mọi file trong thư mục phong cách) thành **một chunk `theme-<id>`**
+(`vite.config.ts`, `codeSplitting`); `THEME_BUILDERS[id]` chỉ có sau khi tải xong. Luật: **chờ `loadThemeCode(id)` trước
+`applyTheme(id)` + dựng lại world** (thiếu → `pickBuilder` lặng lẽ dùng builder mặc định). `main.ts` làm việc này ở 4 chỗ: lúc mở
+trang (top-level await; tải lỗi → chibi), thẻ sảnh (`onTheme` trả Promise → thẻ "Đang tải phong cách…", lỗi → giữ phong cách
+đang bật + thông báo), `__dev.setTheme`, `__dev.leakCheck` (tải đủ 4 rồi mới chạy, trả Promise). Thêm builder / thêm phong
+cách mới vẫn không sửa file chung. Module dùng chung giữa phong cách và mã mặc định nằm ở chunk `app` (tải trước), nên thư mục
+phong cách import module mặc định của khu thoải mái; nhưng **đừng** để module mặc định import ngược thư mục phong cách (test
+chặn). Bốn sự kiện bí mật mặc định cũng là chunk riêng (`outside/secretActs.ts`, tải khi Hype ≥ 0,8 hoặc khi trigger). Trong thư mục phong cách: chỉ `import type` từ `../../builders`; được import module mặc định của khu, `src/core`,
 `src/world`; cấm import thư mục phong cách khác (test `world/zones.test.ts`). Một khe đăng ký hai lần → cảnh báo console.
 
 ## 6. Thêm một builder theo phong cách

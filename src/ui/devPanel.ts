@@ -74,6 +74,10 @@ export interface DevHost {
   leakCheck(cycles?: number): unknown;
   /** Thời gian dựng world gần nhất theo phong cách (ms). */
   buildTimes(): Record<string, unknown>;
+  /** Chất lượng đồ hoạ (world/quality.ts): trạng thái, đổi chế độ (không lưu), chạy lại tự động từ một bậc. */
+  quality?(): unknown;
+  setQualityMode?(mode: string): void;
+  qualityReset?(tier: string): void;
 }
 
 // ───────────── Nhật ký: sự kiện game + lỗi console (ghi từ lúc tải trang, kể cả khi chưa bật dev) ─────────────
@@ -425,7 +429,7 @@ export function createDevPanel(host: DevHost, startEnabled: boolean): DevPanel {
     if (d.theme) { host.setTheme(d.theme); syncTheme(); return; }
     if (d.act) {
       switch (d.act) {
-        case 'leak': themeNote.textContent = JSON.stringify(host.leakCheck(3)); syncTheme(); break;
+        case 'leak': void Promise.resolve(host.leakCheck(3)).then((r) => { themeNote.textContent = JSON.stringify(r); syncTheme(); }); break;
         case 'collapse': setCollapsed(!el.classList.contains('collapsed')); break;
         case 'close': hide(); break;
         case 'copy': void navigator.clipboard?.writeText(JSON.stringify(stats(), null, 2)).catch(() => {}); break;

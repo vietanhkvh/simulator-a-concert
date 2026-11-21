@@ -1,0 +1,15 @@
+# Định dạng _headers của Cloudflare Pages / Netlify. Các host khác (GitHub Pages, Vercel) bỏ qua file này
+# (nó vẫn nằm trong dist/ và tải được như file tĩnh, vô hại).
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: microphone=(self), camera=(), geolocation=()
+
+/index.html
+  Cache-Control: no-cache
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/songs/*
+  Cache-Control: public, max-age=86400
