@@ -12,6 +12,7 @@ import { createOutsideZone, type OutsideZone } from '../zones/outside';
 import { createStandsZone, type StandsZone } from '../zones/stands';
 import { CAMERA_FAR, CAMERA_FOV, EYE_HEIGHT, FOG_DENSITY } from './layout';
 import { buildGlowPoints, createGlowBuf } from './shared/glowPoints';
+import { PIXEL_DITHER, pixelPalette, pixelPostFrag } from './shared/pixelPost';
 import { setLowResTarget } from './shared/viewport';
 import { getActiveThemeId, getTheme, SKY, type ThemeId } from './style';
 import { createWorldUniforms, updateWorldUniforms } from './shared/worldUniforms';
@@ -43,10 +44,8 @@ export interface WorldStats {
 }
 
 const POST_VERT = /* glsl */ `void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`;
-// Mỗi texel của đích thấp phủ đúng uScale × uScale pixel màn hình (nearest, không nội suy).
-const POST_FRAG = /* glsl */ `
-uniform sampler2D tMap; uniform vec2 uSize; uniform float uScale;
-void main(){ gl_FragColor = vec4(texture2D(tMap, (floor(gl_FragCoord.xy / uScale) + 0.5) / uSize).rgb, 1.0); }`;
+// Mỗi texel của đích thấp phủ đúng uScale × uScale pixel màn hình (nearest, không nội suy); fragment shader lượng tử hoá
+// về 31 màu + Bayer 4×4 (shared/pixelPost.ts).
 
 /**
  * Dựng world cho PHONG CÁCH ĐANG BẬT (world/style: getTheme()). `reuse`: renderer của world trước (đã dispose với
@@ -78,10 +77,11 @@ export function createWorld(canvas: HTMLCanvasElement, opts: ArenaOptions, reuse
     // có sẵn (MeshBasicMaterial…) cho đúng màu như khi vẽ thẳng; shader thô của game vốn đã ghi sRGB.
     rt.texture.colorSpace = THREE.SRGBColorSpace;
     (rt as unknown as { isXRRenderTarget: boolean }).isXRRenderTarget = true;
-    const u = { tMap: { value: rt.texture }, uSize: { value: new THREE.Vector2(fx.width, fx.height) }, uScale: { value: 1 } };
+    const u = { tMap: { value: rt.texture }, uSize: { value: new THREE.Vector2(fx.width, fx.height) }, uScale: { value: 1 },
+      uPal: { value: pixelPalette().map((c) => new THREE.Vector3(c[0], c[1], c[2])) }, uDither: { value: PIXEL_DITHER } };
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)); // 1 tam giác phủ màn hình
-    const mat = new THREE.ShaderMaterial({ uniforms: u, vertexShader: POST_VERT, fragmentShader: POST_FRAG, depthTest: false, depthWrite: false, fog: false });
+    const mat = new THREE.ShaderMaterial({ uniforms: u, vertexShader: POST_VERT, fragmentShader: pixelPostFrag(u.uPal.value.length), depthTest: false, depthWrite: false, fog: false });
     const quad = new THREE.Mesh(geo, mat);
     quad.frustumCulled = false;
     const qScene = new THREE.Scene();
