@@ -121,7 +121,12 @@ function secretView(): typeof secretCamPose | null {
   const k = 1 - Math.exp(-dt * 2.2); // làm mượt mọi thay đổi
   const focus = world.outside.getSecretFocus();
   // Điểm ngắm: nghiêng 70% về tâm sự kiện, 30% về sân khấu.
-  if (focus) secretGoal.copy(focus).multiplyScalar(0.8).addScaledVector(SECRET_STAGE_AIM, 0.2);
+  // Giữ điểm ngắm trong lòng sân (x ±40, z −75…+15): sự kiện bay ra ngoài (máy bay, trực thăng) thì máy không quay theo
+  // ra phía sau khán đài nữa.
+  if (focus) {
+    secretGoal.set(THREE.MathUtils.clamp(focus.x, -40, 40), THREE.MathUtils.clamp(focus.y, 8, 70), THREE.MathUtils.clamp(focus.z, -75, 15))
+      .multiplyScalar(0.8).addScaledVector(SECRET_STAGE_AIM, 0.2);
+  }
   else secretGoal.set(0, 30, -30);
   secretCamTarget.lerp(secretGoal, k);
   // Máy lệch ngang ngược phía tâm sự kiện một chút để có góc chéo, không bao giờ lùi ra sau hàng màn LED.
