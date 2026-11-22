@@ -120,10 +120,12 @@ export function createScreens(root: HTMLElement, opts: ScreensOptions): Screens 
       busy.className = 'cs-theme-busy';
       busy.textContent = 'Đang tải phong cách…';
       c.appendChild(busy);
-      res.then(() => { if (ticket === themeTicket) status.textContent = ''; }, () => {
+      res.then(() => { if (ticket === themeTicket) status.textContent = ''; }, (err: unknown) => {
+        console.error('[theme] đổi phong cách thất bại', err);
         if (ticket !== themeTicket) return;
         mark(opts.getTheme?.() ?? cur);
-        status.textContent = 'Không tải được phong cách này (mạng?). Vẫn giữ phong cách hiện tại — thử lại sau.';
+        const why = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        status.textContent = `Không tải được phong cách này. Vẫn giữ phong cách hiện tại — thử lại sau. (Chi tiết: ${why.slice(0, 160)})`;
       }).finally(() => { c.removeAttribute('aria-busy'); busy.remove(); });
     };
     cards.forEach((c, i) => {
